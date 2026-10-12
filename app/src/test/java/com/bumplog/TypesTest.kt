@@ -38,3 +38,10 @@ class AppearanceTest {
         assertEquals(15, Swatches.size)
     }
 }
+
+class VoiceDedupeTest {
+    @Test fun localAndNetworkEntriesOfOneSpeakerShareAKey() {
+        assertEquals(speakerKey("en-us-x-tpd-local"), speakerKey("en-us-x-tpd-network"))
+        assertFalse(speakerKey("en-us-x-tpd-local") == speakerKey("en-us-x-iol-local"))
+    }
+}

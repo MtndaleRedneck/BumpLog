@@ -8,15 +8,15 @@ object Testing {
         Notifier.channels(ctx)
         val s = Db.get(ctx).addTestSpot(DefectType.POTHOLE, confirmed = false, severity = "MAJOR", fileTrip = false, maxG = 1.6f)
         Notifier.severe(ctx, s, false)
-        Sound.play(ctx, "Major bump detected.", true)
+        Sound.play(ctx, "Bump detected.", true)
     }
 
     fun warnAhead(ctx: Context) {
         Notifier.channels(ctx)
         val s = Db.get(ctx).addTestSpot(DefectType.POTHOLE, confirmed = true, severity = "MAJOR", fileTrip = false, maxG = 1.6f)
         Notifier.ahead(ctx, s, 500, false)
-        if (Prefs.audioMode == "VOICE" || Prefs.audioMode == "BOTH") Sound.play(ctx, "Road defect ahead", false)
-        else Sound.play(ctx, "Road defect ahead", true)
+        // Same words, voice style and recorded clip as a real heads-up for a confirmed major pothole.
+        Sound.playAhead(ctx, s, 500, false, !(Prefs.audioMode == "VOICE" || Prefs.audioMode == "BOTH"))
     }
 
     /** Uses test spots already marked "file at end of trip" (for example from the simulated major hit); adds two samples if there are none. */

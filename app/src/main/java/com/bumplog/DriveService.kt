@@ -137,7 +137,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         val quiet = guess == DefectType.RUMBLE || spot.type == DefectType.RUMBLE
         if (ev.peakG >= Prefs.severeG && !quiet && spot.review != "DISMISSED" && !(spot.typeUser && spot.review == "CONFIRMED")) {
             Notifier.severe(this, spot, true)
-            Sound.play(this, "Major bump detected.", true, "hit")
+            Sound.play(this, "Bump detected.", true, "hit")
         }
     }
 

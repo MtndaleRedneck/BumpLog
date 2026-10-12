@@ -46,7 +46,9 @@ object Sound {
         val vs: Set<Voice> = try { tts?.voices ?: emptySet() } catch (e: Exception) { emptySet() }
         val us = vs.filter { isUs(it) }
         val usable = us.filter { !it.isNetworkConnectionRequired }.ifEmpty { us }
-        return usable.sortedBy { it.name }.mapIndexed { i, v -> v.name to "US voice ${i + 1}" }
+        // The same speaker can be listed more than once (for example a local and a network entry, or a quality variant). Keep one per speaker.
+        val one = usable.sortedBy { it.name }.distinctBy { speakerKey(it.name) }
+        return one.mapIndexed { i, v -> v.name to "Voice ${i + 1}" }
     }
 
     /** Speaks a sample in one voice ("" = phone default), whatever the Sound setting is. */
@@ -76,7 +78,7 @@ object Sound {
         "major_pothole" to "Major pothole ahead", "minor_pothole" to "Minor pothole ahead",
         "major_bump" to "Major bump ahead", "minor_bump" to "Minor bump ahead",
         "major_rough" to "Major rough road ahead", "minor_rough" to "Minor rough road ahead",
-        "hit" to "Major bump detected",
+        "hit" to "Bump detected",
     )
 
     fun clipKey(s: Spot?): String {
@@ -204,3 +206,6 @@ object Sound {
         } catch (e: Exception) { }
     }
 }
+
+/** Voice names look like "en-us-x-tpd-local"; the speaker is everything before the local/network/embedded suffix. */
+fun speakerKey(name: String) = name.lowercase().replace(Regex("[-_](local|network|embedded)(-.*)?$"), "")

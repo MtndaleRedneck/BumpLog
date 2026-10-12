@@ -181,7 +181,7 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit) {
     val spot = s ?: return
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(24.dp))
-        Txt("SEVERE HIT", 22, FontWeight.Bold, p.accent)
+        Txt("BUMP DETECTED", 22, FontWeight.Bold, p.accent)
         Spacer(Modifier.height(12.dp))
         Icon(Icons.Default.Warning, null, tint = p.accent, modifier = Modifier.size(110.dp))
         Txt("%.2fg".format(spot.maxG), 76, FontWeight.Bold)

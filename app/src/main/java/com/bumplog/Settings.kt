@@ -147,11 +147,11 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
             SmallButton("Play tone", Modifier.fillMaxWidth()) { Sound.previewTone(ctx) }
             Spacer(Modifier.height(12.dp))
             Txt("Voice", 16, FontWeight.Bold)
-            Muted("US English voices only. Tap a voice to pick it. Tap Play to hear it.", 12)
+            Muted("Tap a voice to pick it. Tap Play to hear it.", 12)
             Spacer(Modifier.height(6.dp))
             Dropdown("Style", style, listOf("PLAIN" to "Plain: \"Major pothole ahead\"", "MAPS" to "Maps-style: distance first", "WAZE" to "Waze-style: short and casual")) { style = it; Prefs.voiceStyle = it; Sound.previewVoice(ctx, voice) }
             Spacer(Modifier.height(6.dp))
-            (listOf("" to "Phone default (US)") + voices + listOf(Sound.CUSTOM to "My own recordings")).forEach { (k, label) ->
+            (listOf("" to "Phone default") + voices + listOf(Sound.CUSTOM to "My own recordings")).forEach { (k, label) ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(14.dp))
                     .background(if (voice == k) p.accent else p.card2)
                     .clickable { voice = k; Prefs.voice = k; Sound.previewVoice(ctx, k) }
@@ -161,7 +161,7 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
                         modifier = Modifier.size(28.dp).clickable { Sound.previewVoice(ctx, k) })
                 }
             }
-            if (voices.isEmpty()) Muted("No extra US English voices found on this phone. Install more in your phone's text-to-speech settings.", 12)
+            if (voices.isEmpty()) Muted("No extra voices found on this phone. Install more in your phone's text-to-speech settings.", 12)
             if (voice == Sound.CUSTOM) { Spacer(Modifier.height(10.dp)); VoiceRecorder() }
             Spacer(Modifier.height(8.dp))
             Muted("Alerts also pop up as a heads-up notification with Yes / No / Warn buttons.", 12)
