@@ -29,7 +29,7 @@ object Reports {
 
     fun spotBlock(s: Spot): String = buildString {
         appendLine("Report ID: ${s.reportId}")
-        appendLine("Defect type: ${s.type.label} (category: ${s.type.reportCategory})" + if (s.typeUser) "" else " - unconfirmed guess")
+        appendLine("Defect type: ${s.type.technical} (category: ${s.type.reportCategory})" + if (s.typeUser) "" else " - unconfirmed guess")
         appendLine("Driver rating: ${s.severity.lowercase()}")
         appendLine("Measured jolt: %.2f g peak (phone accelerometer, not proof of force or damage), %d hit(s) at this spot".format(s.maxG, s.hitCount))
         appendLine("Location: %.6f, %.6f".format(s.lat, s.lon))
@@ -114,26 +114,46 @@ object Reports {
             putExtra(Intent.EXTRA_TEXT, body)
         }
 
-    /** One row per logged hit, joined with its spot, for backup or a spreadsheet. */
-    fun csv(ctx: Context): Intent {
+    private fun q(t: String) = "\"" + t.replace("\"", "\"\"").replace("\r", " ").replace("\n", " ") + "\""
+
+    /**
+     * One row per logged hit, joined with its spot, then a blank line and one row per damage record with the
+     * names of its photo files (the photos themselves travel in the full backup zip).
+     */
+    fun csvText(ctx: Context): String {
         val db = Db.get(ctx)
         val spots = db.allSpots().associateBy { it.id }
         val sb = StringBuilder("report_id,review,report_status,defect_type,hit_time,lat,lon,heading,speed_mph,peak_g,spot_hit_count,road\n")
         for (h in db.hits(100000)) {
-            val s = spots[h.spotId]
-            sb.append(listOf(s?.reportId ?: "", s?.review ?: "", s?.reportStatus ?: "", h.type.name, iso(h.ts),
+            val s = spots[h.spotId] ?: continue
+            sb.append(listOf(s.reportId, s.review, s.reportStatus, h.type.name, iso(h.ts),
                 "%.6f".format(Locale.US, h.lat), "%.6f".format(Locale.US, h.lon), "%d".format(Locale.US, h.heading.toInt()), "%.1f".format(Locale.US, h.speedMph),
-                "%.2f".format(Locale.US, h.peakG), (s?.hitCount ?: 1).toString(), "\"" + (s?.address ?: "").replace("\"", "'") + "\"").joinToString(","))
+                "%.2f".format(Locale.US, h.peakG), s.hitCount.toString(), "\"" + s.address.replace("\"", "'") + "\"").joinToString(","))
             sb.append('\n')
         }
+        val dmg = db.damages()
+        if (dmg.isNotEmpty()) {
+            sb.append("\ndamage_report_id,spot_report_id,category,created,status,note,photo_files\n")
+            for (d in dmg) {
+                val sp = db.spot(d.spotId)
+                val dir = DamagePhotos.dir(ctx, d.reportId).name
+                val files = DamagePhotos.files(ctx, d.reportId).joinToString(";") { "photos/$dir/${it.name}" }
+                sb.append(listOf(d.reportId, sp?.reportId ?: "", q(d.category), iso(d.ts), d.status, q(d.note), q(files)).joinToString(",")).append('\n')
+            }
+        }
+        return sb.toString()
+    }
+
+    /** Share sheet for the spreadsheet CSV. */
+    fun csv(ctx: Context): Intent {
         val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }
         val f = File(dir, "BumpLog-export.csv")
-        f.writeText(sb.toString())
+        f.writeText(csvText(ctx))
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
         return Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
             type = "text/csv"; putExtra(Intent.EXTRA_STREAM, uri)
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }, "Export CSV")
+        }, "Share CSV")
     }
 
     fun statusLabel(s: Spot): String = when (s.reportStatus) {

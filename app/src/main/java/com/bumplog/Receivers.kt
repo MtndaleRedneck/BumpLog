@@ -19,6 +19,7 @@ class ActionReceiver : BroadcastReceiver() {
             YES -> { db.setReview(id, "CONFIRMED"); db.setWarn(id, true) }
             NO -> { db.setReview(id, "DISMISSED"); db.setWarn(id, false) }
             WARN -> db.setWarn(id, true)
+            STILL -> { db.resetCleanPasses(id); Notifier.cancel(ctx, 3000 + id.toInt()) }
             PAUSE -> { Prefs.passenger = !Prefs.passenger; Live.update { it.copy(paused = Prefs.passenger) } }
             STOP -> ctx.startService(Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_STOP))
         }
@@ -35,6 +36,7 @@ class ActionReceiver : BroadcastReceiver() {
         const val WARN = "com.bumplog.WARN"
         const val PAUSE = "com.bumplog.PAUSE"
         const val STOP = "com.bumplog.STOP"
+        const val STILL = "com.bumplog.STILL"
     }
 }
 

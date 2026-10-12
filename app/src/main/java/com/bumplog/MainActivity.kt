@@ -79,7 +79,7 @@ class MainActivity : ComponentActivity() {
             // theme/accent changes bump the tick, which re-reads prefs here
             val theme = remember(live.tick) { Prefs.theme }
             val accent = remember(live.tick) { Prefs.accent }
-            BumpLogTheme(theme, accent) { Root(live) }
+            BumpLogTheme(theme, accent) { Box(Modifier.fillMaxSize()) { Root(live); CelebrationOverlay() } }
         }
     }
 
@@ -103,6 +103,12 @@ class MainActivity : ComponentActivity() {
             "damagequeue" -> stack = listOf(Screen.DamageQueue)
             "damage" -> stack = listOf(Screen.Damage(0))
             "spot" -> stack = listOf(Screen.Spot(spot))
+            "markfixed" -> {
+                // From the "may be fixed" prompt. Only acts on a spot that is still open, so a repeat tap does nothing.
+                val s = Db.get(this).spot(spot)
+                if (s != null && s.review != "FIXED") { Db.get(this).markFixed(spot, System.currentTimeMillis()); Notifier.cancel(this, 3000 + spot.toInt()); Celebrate.trigger(); Live.bump() }
+                stack = emptyList()
+            }
         }
         if (i.hasExtra("sendtrip")) {
             val list = Db.get(this).tripSpots(i.getLongExtra("sendtrip", 0))
@@ -125,7 +131,7 @@ class MainActivity : ComponentActivity() {
                 "setup" -> {
                     val a = (u.getQueryParameter("assistant") ?: "custom").uppercase()
                     val asst = if (a in listOf("INSTINCT", "TAB")) a else "CUSTOM"
-                    val email = u.getQueryParameter("email")?.trim().orEmpty()
+                    val email = Prefs.cleanEmail(u.getQueryParameter("email").orEmpty())
                     pendingLink = if (Prefs.isValidEmail(email)) PendingLink.Setup(asst, email) else null
                     if (email.isNotEmpty() && pendingLink == null) toast(this, "Setup link ignored: it needs exactly one valid email address.")
                     stack = listOf(Screen.Setup)

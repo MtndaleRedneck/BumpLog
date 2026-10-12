@@ -7,7 +7,7 @@ import java.io.File
 
 /** Photos for a damage report live in the app's private storage until the report is deleted with all data. */
 object DamagePhotos {
-    private fun dir(ctx: Context, reportId: String) = File(ctx.filesDir, "damage/" + reportId.replace(Regex("[^A-Za-z0-9_-]"), "_")).apply { mkdirs() }
+    fun dir(ctx: Context, reportId: String) = File(ctx.filesDir, "damage/" + reportId.replace(Regex("[^A-Za-z0-9_-]"), "_")).apply { mkdirs() }
 
     fun add(ctx: Context, reportId: String, uris: List<Uri>): Int {
         var n = 0

@@ -3,14 +3,18 @@ package com.bumplog
 import kotlin.math.abs
 import kotlin.math.sqrt
 
-enum class DefectType(val label: String, val reportCategory: String) {
-    POTHOLE("Pothole", "Pothole"),
-    FAULTING("Faulting (pavement lip)", "Uneven pavement / faulting"),
-    RUMBLE("Rumble stretch", "Rough pavement"),
-    JOINT("Expansion joint", "Expansion joint");
+/**
+ * [label] is the plain name shown in the app. [technical] is the engineering term used in report emails.
+ * [spoken] is how the type is named in alerts and prompts, [avoidedName] is its Scorecard line.
+ */
+enum class DefectType(val label: String, val reportCategory: String, val technical: String, val spoken: String, val avoidedName: String) {
+    POTHOLE("Pothole", "Pothole", "Pothole", "pothole", "Potholes avoided"),
+    FAULTING("Broken pavement (lip)", "Uneven pavement / faulting", "Faulting (pavement lip)", "bump", "Bumps avoided"),
+    RUMBLE("Rough stretch", "Rough pavement", "Rough pavement / surface deterioration (washboarding)", "rough road", "Rough stretches avoided");
 
     companion object {
-        fun parse(s: String?): DefectType = values().firstOrNull { it.name == s } ?: POTHOLE
+        /** Expansion joints are no longer a type: old JOINT records and guesses read as a rough stretch. */
+        fun parse(s: String?): DefectType = if (s == "JOINT") RUMBLE else values().firstOrNull { it.name == s } ?: POTHOLE
     }
 }
 
@@ -65,13 +69,13 @@ object Classifier {
         // A long, busy shake is a rough stretch, not a single defect.
         if (e.durationMs >= 600 && e.peaks >= 5) return DefectType.RUMBLE
         if (window.size >= 3 && (e.startMs - window.first()) / (window.size) < 1000) return DefectType.RUMBLE
-        // Evenly spaced thumps, like driving over a series of joints.
+        // Evenly spaced thumps, like a series of seams, are a rough stretch rather than separate defects.
         val starts = (window + e.startMs).takeLast(4)
         if (starts.size >= 3) {
             val gaps = starts.zipWithNext { a, b -> (b - a).toDouble() }
             val mean = gaps.average()
             val sd = sqrt(gaps.map { (it - mean) * (it - mean) }.average())
-            if (mean >= 500 && sd / mean < 0.2) return DefectType.JOINT
+            if (mean >= 500 && sd / mean < 0.2) return DefectType.RUMBLE
         }
         // One sharp step at highway speed looks like a pavement lip.
         if (e.peaks <= 2 && e.durationMs < 300 && speedMph >= 45f) return DefectType.FAULTING

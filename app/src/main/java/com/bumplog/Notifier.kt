@@ -109,7 +109,7 @@ object Notifier {
     /** Names the defect plainly once the user has confirmed its type; before that it stays generic. */
     fun aheadName(s: Spot): String {
         if (!s.typeUser) return "Road defect ahead"
-        val what = when (s.type) { DefectType.POTHOLE -> "pothole"; DefectType.FAULTING -> "bump"; DefectType.JOINT -> "joint"; DefectType.RUMBLE -> "rough road" }
+        val what = s.type.spoken
         val sev = if (s.severity == "MINOR") "Minor" else "Major"
         return "$sev $what ahead"
     }
@@ -123,6 +123,21 @@ object Notifier {
             .setPriority(NotificationCompat.PRIORITY_HIGH).setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setTimeoutAfter(15000).setAutoCancel(true).setContentIntent(openApp(ctx, s.id)).setColor(0xFFFF5228.toInt())
         nm.notify(2000 + s.id.toInt(), b.build())
+    }
+
+    /** Offers to mark a reported spot fixed after clean passes. Mark fixed opens the app for the celebration. */
+    fun fixedPrompt(ctx: Context, s: Spot) {
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        val what = if (s.typeUser) s.type.spoken else "road defect"
+        val b = NotificationCompat.Builder(ctx, CH_ALERT)
+            .setSmallIcon(R.drawable.ic_stat).setContentTitle("Reported spot may be fixed")
+            .setContentText("No impact detected in a previously reported area, mark $what fixed?")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("No impact detected in a previously reported area, mark $what fixed? (${s.title})"))
+            .setPriority(NotificationCompat.PRIORITY_DEFAULT).setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
+            .setAutoCancel(true).setContentIntent(openApp(ctx, s.id)).setColor(0xFFFF5228.toInt())
+        b.addAction(0, "Mark fixed", openApp(ctx, s.id, "markfixed"))
+        b.addAction(0, "Still there", action(ctx, ActionReceiver.STILL, s.id))
+        nm.notify(3000 + s.id.toInt(), b.build())
     }
 
     fun driveDone(ctx: Context, hits: Int, toFile: Int, driveId: Long) {
