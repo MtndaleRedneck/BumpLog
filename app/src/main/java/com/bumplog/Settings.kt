@@ -54,7 +54,7 @@ fun pairedDevices(ctx: Context): List<Pair<String, String>> {
 }
 
 @Composable
-fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
+fun SettingsScreen(tick: Int, askPerms: () -> Unit, openVoice: () -> Unit, openBug: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
     // Local copies so the screen redraws as values change.
@@ -71,7 +71,6 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
     var audio by remember { mutableStateOf(Prefs.audioMode) }
     var tone by remember { mutableStateOf(Prefs.tone) }
     var voice by remember { mutableStateOf(Prefs.voice) }
-    var style by remember { mutableStateOf(Prefs.voiceStyle) }
     var overlay by remember { mutableStateOf(Prefs.overlay) }
     var lock by remember { mutableStateOf(Prefs.lockButtons) }
     var hitTimeout by remember { mutableStateOf(Prefs.hitTimeoutSec.toString()) }
@@ -100,7 +99,7 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
             Txt("Accent", 16, color = p.muted)
             Spacer(Modifier.height(8.dp))
             val rows = Swatches.chunked(5)
-            // Muted row (the last chunk) is shown first; indices stay the same so saved choices keep their colour.
+            // The muted row (the last chunk, sage first) is shown first. Choices are saved as colours, so the order here is free to change.
             val order = listOf(rows.lastIndex) + (0 until rows.lastIndex)
             order.forEach { r ->
                 val row = rows[r]
@@ -133,9 +132,11 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
         SettingsCard {
             Txt("Warnings before a saved spot", 18, FontWeight.Bold)
             Muted("Two stages: a heads-up, then a final chime.", 12)
+            Spacer(Modifier.height(10.dp))
+            StepperRow("Heads-up distance", "$far ft", { far = (far - 220).coerceAtLeast(660); Prefs.warnFarFt = far }, { far = (far + 220).coerceAtMost(2640); Prefs.warnFarFt = far })
+            Spacer(Modifier.height(10.dp))
+            StepperRow("Final warning", "$near ft", { near = (near - 100).coerceAtLeast(200); Prefs.warnNearFt = near }, { near = (near + 100).coerceAtMost(1000); Prefs.warnNearFt = near })
         }
-        Stepper("Heads-up distance", "$far ft", { far = (far - 220).coerceAtLeast(660); Prefs.warnFarFt = far }, { far = (far + 220).coerceAtMost(2640); Prefs.warnFarFt = far })
-        Stepper("Final warning", "$near ft", { near = (near - 100).coerceAtLeast(200); Prefs.warnNearFt = near }, { near = (near + 100).coerceAtMost(1000); Prefs.warnNearFt = near })
 
         SettingsCard {
             Txt("Alerts", 18, FontWeight.Bold)
@@ -145,38 +146,35 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
             Dropdown("Tone", tone, Sound.tones) { tone = it; Prefs.tone = it }
             Spacer(Modifier.height(6.dp))
             SmallButton("Play tone", Modifier.fillMaxWidth()) { Sound.previewTone(ctx) }
-            Spacer(Modifier.height(12.dp))
-            Txt("Voice", 16, FontWeight.Bold)
-            Muted("Tap a voice to pick it. Tap Play to hear it.", 12)
-            Spacer(Modifier.height(6.dp))
-            Dropdown("Style", style, listOf("PLAIN" to "Plain: \"Major pothole ahead\"", "MAPS" to "Maps-style: distance first", "WAZE" to "Waze-style: short and casual")) { style = it; Prefs.voiceStyle = it; Sound.previewVoice(ctx, voice) }
-            Spacer(Modifier.height(6.dp))
-            (listOf("" to "Phone default") + voices + listOf(Sound.CUSTOM to "My own recordings")).forEach { (k, label) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(14.dp))
-                    .background(if (voice == k) p.accent else p.card2)
-                    .clickable { voice = k; Prefs.voice = k; Sound.previewVoice(ctx, k) }
-                    .padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Txt(label, 16, FontWeight.Medium, if (voice == k) p.onAccent else p.text, Modifier.weight(1f))
-                    Icon(Icons.Default.PlayArrow, "Play", tint = if (voice == k) p.onAccent else p.accent,
-                        modifier = Modifier.size(28.dp).clickable { Sound.previewVoice(ctx, k) })
-                }
-            }
-            if (voices.isEmpty()) Muted("No extra voices found on this phone. Install more in your phone's text-to-speech settings.", 12)
-            if (voice == Sound.CUSTOM) { Spacer(Modifier.height(10.dp)); VoiceRecorder() }
             Spacer(Modifier.height(8.dp))
             Muted("Alerts also pop up as a heads-up notification with Yes / No / Warn buttons.", 12)
         }
+        Card(Modifier.clickable { openVoice() }, pad = 16.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Txt("Voice", 18, FontWeight.Bold)
+                    Muted(when (voice) { "" -> "Phone default"; Sound.CUSTOM -> "My own recordings"; else -> voices.firstOrNull { it.first == voice }?.second ?: "Phone default" }, 12)
+                }
+                Icon(Icons.Default.PlayArrow, null, tint = p.muted)
+            }
+        }
         Dropdown("Major-hit alert dismisses after", hitTimeout, listOf("10" to "10 seconds", "20" to "20 seconds", "30" to "30 seconds", "0" to "Never dismiss")) { hitTimeout = it; Prefs.hitTimeoutSec = it.toInt() }
         Toggle("Lock buttons while moving", lock, "Alerts show no buttons above the minimum speed") { lock = it; Prefs.lockButtons = it }
-        Toggle("Overlay pop-up (experimental)", overlay, "Draws over other apps. Needs 'Appear on top'. Off by default.") {
-            overlay = it; Prefs.overlay = it
-            if (it && !Settings.canDrawOverlays(ctx)) ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }
-
-        SmallButton("Preview overlay pop-up", Modifier.fillMaxWidth()) {
-            if (!Notifier.previewOverlay(ctx)) {
-                toast(ctx, "Allow 'Appear on top' for BumpLog, then tap Preview again.")
-                ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        SettingsCard {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { Txt("Overlay pop-up (experimental)", 17, FontWeight.Bold); Muted("Draws over other apps. Needs 'Appear on top'. Off by default.", 12) }
+                Switch(overlay, {
+                    overlay = it; Prefs.overlay = it
+                    if (it && !Settings.canDrawOverlays(ctx)) ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }, colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = p.onAccent,
+                    uncheckedTrackColor = p.card2, uncheckedThumbColor = p.muted, uncheckedBorderColor = p.muted))
+            }
+            Spacer(Modifier.height(10.dp))
+            SmallButton("Preview overlay pop-up", Modifier.fillMaxWidth()) {
+                if (!Notifier.previewOverlay(ctx)) {
+                    toast(ctx, "Allow 'Appear on top' for BumpLog, then tap Preview again.")
+                    ctx.startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${ctx.packageName}")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
             }
         }
 
@@ -200,6 +198,15 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
         if (auto && cars.isNotEmpty()) Card {
             Dropdown("Car Bluetooth", car, listOf("" to "Any car audio device") + cars) { car = it; Prefs.carAddress = it; Prefs.carName = cars.firstOrNull { c -> c.first == it }?.second ?: "" }
         }
+        Card(Modifier.clickable { Notifier.openPersistentSettings(ctx) }, pad = 16.dp) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Txt("Persistent notification", 18, FontWeight.Bold)
+                    Muted("Sits in your notification shade while driving.", 12)
+                }
+                Icon(Icons.Default.PlayArrow, null, tint = p.muted)
+            }
+        }
         Card(Modifier.clickable { askPerms() }, pad = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Permissions", 18, FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -213,10 +220,17 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
             }
         }
         BackupCards()
-        Card(Modifier.clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(REPO_ISSUES)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }, pad = 16.dp) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Txt("Feedback", 18, FontWeight.Bold); Muted("Opens the GitHub issues page. Nothing is attached.", 12) }
+        Card(pad = 16.dp) {
+            Txt("Feedback", 18, FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(REPO_ISSUES)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
+                verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { Txt("General feedback", 16, FontWeight.Medium); Muted("Opens the GitHub issues page. Nothing is attached.", 12) }
                 Icon(Icons.Default.Info, null, tint = p.muted)
+            }
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { openBug() }, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { Txt("Report a bug", 16, FontWeight.Medium); Muted("You see exactly what is sent before you send it.", 12) }
+                Icon(Icons.Default.PlayArrow, null, tint = p.muted)
             }
         }
         Card(pad = 16.dp) {
@@ -277,11 +291,11 @@ fun SetupScreen(done: () -> Unit) {
 }
 
 
-private fun runIo(ctx: Context, work: () -> String) {
+internal fun runIo(ctx: Context, after: () -> Unit = {}, work: () -> String) {
     val h = android.os.Handler(android.os.Looper.getMainLooper())
     Thread {
         val msg = try { work() } catch (e: Exception) { "That did not work: ${e.message ?: "unknown error"}" }
-        h.post { android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show(); Live.bump() }
+        h.post { android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show(); after(); Live.bump() }
     }.start()
 }
 
@@ -346,59 +360,4 @@ private fun BackupCards() {
             SmallButton("Share", Modifier.weight(1f)) { ctx.startActivity(Reports.csv(ctx).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
         }
     }
-}
-
-/** Record or import your own clip for each alert. Missing clips fall back to the phone's voice. */
-@Composable
-private fun VoiceRecorder() {
-    val ctx = LocalContext.current
-    val p = LocalPal.current
-    var rec by remember { mutableStateOf<String?>(null) }
-    var bump by remember { mutableStateOf(0) }
-    var wantKey by remember { mutableStateOf<String?>(null) }
-    var importKey by remember { mutableStateOf<String?>(null) }
-    fun start(key: String) {
-        if (Sound.startRecording(ctx, key)) { rec = key; android.widget.Toast.makeText(ctx, "Recording up to 8 seconds. Tap Stop when done.", android.widget.Toast.LENGTH_SHORT).show() }
-        else android.widget.Toast.makeText(ctx, "Could not start recording.", android.widget.Toast.LENGTH_SHORT).show()
-    }
-    val ask = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { ok ->
-        val k = wantKey; wantKey = null
-        if (ok && k != null) start(k) else if (!ok) android.widget.Toast.makeText(ctx, "Microphone permission is needed to record.", android.widget.Toast.LENGTH_SHORT).show()
-    }
-    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
-        val k = importKey; importKey = null
-        if (uri != null && k != null) runIo(ctx) {
-            val f = Sound.clipFile(ctx, k)
-            val tmp = java.io.File(f.path + ".tmp")
-            val n = ctx.contentResolver.openInputStream(uri)?.use { i ->
-                val b = i.readNBytes(5_000_001)
-                if (b.size > 5_000_000) -1 else { tmp.writeBytes(b); b.size }
-            } ?: -1
-            if (n > 0) tmp.copyTo(f, overwrite = true)
-            tmp.delete()
-            if (n <= 0) "That audio file is empty or over 5 MB, so your existing recording was kept." else "Imported."
-        }
-    }
-    Muted("Record your own voice for each alert, or import an audio file. Anything you leave empty uses the phone voice. Recordings stay on this phone.", 12)
-    Spacer(Modifier.height(6.dp))
-    key(bump) {
-        Sound.clipPhrases.forEach { (key, text) ->
-            val has = Sound.hasClip(ctx, key)
-            Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Txt(text, 15, FontWeight.Medium); Muted(if (rec == key) "Recording..." else if (has) "Recorded" else "Not set", 11) }
-                if (rec == key) {
-                    SmallButton("Stop") { Sound.stopRecording(); rec = null; bump++ }
-                } else {
-                    SmallButton(if (has) "Redo" else "Record") {
-                        if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) start(key)
-                        else { wantKey = key; ask.launch(android.Manifest.permission.RECORD_AUDIO) }
-                    }
-                    Spacer(Modifier.width(6.dp))
-                    SmallButton("Import") { importKey = key; pick.launch(arrayOf("audio/*")) }
-                    if (has) { Spacer(Modifier.width(6.dp)); SmallButton("Play") { Sound.playClip(ctx, key) }; Spacer(Modifier.width(6.dp)); SmallButton("Delete") { Sound.clipFile(ctx, key).delete(); bump++ } }
-                }
-            }
-        }
-    }
-    SmallButton("Refresh list", Modifier.fillMaxWidth()) { bump++ }
 }

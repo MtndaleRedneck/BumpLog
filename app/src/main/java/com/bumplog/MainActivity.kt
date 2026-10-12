@@ -40,6 +40,9 @@ sealed class Screen {
     object Setup : Screen()
     object Score : Screen()
     object DamageQueue : Screen()
+    object Voice : Screen()
+    object Recordings : Screen()
+    object BugReport : Screen()
     data class Alert(val id: Long) : Screen()
     data class Spot(val id: Long) : Screen()
     data class Damage(val spotId: Long) : Screen()
@@ -92,6 +95,7 @@ class MainActivity : ComponentActivity() {
         handle(intent)
     }
 
+    override fun onStop() { Sound.stopRecording(save = false); Sound.onRecordingEnded?.invoke(); super.onStop() }
     override fun onResume() { super.onResume(); refreshPerms(); Live.bump() }
 
     private fun handle(i: Intent?) {
@@ -131,6 +135,15 @@ class MainActivity : ComponentActivity() {
         // Debug builds only, for the CI screenshot run: pick the voice source and trigger the celebration.
         if (BuildConfig.DEBUG && i.hasExtra("setvoice")) { Prefs.voice = i.getStringExtra("setvoice").orEmpty(); Live.bump() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("celebrate", false)) Celebrate.trigger()
+        // Debug builds only, for the CI screenshot run: open the voice screens directly and put a few clips in place so every button shows.
+        if (BuildConfig.DEBUG) {
+            when (i.getStringExtra("screen")) {
+                "voice" -> stack = listOf(Screen.Voice)
+                "recordings" -> stack = listOf(Screen.Voice, Screen.Recordings)
+                "bugreport" -> stack = listOf(Screen.BugReport)
+            }
+            if (i.getBooleanExtra("seedclips", false)) { Sound.clipPhrases.take(2).forEach { Sound.clipFile(this, it.first).writeBytes(ByteArray(2000)) }; Live.bump() }
+        }
         if (BuildConfig.DEBUG && i.hasExtra("detoff")) { Prefs.detectionEnabled = !i.getBooleanExtra("detoff", false); Live.bump() }
         // bumplog://setup?assistant=instinct&email=...  and  bumplog://filed?id=BL-...
         // Links never change state on their own. They open a confirmation the user must accept.
@@ -217,9 +230,12 @@ class MainActivity : ComponentActivity() {
                     is Screen.Spot -> SpotScreen(top.id, live.tick, { stack = stack.dropLast(1) }) { stack = stack + Screen.Damage(it) }
                     is Screen.Damage -> DamageScreen(top.spotId, live.tick, { stack = stack.dropLast(1) }) { stack = listOf(Screen.DamageQueue) }
                     is Screen.DamageQueue -> DamageQueueScreen(live.tick) { stack = emptyList() }
+                    is Screen.Voice -> VoiceScreen({ stack = stack + Screen.Recordings }) { tab = "settings"; stack = emptyList() }
+                    is Screen.Recordings -> RecordingsScreen { stack = stack.dropLast(1) }
+                    is Screen.BugReport -> BugReportScreen { tab = "settings"; stack = emptyList() }
                     null -> when (tab) {
                         "review" -> ReviewScreen(live, { stack = listOf(Screen.Spot(it)) }) { stack = listOf(Screen.Setup) }
-                        "settings" -> SettingsScreen(live.tick) { askPerms() }
+                        "settings" -> SettingsScreen(live.tick, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) })
                         else -> HomeScreen(live, { stack = listOf(Screen.Spot(it)) }, { stack = listOf(Screen.Damage(0)) }, { stack = listOf(Screen.Score) }, permsOk, { askPerms() },
                             { if (live.running) startService(Intent(this@MainActivity, DriveService::class.java).setAction(DriveService.ACTION_STOP)) else startDetection() },
                             {

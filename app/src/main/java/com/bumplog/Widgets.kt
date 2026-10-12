@@ -108,17 +108,21 @@ fun Dropdown(label: String, selected: String, options: List<Pair<String, String>
     }
 }
 
+/** A label with minus and plus buttons, without a card around it, so several can share one card. */
+@Composable
+fun StepperRow(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
+    val p = LocalPal.current
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Txt(label, 17, FontWeight.Bold, modifier = Modifier.weight(1f))
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(p.card2).clickable(onClick = onMinus), contentAlignment = Alignment.Center) { Txt("-", 22, FontWeight.Bold, p.accent) }
+        Txt(value, 17, FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp))
+        Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(p.card2).clickable(onClick = onPlus), contentAlignment = Alignment.Center) { Txt("+", 22, FontWeight.Bold, p.accent) }
+    }
+}
+
 @Composable
 fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
-    val p = LocalPal.current
-    Card(pad = 14.dp) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Txt(label, 17, FontWeight.Bold, modifier = Modifier.weight(1f))
-            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(p.card2).clickable(onClick = onMinus), contentAlignment = Alignment.Center) { Txt("-", 22, FontWeight.Bold, p.accent) }
-            Txt(value, 17, FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp))
-            Box(Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(p.card2).clickable(onClick = onPlus), contentAlignment = Alignment.Center) { Txt("+", 22, FontWeight.Bold, p.accent) }
-        }
-    }
+    Card(pad = 14.dp) { StepperRow(label, value, onMinus, onPlus) }
 }
 
 /** Gauge ring open at the bottom, like the mockup. value/maxValue fills the accent arc. */
@@ -160,5 +164,78 @@ fun Dot(color: Color, size: Dp = 10.dp) = Box(Modifier.size(size).clip(CircleSha
 fun ScreenTitle(s: String, trailing: (@Composable () -> Unit)? = null) {
     Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
         Txt(s, 28, FontWeight.Bold, modifier = Modifier.weight(1f)); trailing?.invoke()
+    }
+}
+
+// ---------------------------------------------------------------- Compact pill buttons (recordings, dialogs)
+
+enum class PillKind { Fill, Outline, Danger }
+
+private fun dangerColor(dark: Boolean) = if (dark) Color(0xFFE57373) else Color(0xFFC62828)
+
+/** A compact pill, at least 48dp tall. The label stays on one line. */
+@Composable
+fun PillButton(label: String, kind: PillKind, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val p = LocalPal.current
+    val shape = RoundedCornerShape(24.dp)
+    val red = dangerColor(p.dark)
+    val m = modifier.heightIn(min = 48.dp).clip(shape)
+        .let {
+            when (kind) {
+                PillKind.Fill -> it.background(p.accent)
+                PillKind.Outline -> it.background(p.card2).border(BorderStroke(2.dp, p.accent), shape)
+                PillKind.Danger -> it.background(p.card2).border(BorderStroke(2.dp, red), shape)
+            }
+        }.clickable(onClick = onClick)
+    Box(m, contentAlignment = Alignment.Center) {
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
+            color = when (kind) { PillKind.Fill -> p.onAccent; PillKind.Outline -> p.text; PillKind.Danger -> red },
+            modifier = Modifier.padding(horizontal = 8.dp))
+    }
+}
+
+/**
+ * Pills laid out in equal-width rows. All of them go on one row when the widest label fits at the current font size and
+ * screen width. Otherwise they wrap to two per row, or one per row, so nothing is clipped.
+ */
+@Composable
+fun PillRow(buttons: List<Triple<String, PillKind, () -> Unit>>, modifier: Modifier = Modifier) {
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    BoxWithConstraints(modifier.fillMaxWidth()) {
+        val style = androidx.compose.ui.text.TextStyle(fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        val widest = buttons.maxOf { measurer.measure(it.first, style, maxLines = 1, softWrap = false).size.width }
+        val perRow = pillsPerRow(buttons.size, widest.toFloat(), constraints.maxWidth.toFloat(), with(density) { 16.dp.toPx() }, with(density) { 6.dp.toPx() })
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            buttons.chunked(perRow).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    row.forEach { (l, k, f) -> PillButton(l, k, Modifier.weight(1f), f) }
+                    // Keep widths equal when the last row has fewer pills.
+                    repeat(perRow - row.size) { Spacer(Modifier.weight(1f)) }
+                }
+            }
+        }
+    }
+}
+
+/** How many pills fit per row: all of them if the widest label fits, else two, else one. Widths in pixels. */
+fun pillsPerRow(count: Int, widestLabel: Float, available: Float, sidePadding: Float, gap: Float): Int {
+    fun fits(k: Int) = k * (widestLabel + sidePadding) + (k - 1) * gap <= available
+    return listOf(count, 2, 1).filter { it in 1..count }.firstOrNull { fits(it) } ?: 1
+}
+
+/** A confirmation dialog in the app's own card style: a title and two pills. */
+@Composable
+fun ConfirmDialog(title: String, confirmLabel: String, onConfirm: () -> Unit, onCancel: () -> Unit) {
+    val p = LocalPal.current
+    androidx.compose.ui.window.Dialog(onDismissRequest = onCancel) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(p.card2).padding(24.dp)) {
+            Txt(title, 20, FontWeight.Bold)
+            Spacer(Modifier.height(24.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                PillButton("Cancel", PillKind.Outline, Modifier.weight(1f), onCancel)
+                PillButton(confirmLabel, PillKind.Danger, Modifier.weight(1f), onConfirm)
+            }
+        }
     }
 }

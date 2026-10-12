@@ -8,19 +8,46 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 
 data class Pal(
     val bg: Color, val card: Color, val card2: Color, val nav: Color, val text: Color, val muted: Color,
     val accent: Color, val onAccent: Color, val green: Color, val yellow: Color, val dark: Boolean,
 )
 
+/** Muted sage, the default accent. It leads the last row of the picker. */
+const val SAGE_ARGB: Long = 0xFF6F9C7E
+
 val Swatches = listOf(
     0xFFFF5228, 0xFFFFB020, 0xFF3CC878, 0xFF3C9BFF, 0xFFA064FF,
     0xFFFF4D8D, 0xFF20C9C9, 0xFFC8E63C, 0xFFFF8C28, 0xFFE0E0E8,
+    SAGE_ARGB,
     0xFFCC5500, // burnt orange
     // Muted tones from the notification shade photo: sampled blue and mint, glow colors lifted to be readable.
-    0xFF7BAFDB, 0xFF83A2A4, 0xFFB8735C, 0xFF6F9C7E,
+    0xFF7BAFDB, 0xFF83A2A4, 0xFFB8735C,
 ).map { Color(it) }
+
+/** The accent list in the order it had when accents were saved by position. Frozen: it only exists to read old saved choices. */
+val LegacySwatchArgb: List<Long> = listOf(
+    0xFFFF5228, 0xFFFFB020, 0xFF3CC878, 0xFF3C9BFF, 0xFFA064FF,
+    0xFFFF4D8D, 0xFF20C9C9, 0xFFC8E63C, 0xFFFF8C28, 0xFFE0E0E8,
+    0xFFCC5500, 0xFF7BAFDB, 0xFF83A2A4, 0xFFB8735C, 0xFF6F9C7E,
+)
+
+/** Accent choices are stored as the colour itself, so reordering the picker can never change what someone chose. */
+object AccentStore {
+    private val current: Set<Int> = Swatches.map { it.toArgb() }.toSet()
+
+    /** The colour to use. [rgb] is the stored colour, [legacyIndex] an old position-based choice from before colours were stored. */
+    fun resolve(rgb: Int?, legacyIndex: Int?): Int = when {
+        rgb != null && rgb in current -> rgb
+        rgb == null && legacyIndex != null && legacyIndex in LegacySwatchArgb.indices -> LegacySwatchArgb[legacyIndex].toInt()
+        else -> SAGE_ARGB.toInt()
+    }
+
+    /** Position of [argb] in the picker. */
+    fun indexOf(argb: Int): Int = Swatches.indexOfFirst { it.toArgb() == argb }.coerceAtLeast(0)
+}
 
 fun palette(dark: Boolean, accentIdx: Int): Pal {
     val ac = Swatches[accentIdx.coerceIn(0, Swatches.lastIndex)]

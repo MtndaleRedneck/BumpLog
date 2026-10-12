@@ -23,7 +23,9 @@ import android.widget.TextView
 import androidx.core.app.NotificationCompat
 
 object Notifier {
-    const val CH_STATUS = "status"
+    /** The ongoing notification's channel. A channel keeps the importance it was created with, so the lower importance needs a new id. */
+    const val CH_STATUS = "persistent"
+    private const val CH_STATUS_OLD = "status"
     const val CH_ALERT = "alerts"
     const val ID_FOREGROUND = 1
     const val ID_DRIVE_DONE = 2
@@ -33,9 +35,23 @@ object Notifier {
     private val main = Handler(Looper.getMainLooper())
     private var overlayView: View? = null
 
+    /** Opens Android's own settings for the persistent notification channel. */
+    fun openPersistentSettings(ctx: Context) {
+        channels(ctx)
+        val i = android.content.Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+            .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, CH_STATUS)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        try { ctx.startActivity(i) } catch (e: Exception) {
+            ctx.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    }
+
     fun channels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CH_STATUS, "Detection status", NotificationManager.IMPORTANCE_LOW).apply {
+        nm.deleteNotificationChannel(CH_STATUS_OLD)
+        nm.createNotificationChannel(NotificationChannel(CH_STATUS, "Persistent notification", NotificationManager.IMPORTANCE_MIN).apply {
             description = "Shown while BumpLog is watching the road"
             setShowBadge(false)
         })
