@@ -23,7 +23,7 @@ android {
             create("release") {
                 storeFile = file(ksFile)
                 storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = System.getenv("KEY_ALIAS") ?: "spotter"
+                keyAlias = System.getenv("KEY_ALIAS") ?: "bumplog"
                 keyPassword = System.getenv("KEYSTORE_PASSWORD")
             }
         }
