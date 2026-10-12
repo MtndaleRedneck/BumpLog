@@ -42,7 +42,7 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: spotter
+          KEY_ALIAS: bumplog
         run: |
           if [ -z "$KEYSTORE_B64" ]; then echo "No signing secrets set"; exit 1; fi
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
