@@ -221,6 +221,7 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+        val settingsScroll = androidx.compose.foundation.rememberScrollState()
         Column(Modifier.fillMaxSize().background(p.bg).statusBarsPadding()) {
             Box(Modifier.weight(1f)) {
                 when (top) {
@@ -235,7 +236,7 @@ class MainActivity : ComponentActivity() {
                     is Screen.BugReport -> BugReportScreen { tab = "settings"; stack = emptyList() }
                     null -> when (tab) {
                         "review" -> ReviewScreen(live, { stack = listOf(Screen.Spot(it)) }) { stack = listOf(Screen.Setup) }
-                        "settings" -> SettingsScreen(live.tick, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) })
+                        "settings" -> SettingsScreen(live.tick, settingsScroll, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) })
                         else -> HomeScreen(live, { stack = listOf(Screen.Spot(it)) }, { stack = listOf(Screen.Damage(0)) }, { stack = listOf(Screen.Score) }, permsOk, { askPerms() },
                             { if (live.running) startService(Intent(this@MainActivity, DriveService::class.java).setAction(DriveService.ACTION_STOP)) else startDetection() },
                             {

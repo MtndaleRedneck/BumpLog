@@ -56,9 +56,9 @@ fun BugReportScreen(done: () -> Unit) {
     val c = remember { BugReport.context() }
     fun open(url: String) = ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("Report a bug")
+        ScreenTitle("Feedback")
         Card {
-            Muted("Tell us what went wrong. Reports may become public issues on GitHub, so leave out personal details.", 13)
+            Muted("Tell us what went wrong, or suggest a feature. Reports may become public issues on GitHub, so leave out personal details.", 13)
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(text, { text = it.take(MAX_TEXT) }, label = { Text("What went wrong?") }, minLines = 4, modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = p.accent, unfocusedBorderColor = p.card2, focusedTextColor = p.text, unfocusedTextColor = p.text, cursorColor = p.accent))

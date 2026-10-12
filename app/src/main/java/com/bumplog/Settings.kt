@@ -54,7 +54,7 @@ fun pairedDevices(ctx: Context): List<Pair<String, String>> {
 }
 
 @Composable
-fun SettingsScreen(tick: Int, askPerms: () -> Unit, openVoice: () -> Unit, openBug: () -> Unit) {
+fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, askPerms: () -> Unit, openVoice: () -> Unit, openBug: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
     // Local copies so the screen redraws as values change.
@@ -81,7 +81,7 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit, openVoice: () -> Unit, openB
     val voices = remember(Sound.voicesVersion) { Sound.init(ctx); Sound.voices() }
     val cars = remember { pairedDevices(ctx) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ScreenTitle("Settings")
 
         SettingsCard {
@@ -188,6 +188,16 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit, openVoice: () -> Unit, openB
             AddressField(if (assistant == "CUSTOM") "Email address" else "Your ${if (assistant == "TAB") "Tab" else "Instinct"} address", address) { address = it; Prefs.activeAddress = it }
             Muted("Saved on this phone only. Pick a preset and it fills in the address you saved for it.", 12)
         }
+        Card(pad = 16.dp) {
+            Txt("Set up your assistant", 18, FontWeight.Bold)
+            Muted("Optional. Copy a short briefing and paste it into your own AI chat so it knows what BumpLog reports are and how to handle them. Every report email also explains itself at the top.", 12)
+            Spacer(Modifier.height(8.dp))
+            SmallButton("Copy setup prompt", Modifier.fillMaxWidth()) {
+                val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("BumpLog setup prompt", Reports.setupPrompt()))
+                toast(ctx, "Copied. Paste it into your assistant's chat.")
+            }
+        }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SmallButton("Test alert", Modifier.weight(1f)) { Notifier.channels(ctx); Notifier.testAlert(ctx) }
             SmallButton("Test email", Modifier.weight(1f)) { handOffMail(ctx, Reports.testMail()) }
@@ -223,13 +233,8 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit, openVoice: () -> Unit, openB
         Card(pad = 16.dp) {
             Txt("Feedback", 18, FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(REPO_ISSUES)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) },
-                verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Txt("General feedback", 16, FontWeight.Medium); Muted("Opens the GitHub issues page. Nothing is attached.", 12) }
-                Icon(Icons.Default.Info, null, tint = p.muted)
-            }
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { openBug() }, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Txt("Report a bug", 16, FontWeight.Medium); Muted("You see exactly what is sent before you send it.", 12) }
+                Column(Modifier.weight(1f)) { Txt("General feedback, bugs & feature suggestions", 16, FontWeight.Medium); Muted("You see exactly what is sent before you send it.", 12) }
                 Icon(Icons.Default.PlayArrow, null, tint = p.muted)
             }
         }
