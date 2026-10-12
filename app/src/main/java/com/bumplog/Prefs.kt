@@ -141,6 +141,8 @@ object Prefs {
     var autoStart: Boolean get() = b("autostart", true); set(v) = sp.edit().putBoolean("autostart", v).apply()
     var carAddress: String get() = s("car_addr", ""); set(v) = sp.edit().putString("car_addr", v).apply()
     var carName: String get() = s("car_name", ""); set(v) = sp.edit().putString("car_name", v).apply()
+    /** Start time (also the id) of the most recent drive, so Home can show its hit count while parked. */
+    var lastDriveId: Long get() = sp.getLong("last_drive_id", 0L); set(v) = sp.edit().putLong("last_drive_id", v).apply()
     var passenger: Boolean get() = b("passenger", false); set(v) = sp.edit().putBoolean("passenger", v).apply()
 
     var warnFarFt: Int get() = i("warn_far", 1320); set(v) = sp.edit().putInt("warn_far", v).apply()

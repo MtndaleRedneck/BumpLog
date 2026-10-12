@@ -11,8 +11,8 @@ android {
         applicationId = "com.bumplog"
         minSdk = 31
         targetSdk = 34
-        versionCode = 6
-        versionName = "1.5.0"
+        versionCode = 7
+        versionName = "1.6.0"
     }
 
     // Release signing key is private and never committed. CI passes it in through environment
