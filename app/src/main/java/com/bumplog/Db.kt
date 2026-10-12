@@ -17,6 +17,7 @@ data class Spot(
     val firstTs: Long, val lastTs: Long, val driveId: Long, val review: String, val warn: Boolean,
     val reportStatus: String, val sentTs: Long, val address: String, val cleanPasses: Int,
     val severity: String = "MAJOR", val fileTrip: Boolean = false, val saves: Int = 0,
+    val fixedAfterReport: Boolean = false, val fixedTs: Long = 0,
 ) {
     val severe: Boolean get() = maxG >= Prefs.severeG
     val title: String get() = address.ifBlank { "%.5f, %.5f".format(lat, lon) }
@@ -32,13 +33,13 @@ data class Damage(
     val note: String, val ts: Long, val status: String,
 )
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 1) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 2) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE spots(id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT, lat REAL, lon REAL, heading REAL,
             type TEXT, type_user INTEGER, max_g REAL, hit_count INTEGER, speed REAL, first_ts INTEGER, last_ts INTEGER,
-            drive_id INTEGER, review TEXT, warn INTEGER, report_status TEXT, sent_ts INTEGER, address TEXT, clean_passes INTEGER, severity TEXT DEFAULT 'MAJOR', file_trip INTEGER DEFAULT 0, saves INTEGER DEFAULT 0)"""
+            drive_id INTEGER, review TEXT, warn INTEGER, report_status TEXT, sent_ts INTEGER, address TEXT, clean_passes INTEGER, severity TEXT DEFAULT 'MAJOR', file_trip INTEGER DEFAULT 0, saves INTEGER DEFAULT 0, fixed_after_report INTEGER DEFAULT 0, fixed_ts INTEGER DEFAULT 0)"""
         )
         db.execSQL(
             """CREATE TABLE hits(id INTEGER PRIMARY KEY AUTOINCREMENT, spot_id INTEGER, drive_id INTEGER, ts INTEGER,
@@ -50,7 +51,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         )
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, o: Int, n: Int) {}
+    override fun onUpgrade(db: SQLiteDatabase, o: Int, n: Int) {
+        if (o < 2) {
+            db.execSQL("ALTER TABLE spots ADD COLUMN fixed_after_report INTEGER DEFAULT 0")
+            db.execSQL("ALTER TABLE spots ADD COLUMN fixed_ts INTEGER DEFAULT 0")
+        }
+    }
 
     // ---- spots ----
 
@@ -59,10 +65,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         DefectType.parse(c.getString(5)), c.getInt(6) == 1, c.getFloat(7), c.getInt(8), c.getFloat(9),
         c.getLong(10), c.getLong(11), c.getLong(12), c.getString(13) ?: "PENDING", c.getInt(14) == 1,
         c.getString(15) ?: "NONE", c.getLong(16), c.getString(17) ?: "", c.getInt(18),
-        c.getString(19) ?: "MAJOR", c.getInt(20) == 1, c.getInt(21),
+        c.getString(19) ?: "MAJOR", c.getInt(20) == 1, c.getInt(21), c.getInt(22) == 1, c.getLong(23),
     )
 
-    private val spotCols = "id,report_id,lat,lon,heading,type,type_user,max_g,hit_count,speed,first_ts,last_ts,drive_id,review,warn,report_status,sent_ts,address,clean_passes,severity,file_trip,saves"
+    private val spotCols = "id,report_id,lat,lon,heading,type,type_user,max_g,hit_count,speed,first_ts,last_ts,drive_id,review,warn,report_status,sent_ts,address,clean_passes,severity,file_trip,saves,fixed_after_report,fixed_ts"
 
     /** Test-mode spots have report IDs starting with TEST-. They stay out of every list, count and export unless asked for. */
     private fun spots(where: String?, args: Array<String>?, order: String = "last_ts DESC", limit: String? = null, test: Boolean = false): List<Spot> {
@@ -145,15 +151,16 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     /** A warned spot's heads-up fired and the driver passed it again (hit or no hit). */
     @Synchronized fun addSave(id: Long) { writableDatabase.execSQL("UPDATE spots SET saves=saves+1 WHERE id=?", arrayOf(id)) }
     /** Lifetime counters, all derived from the logged spots (so they go when the data is deleted). */
-    class Score(val logged: Int, val sent: Int, val filed: Int, val saves: Int, val warned: Int)
+    class Score(val logged: Int, val sent: Int, val filed: Int, val saves: Int, val warned: Int, val fixedAfterReport: Int = 0)
     @Synchronized fun score(): Score {
         val c = readableDatabase.rawQuery("SELECT " +
             "COALESCE(SUM(CASE WHEN review IN ('CONFIRMED','FIXED') THEN 1 ELSE 0 END),0)," +
             "COALESCE(SUM(CASE WHEN report_status IN ('SENT','FILED') THEN 1 ELSE 0 END),0)," +
             "COALESCE(SUM(CASE WHEN report_status='FILED' THEN 1 ELSE 0 END),0)," +
             "COALESCE(SUM(saves),0)," +
-            "COALESCE(SUM(CASE WHEN warn=1 AND review NOT IN ('DISMISSED','FIXED') THEN 1 ELSE 0 END),0) FROM spots WHERE report_id NOT LIKE 'TEST-%'", null)
-        c.use { it.moveToFirst(); return Score(it.getInt(0), it.getInt(1), it.getInt(2), it.getInt(3), it.getInt(4)) }
+            "COALESCE(SUM(CASE WHEN warn=1 AND review NOT IN ('DISMISSED','FIXED') THEN 1 ELSE 0 END),0)," +
+            "COALESCE(SUM(CASE WHEN review='FIXED' AND fixed_after_report=1 THEN 1 ELSE 0 END),0) FROM spots WHERE report_id NOT LIKE 'TEST-%'", null)
+        c.use { it.moveToFirst(); return Score(it.getInt(0), it.getInt(1), it.getInt(2), it.getInt(3), it.getInt(4), it.getInt(5)) }
     }
     /** Saves per defect type. Spots whose type the user never confirmed are reported under null. */
     @Synchronized fun savesByType(): List<Pair<DefectType?, Int>> {
@@ -174,14 +181,16 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     @Synchronized fun topSaves(n: Int = 5): List<Spot> = spots("saves>0", null, order = "saves DESC", limit = n.toString())
     fun markSent(id: Long, now: Long) = update(id, "report_status" to "SENT", "sent_ts" to now)
     /** Restores spots and hits from a BumpLog CSV export. Report IDs (BL- or legacy PS-) are kept; IDs already here are skipped. */
-    class ImportResult(val imported: Int, val skipped: Int)
+    class ImportResult(val imported: Int, val skipped: Int, val damages: Int = 0)
     @Synchronized fun importCsv(text: String): ImportResult? {
         val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US)
         val have = allSpots().map { it.reportId }.toMutableSet()
         val db = writableDatabase
         val made = HashMap<String, Long>()
         var n = 0
-        val lines = text.lines().filter { it.isNotBlank() }
+        val sections = text.trimStart('\uFEFF', '\n', '\r', ' ').split(Regex("\r?\n[ \t]*\r?\n"), limit = 2)
+        val damageText = sections.getOrNull(1)?.trim()
+        val lines = sections[0].lines().map { it.trimEnd('\r') }.filter { it.isNotBlank() }
         if (lines.isEmpty() || !lines[0].startsWith("report_id,")) return null
         val skippedIds = HashSet<String>(); var bad = 0
         for (line in lines.drop(1)) {
@@ -204,7 +213,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                         put("speed", spd); put("first_ts", ts); put("last_ts", ts); put("drive_id", 0)
                         put("review", rv); put("warn", if (g >= Prefs.severeG && rv !in listOf("DISMISSED", "FIXED")) 1 else 0)
                         put("report_status", if (c[2] in listOf("NONE", "SENT", "FILED")) c[2] else "NONE"); put("sent_ts", 0)
-                        put("address", c[11].trim().trim('"')); put("clean_passes", 0)
+                        put("address", c[11].trim().trim('"').trim()); put("clean_passes", 0)
                     })
                     made[c[0]] = sid; n++
                 }
@@ -216,13 +225,56 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                 db.execSQL("UPDATE spots SET hit_count=hit_count+1, max_g=MAX(max_g,?), first_ts=MIN(first_ts,?), last_ts=MAX(last_ts,?) WHERE id=?", arrayOf(g, ts, ts, sid))
             } catch (e: Exception) { bad++ }
         }
-        return ImportResult(n, skippedIds.size + bad)
+        var dn = 0
+        if (damageText != null && damageText.startsWith("damage_report_id,")) {
+            val dhave = damages().map { it.reportId }.toMutableSet()
+            for (line in damageText.lines().drop(1).map { it.trimEnd('\r') }.filter { it.isNotBlank() }) {
+                try {
+                    val f = splitCsv(line)
+                    if (f.size < 6) { bad++; continue }
+                    val rid = f[0]
+                    if (rid in dhave) { skippedIds.add(rid); continue }
+                    if (rid.length > 40 || !rid.startsWith("BD-") || !rid.all { it.isLetterOrDigit() || it == '-' }) { bad++; continue }
+                    val sid = db.rawQuery("SELECT id FROM spots WHERE report_id=?", arrayOf(f[1])).use { if (it.moveToFirst()) it.getLong(0) else 0L }
+                    val st = if (f[4] in listOf("NONE", "SENT", "QUEUED", "FILED")) f[4] else "NONE"
+                    db.insert("damage", null, ContentValues().apply {
+                        put("report_id", rid); put("hit_id", 0); put("spot_id", sid); put("category", f[2]); put("note", f[5])
+                        put("ts", fmt.parse(f[3])!!.time); put("status", st)
+                    })
+                    dhave.add(rid); dn++
+                } catch (e: Exception) { bad++ }
+            }
+        }
+        return ImportResult(n, skippedIds.size + bad, dn)
+    }
+
+    /** Splits one CSV line, honouring double-quoted fields with doubled quotes. */
+    private fun splitCsv(line: String): List<String> {
+        val out = ArrayList<String>(); val cur = StringBuilder(); var inQ = false; var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            when {
+                inQ && c == '"' && i + 1 < line.length && line[i + 1] == '"' -> { cur.append('"'); i++ }
+                c == '"' -> inQ = !inQ
+                c == ',' && !inQ -> { out.add(cur.toString()); cur.setLength(0) }
+                else -> cur.append(c)
+            }
+            i++
+        }
+        out.add(cur.toString()); return out
     }
 
     fun markFiledByReportId(reportId: String): Boolean {
         val n = writableDatabase.update("spots", ContentValues().apply { put("report_status", "FILED") }, "report_id=?", arrayOf(reportId))
         return n > 0
     }
+    /** Marks a spot fixed. If it had been reported (sent to mail or filed), it also counts as fixed after reporting. */
+    @Synchronized fun markFixed(id: Long, now: Long) {
+        val s = spot(id) ?: return
+        update(id, "review" to "FIXED", "warn" to false, "fixed_ts" to now, "fixed_after_report" to (s.reportStatus != "NONE"))
+    }
+    /** "Still there": the spot is not fixed, so the clean-pass count starts over. */
+    @Synchronized fun resetCleanPasses(id: Long) = update(id, "clean_passes" to 0)
     @Synchronized fun addCleanPass(id: Long) {
         writableDatabase.execSQL("UPDATE spots SET clean_passes=clean_passes+1 WHERE id=?", arrayOf<Any>(id))
     }

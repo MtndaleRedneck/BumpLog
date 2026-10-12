@@ -17,7 +17,7 @@ object Demo {
         add("Example Ave", 26, 0.94f, 38f, DefectType.POTHOLE, 39.5000, -98.3500, "CONFIRMED")
         add("Sample Rd", 31, 0.71f, 41f, DefectType.POTHOLE, 39.5100, -98.3300)
         add("Demo Hwy 1", 48, 1.34f, 55f, DefectType.FAULTING, 39.5300, -98.3700)
-        add("Test Blvd", 70, 0.83f, 29f, DefectType.JOINT, 39.4900, -98.3400)
+        add("Test Blvd", 70, 0.83f, 29f, DefectType.RUMBLE, 39.4900, -98.3400)
         db.addDamage(db.hits(1).first().id, 0, "Tire", "Demo", now)
     }
 }

@@ -137,7 +137,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         val quiet = guess == DefectType.RUMBLE || spot.type == DefectType.RUMBLE
         if (ev.peakG >= Prefs.severeG && !quiet && spot.review != "DISMISSED" && !(spot.typeUser && spot.review == "CONFIRMED")) {
             Notifier.severe(this, spot, true)
-            Sound.play(this, "Major bump detected.", true)
+            Sound.play(this, "Major bump detected.", true, "hit")
         }
     }
 
@@ -181,12 +181,12 @@ class DriveService : Service(), SensorEventListener, LocationListener {
             if (ahead && d <= far && d > near && now - (warned[s.id] ?: 0L) > 120_000) {
                 warned[s.id] = now
                 Notifier.ahead(this, s, (d * Geo.FT_PER_M).toInt(), false)
-                if (Prefs.audioMode == "VOICE" || Prefs.audioMode == "BOTH") Sound.play(this, "Road defect ahead", false)
+                if (Prefs.audioMode == "VOICE" || Prefs.audioMode == "BOTH") Sound.playAhead(this, s, (d * Geo.FT_PER_M).toInt(), false, false)
             }
             if (ahead && d <= near && now - (warnedNear[s.id] ?: 0L) > 60_000) {
                 warnedNear[s.id] = now
                 Notifier.ahead(this, s, (d * Geo.FT_PER_M).toInt(), true)
-                Sound.play(this, "Road defect ahead", true)
+                Sound.playAhead(this, s, (d * Geo.FT_PER_M).toInt(), true, true)
             }
             // Track passes through the 80 ft zone so a spot can be offered as fixed after clean passes.
             // Only at speeds where detection is active, so a slow pass can't count as clean.
@@ -205,7 +205,12 @@ class DriveService : Service(), SensorEventListener, LocationListener {
                     // An avoidance: the heads-up fired for this spot and the driver passed it again, hit or no hit.
                     val alerted = maxOf(warned[id] ?: 0L, warnedNear[id] ?: 0L)
                     if (alerted > 0 && now - alerted < 300_000) db.addSave(id)
-                    if (p.fast && !p.hit) db.addCleanPass(id)
+                    if (p.fast && !p.hit) {
+                        db.addCleanPass(id)
+                        val sp = db.spot(id)
+                        // A spot you reported keeps passing clean: offer to mark it fixed after every 3 clean passes.
+                        if (sp != null && sp.reportStatus != "NONE" && sp.review != "FIXED" && sp.cleanPasses >= 3 && sp.cleanPasses % 3 == 0) Notifier.fixedPrompt(this, sp)
+                    }
                     Live.bump()
                 }
                 it.remove()

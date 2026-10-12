@@ -248,12 +248,12 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
             SmallButton("Mark fixed", Modifier.weight(1f)) { confirmEnd = "FIXED" }
         }
         if (spot.review == "DISMISSED" || spot.review == "FIXED")
-            BigButton("Restore this spot", Icons.Default.Check, filled = false) { db.setReview(spot.id, "PENDING"); db.setWarn(spot.id, spot.severe); Live.bump() }
+            BigButton("Restore this spot", Icons.Default.Check, filled = false) { db.setReview(spot.id, "PENDING"); db.setWarn(spot.id, spot.severe); db.update(spot.id, "fixed_after_report" to false, "fixed_ts" to 0L); Live.bump() }
         confirmEnd?.let { what ->
             AlertDialog(onDismissRequest = { confirmEnd = null },
                 title = { Text(if (what == "FIXED") "Mark as fixed?" else "Dismiss this spot?") },
                 text = { Text("It stops warning you. You can restore it any time from this screen.") },
-                confirmButton = { TextButton({ db.setReview(spot.id, what); db.setWarn(spot.id, false); confirmEnd = null; Live.bump(); back() }) { Text(if (what == "FIXED") "Mark fixed" else "Dismiss") } },
+                confirmButton = { TextButton({ if (what == "FIXED") { db.markFixed(spot.id, System.currentTimeMillis()); Celebrate.trigger() } else { db.setReview(spot.id, what); db.setWarn(spot.id, false) }; confirmEnd = null; Live.bump(); back() }) { Text(if (what == "FIXED") "Mark fixed" else "Dismiss") } },
                 dismissButton = { TextButton({ confirmEnd = null }) { Text("Cancel") } })
         }
         SmallButton("This one got me: damage report", Modifier.fillMaxWidth()) { openDamage(spot.id) }
@@ -390,9 +390,14 @@ fun ScorecardScreen(tick: Int, back: () -> Unit, openSpot: (Long) -> Unit) {
             Card(Modifier.weight(1f)) { Muted("REPORTS LOGGED", 12); Txt("${s.logged}", 34, FontWeight.Bold) }
             Card(Modifier.weight(1f)) { Muted("REPORTS FILED", 12); Txt("${s.filed}", 34, FontWeight.Bold, p.accent) }
         }
+        Card(pad = 16.dp) {
+            Muted("FIXED AFTER YOU REPORTED", 12)
+            Txt("${s.fixedAfterReport}", 34, FontWeight.Bold, p.green)
+            Muted("Reported spots you later marked fixed. Marking a spot fixed is your call, so this shows a repair followed your report, not that it caused it.", 12)
+        }
         Card { Muted("Sent to your mail app", 13); Txt("${s.sent}", 24, FontWeight.Bold); Muted("Filed counts only after your assistant confirms it. ${s.warned} spot(s) are being warned about right now.", 12) }
         big?.let { (h, sp) ->
-            val what = if (!sp.typeUser) "road defect" else when (sp.type) { DefectType.POTHOLE -> "pothole"; DefectType.FAULTING -> "bump"; DefectType.JOINT -> "joint"; DefectType.RUMBLE -> "rough road" }
+            val what = if (!sp.typeUser) "road defect" else sp.type.spoken
             Card(Modifier.clickable { openSpot(sp.id) }, pad = 16.dp) {
                 Muted("LARGEST JOLT", 12)
                 Txt("%.2fg".format(h.peakG), 34, FontWeight.Bold, p.accent)
@@ -402,15 +407,14 @@ fun ScorecardScreen(tick: Int, back: () -> Unit, openSpot: (Long) -> Unit) {
         if (byType.isNotEmpty()) Card {
             Txt("Avoided", 18, FontWeight.Bold)
             byType.sortedByDescending { it.second }.forEach { (t, n) ->
-                val name = when (t) { DefectType.POTHOLE -> "Potholes avoided"; DefectType.FAULTING -> "Bumps avoided"; DefectType.JOINT -> "Joints avoided"
-                    DefectType.RUMBLE -> "Rough stretches avoided"; null -> "Other (type not confirmed)" }
+                val name = t?.avoidedName ?: "Other (type not confirmed)"
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp)) { Txt(name, 16, modifier = Modifier.weight(1f)); Txt("$n", 16, FontWeight.Bold) }
             }
         }
         if (top.isNotEmpty()) {
             Txt("Most avoided", 20, FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
             top.forEach { sp ->
-                val what = if (!sp.typeUser) "road defect" else when (sp.type) { DefectType.POTHOLE -> "pothole"; DefectType.FAULTING -> "bump"; DefectType.JOINT -> "joint"; DefectType.RUMBLE -> "rough road" }
+                val what = if (!sp.typeUser) "road defect" else sp.type.spoken
                 Card(pad = 14.dp) { Row(verticalAlignment = Alignment.CenterVertically) {
                     Txt("Most avoided $what", 16, modifier = Modifier.weight(1f))
                     Txt(if (sp.saves == 1) "1 time" else "${sp.saves} times", 16, FontWeight.Bold, p.green)
