@@ -78,6 +78,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         }
         autoStarted = i?.getBooleanExtra("auto", false) == true
         driveId = System.currentTimeMillis()
+        Prefs.lastDriveId = driveId
         lastMoveMs = driveId
         Live.update { LiveState(running = true, paused = Prefs.passenger, driveId = driveId, tick = it.tick + 1) }
         ServiceCompat.startForeground(this, Notifier.ID_FOREGROUND, Notifier.foreground(this, Live.state.value),
