@@ -208,8 +208,8 @@ class DriveService : Service(), SensorEventListener, LocationListener {
                     if (p.fast && !p.hit) {
                         db.addCleanPass(id)
                         val sp = db.spot(id)
-                        // A spot you reported keeps passing clean: offer to mark it fixed after every 3 clean passes.
-                        if (sp != null && sp.reportStatus != "NONE" && sp.review != "FIXED" && sp.cleanPasses >= 3 && sp.cleanPasses % 3 == 0) Notifier.fixedPrompt(this, sp)
+                        // A spot you reported keeps passing clean: offer to mark it fixed after every 2 clean passes.
+                        if (sp != null && sp.reportStatus != "NONE" && sp.review != "FIXED" && sp.cleanPasses >= 2 && sp.cleanPasses % 2 == 0) Notifier.fixedPrompt(this, sp)
                     }
                     Live.bump()
                 }

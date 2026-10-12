@@ -55,33 +55,68 @@ object Prefs {
         java.io.File(ctx.filesDir, "voice").deleteRecursively()
     }
 
-    /** Every setting as typed JSON, for the backup file. Drafts are left out. */
+    /** Every restorable setting as typed JSON, for the backup file. Drafts, ride-only state and permission-bound switches are left out. */
     fun dumpAll(): org.json.JSONObject {
         val o = org.json.JSONObject()
         for ((k, v) in sp.all) {
-            if (k.startsWith("logdraft_")) continue
             val t = when (v) { is Boolean -> "b"; is Int -> "i"; is Long -> "l"; is Float -> "f"; is String -> "s"; else -> continue }
-            o.put(k, org.json.JSONObject().put("t", t).put("v", if (v is Float) v.toDouble() else v))
+            if (k in SETTING_KEYS || (k.startsWith("filedref_") && v is String)) o.put(k, org.json.JSONObject().put("t", t).put("v", if (v is Float) v.toDouble() else v))
         }
         return o
     }
 
-    /** Applies settings from [dumpAll]. Unknown or malformed entries are skipped. Returns how many were applied. */
+    private val SETTING_KEYS = setOf("detection", "cutoff", "severe", "minspeed", "theme", "accent", "assistant", "addr_instinct", "addr_tab", "addr_custom",
+        "setup_done", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "voice_style", "hit_timeout", "lock_buttons")
+
+    /** Checks one restored value against the type and range its setting expects. Returns the clean value or null to skip it. */
+    private fun checked(k: String, t: String, x: org.json.JSONObject): Any? {
+        fun str(max: Int = 200): String? = if (t == "s") x.getString("v").takeIf { it.length <= max && it.none { c -> c.isISOControl() } } else null
+        fun int(lo: Int, hi: Int): Int? = if (t == "i") x.getInt("v").takeIf { it in lo..hi } else null
+        fun flt(lo: Float, hi: Float): Float? = if (t == "f") x.getDouble("v").toFloat().takeIf { it.isFinite() && it in lo..hi } else null
+        return when (k) {
+            "detection", "setup_done", "autostart", "lock_buttons" -> if (t == "b") x.getBoolean("v") else null
+            "cutoff" -> flt(0.1f, 5f); "severe" -> flt(0.1f, 10f)
+            "minspeed" -> int(0, 100); "accent" -> int(0, Swatches.lastIndex)
+            "warn_far" -> int(100, 10560); "warn_near" -> int(50, 5280)
+            "hit_timeout" -> int(0, 30)?.takeIf { it in listOf(0, 10, 20, 30) }
+            "theme" -> str(10)?.takeIf { it in listOf("DARK", "LIGHT", "SYSTEM") }
+            "assistant" -> str(10)?.takeIf { it in listOf("INSTINCT", "TAB", "CUSTOM") }
+            "audio_mode" -> str(10)?.takeIf { it in listOf("BOTH", "TONE", "VOICE", "OFF") }
+            "tone" -> str(10)?.takeIf { it in listOf("CHIME", "ALARM", "BEEP", "DOUBLE") }
+            "voice_style" -> str(10)?.takeIf { it in listOf("PLAIN", "MAPS", "WAZE") }
+            "voice" -> str(200)
+            "car_addr", "car_name" -> str(64)
+            "addr_instinct", "addr_tab", "addr_custom" -> str(254)?.let { cleanEmail(it) }?.takeIf { it.isEmpty() || isValidEmail(it) }
+            else -> null
+        }
+    }
+
+    /**
+     * Applies settings from [dumpAll]. Only known settings with the right type and a sane value are applied; anything else
+     * is skipped, so a damaged or hand-edited file cannot break the app. A saved filed reference is only restored where
+     * none exists yet. Returns how many were applied.
+     */
     fun restoreAll(o: org.json.JSONObject): Int {
         val e = sp.edit(); var n = 0
         for (k in o.keys()) {
             try {
-                if (k.startsWith("logdraft_")) continue
-                val x = o.getJSONObject(k)
-                when (x.getString("t")) {
-                    "b" -> e.putBoolean(k, x.getBoolean("v")); "i" -> e.putInt(k, x.getInt("v")); "l" -> e.putLong(k, x.getLong("v"))
-                    "f" -> e.putFloat(k, x.getDouble("v").toFloat()); "s" -> e.putString(k, x.getString("v")); else -> continue
+                val x = o.getJSONObject(k); val t = x.getString("t")
+                if (k.startsWith("filedref_")) {
+                    val id = k.removePrefix("filedref_")
+                    val v = if (t == "s") x.getString("v") else continue
+                    if (id.length in 4..40 && id.all { it.isLetterOrDigit() || it == '-' } && v.length <= 64 && v.none { it.isISOControl() } && !sp.contains(k)) { e.putString(k, v); n++ }
+                    continue
+                }
+                if (k !in SETTING_KEYS) continue
+                when (val v = checked(k, t, x) ?: continue) {
+                    is Boolean -> e.putBoolean(k, v); is Int -> e.putInt(k, v); is Float -> e.putFloat(k, v); is String -> e.putString(k, v)
                 }
                 n++
             } catch (ex: Exception) { }
         }
         e.apply(); return n
     }
+
     var activeAddress: String
         get() = rawAddress().let { if (isValidEmail(it)) it else "" }
         set(v) = when (assistant) { "TAB" -> addrTab = v; "CUSTOM" -> addrCustom = v; else -> addrInstinct = v }
