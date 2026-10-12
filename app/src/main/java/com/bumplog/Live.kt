@@ -23,3 +23,9 @@ object Live {
     fun update(f: (LiveState) -> LiveState) { _s.value = f(_s.value) }
     fun bump() = update { it.copy(tick = it.tick + 1) }
 }
+
+/** Which drive the Home hit counter refers to: the live drive while running, else the last one (0 = none). */
+fun homeDriveId(running: Boolean, liveDriveId: Long, lastDriveId: Long): Long =
+    if (running) liveDriveId else lastDriveId
+
+fun homeDriveLabel(running: Boolean): String = if (running) "HITS THIS DRIVE" else "HITS LAST DRIVE"
