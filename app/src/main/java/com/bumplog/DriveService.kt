@@ -251,6 +251,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         const val ACTION_CAR_GONE = "com.bumplog.CAR_GONE"
 
         fun start(ctx: Context) {
+            if (!Prefs.detectionEnabled) return // the Bump Detection switch is a full stop
             ctx.startForegroundService(Intent(ctx, DriveService::class.java).setAction(ACTION_START))
         }
     }

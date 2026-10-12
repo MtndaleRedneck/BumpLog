@@ -17,6 +17,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -82,9 +84,18 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ScreenTitle("BumpLog")
+        val detOn = Prefs.detectionEnabled
+        DetectionCard(detOn) {
+            Prefs.detectionEnabled = !detOn
+            // Off is a full stop: end an active drive so GPS, sensors and the status notification shut down too.
+            if (detOn && live.running) ctx.startService(Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_STOP))
+            Live.bump()
+        }
+        Box {
+        Column(Modifier.alpha(if (detOn) 1f else 0.35f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val isPassenger = Prefs.passenger || live.paused
         Row(Modifier.fillMaxWidth().height(76.dp).clip(RoundedCornerShape(20.dp)).background(p.card), verticalAlignment = Alignment.CenterVertically) {
-            listOf(false to "DRIVER" to "Logging hits", true to "PASSENGER" to "Not logging").forEach { (k, sub) ->
+            listOf(false to "DRIVER" to "Logging hits", true to "PASSENGER" to "Not logging this drive").forEach { (k, sub) ->
                 val (mode, title) = k
                 val on = isPassenger == mode
                 Column(
@@ -130,6 +141,32 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
         if (recent.isEmpty()) Muted("Nothing yet. Start a drive and hits show up here.", 14, Modifier.padding(start = 4.dp))
         recent.forEach { SpotRow(it) { openSpot(it.id) } }
         Spacer(Modifier.height(8.dp))
+        }
+        if (!detOn) Box(Modifier.matchParentSize().pointerInput(Unit) { awaitPointerEventScope { while (true) { awaitPointerEvent().changes.forEach { it.consume() } } } })
+        }
+    }
+}
+
+val PowerOrange = Color(0xFFFF8A1F)
+
+@Composable
+fun DetectionCard(on: Boolean, toggle: () -> Unit) {
+    val p = LocalPal.current
+    Column(
+        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(p.card).clickable(onClick = toggle).padding(vertical = 18.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val c = if (on) PowerOrange else PowerOrange.copy(alpha = 0.45f)
+        androidx.compose.foundation.Canvas(Modifier.size(56.dp)) {
+            val w = size.width * 0.09f
+            val pad = size.width * 0.16f
+            val d = size.width - 2 * pad
+            drawArc(c, -60f, 300f, false, androidx.compose.ui.geometry.Offset(pad, pad + size.width * 0.04f), androidx.compose.ui.geometry.Size(d, d), style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            drawLine(c, androidx.compose.ui.geometry.Offset(size.width / 2, size.width * 0.08f), androidx.compose.ui.geometry.Offset(size.width / 2, size.width * 0.5f), w, androidx.compose.ui.graphics.StrokeCap.Round)
+        }
+        Spacer(Modifier.height(8.dp))
+        Txt("Bump Detection", 20, FontWeight.Bold)
+        Muted(if (on) "On" else "Off until you turn it back on", 14)
     }
 }
 
@@ -393,9 +430,8 @@ fun ScorecardScreen(tick: Int, back: () -> Unit, openSpot: (Long) -> Unit) {
         Card(pad = 16.dp) {
             Muted("FIXED AFTER YOU REPORTED", 12)
             Txt("${s.fixedAfterReport}", 34, FontWeight.Bold, p.green)
-            Muted("Reported spots you later marked fixed. Marking a spot fixed is your call, so this shows a repair followed your report, not that it caused it.", 12)
+            Muted("Spots you reported that were later marked fixed.", 12)
         }
-        Card { Muted("Sent to your mail app", 13); Txt("${s.sent}", 24, FontWeight.Bold); Muted("Filed counts only after your assistant confirms it. ${s.warned} spot(s) are being warned about right now.", 12) }
         big?.let { (h, sp) ->
             val what = if (!sp.typeUser) "road defect" else sp.type.spoken
             Card(Modifier.clickable { openSpot(sp.id) }, pad = 16.dp) {

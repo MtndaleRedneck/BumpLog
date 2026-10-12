@@ -22,6 +22,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -125,6 +128,10 @@ class MainActivity : ComponentActivity() {
         }
         if (i.getBooleanExtra("start", false)) startDetection()
         if (BuildConfig.DEBUG && i.getBooleanExtra("demo", false)) { Demo.seed(this); Live.bump() }
+        // Debug builds only, for the CI screenshot run: pick the voice source and trigger the celebration.
+        if (BuildConfig.DEBUG && i.hasExtra("setvoice")) { Prefs.voice = i.getStringExtra("setvoice").orEmpty(); Live.bump() }
+        if (BuildConfig.DEBUG && i.getBooleanExtra("celebrate", false)) Celebrate.trigger()
+        if (BuildConfig.DEBUG && i.hasExtra("detoff")) { Prefs.detectionEnabled = !i.getBooleanExtra("detoff", false); Live.bump() }
         // bumplog://setup?assistant=instinct&email=...  and  bumplog://filed?id=BL-...
         // Links never change state on their own. They open a confirmation the user must accept.
         i.data?.let { u ->
@@ -153,6 +160,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun startDetection() {
+        if (!Prefs.detectionEnabled) return
         if (!permsOk) { askPerms(); return }
         try { DriveService.start(this) } catch (e: Exception) { toast(this, "Could not start: ${e.message}") }
     }
@@ -161,6 +169,7 @@ class MainActivity : ComponentActivity() {
     private fun Root(live: LiveState) {
         val p = LocalPal.current
         val top = stack.lastOrNull()
+        LaunchedEffect(Prefs.detectionEnabled, top) { if (!Prefs.detectionEnabled) { tab = "home"; if (top != null) stack = emptyList() } }
         BackHandler(top != null) { stack = stack.dropLast(1) }
         confirmFixed?.let { id ->
             val sp = remember(id) { Db.get(this@MainActivity).spot(id) }
@@ -220,7 +229,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            if (top == null || top is Screen.Spot) Row(Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp)) {
+            val detOn = Prefs.detectionEnabled
+            if (top == null || top is Screen.Spot) Row(Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp)
+                .alpha(if (detOn) 1f else 0.35f)
+                .pointerInput(detOn) { if (!detOn) awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } } }) {
                 NavItem("Home", Icons.Default.Home, tab == "home" && top == null, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
                 NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
                 NavItem("Settings", Icons.Default.Settings, tab == "settings" && top == null, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }

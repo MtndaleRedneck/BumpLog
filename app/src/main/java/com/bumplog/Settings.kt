@@ -58,7 +58,6 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
     // Local copies so the screen redraws as values change.
-    var detection by remember { mutableStateOf(Prefs.detectionEnabled) }
     var cutoff by remember { mutableStateOf(Prefs.cutoffG) }
     var severe by remember { mutableStateOf(Prefs.severeG) }
     var minSpeed by remember { mutableStateOf(Prefs.minSpeedMph) }
@@ -101,7 +100,10 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
             Txt("Accent", 16, color = p.muted)
             Spacer(Modifier.height(8.dp))
             val rows = Swatches.chunked(5)
-            rows.forEachIndexed { r, row ->
+            // Muted row (the last chunk) is shown first; indices stay the same so saved choices keep their colour.
+            val order = listOf(rows.lastIndex) + (0 until rows.lastIndex)
+            order.forEach { r ->
+                val row = rows[r]
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     row.forEachIndexed { c, col ->
                         val idx = r * 5 + c
@@ -114,7 +116,6 @@ fun SettingsScreen(tick: Int, askPerms: () -> Unit) {
         }
 
 
-        Toggle("Detection", detection, "Master switch for logging hits") { detection = it; Prefs.detectionEnabled = it }
 
         SettingsCard {
             Row { Txt("Sensitivity", 18, FontWeight.Bold, modifier = Modifier.weight(1f)); Txt("%.2fg".format(cutoff), 18, FontWeight.Bold, p.accent) }
