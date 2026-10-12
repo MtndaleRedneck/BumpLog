@@ -74,7 +74,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     val ctx = LocalContext.current
     var recent by remember { mutableStateOf(listOf<Spot>()) }
     var today by remember { mutableStateOf(0) }
-    LoadingSpots(live.tick) { db -> recent = db.allSpots().take(6); val id = if (live.running) live.driveId else Prefs.lastDriveId; today = if (id > 0) db.hitsInDrive(id) else 0 }
+    LoadingSpots(live.tick) { db -> recent = db.allSpots().take(6); val id = homeDriveId(live.running, live.driveId, Prefs.lastDriveId); today = if (id > 0) db.hitsInDrive(id) else 0 }
     val status = when {
         !Prefs.detectionEnabled -> "Detection off" to p.muted
         !live.running -> "Not driving" to p.muted
@@ -128,7 +128,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Card(Modifier.weight(1f)) { Muted("SPEED", 13); Row(verticalAlignment = Alignment.Bottom) { Txt("${live.speedMph.toInt()}", 38, FontWeight.Bold); Spacer(Modifier.width(6.dp)); Muted("mph", 16, Modifier.padding(bottom = 6.dp)) } }
-            Card(Modifier.weight(1f)) { Muted(if (live.running) "HITS THIS DRIVE" else "HITS LAST DRIVE", 13); Txt("$today", 38, FontWeight.Bold) }
+            Card(Modifier.weight(1f)) { Muted(homeDriveLabel(live.running), 13); Txt("$today", 38, FontWeight.Bold) }
         }
         Card(pad = 8.dp) { Wave(live.wave, Modifier.fillMaxWidth().height(90.dp).padding(8.dp), dim = live.running && live.speedMph > 5) }
         SmallButton(if (live.running) "Stop" else "Start", Modifier.fillMaxWidth().height(60.dp), outline = true, onClick = startStop)
