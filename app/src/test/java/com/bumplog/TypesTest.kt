@@ -3,6 +3,7 @@ package com.bumplog
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import androidx.compose.ui.graphics.toArgb
 import org.junit.Test
 
 class TypesTest {
@@ -27,5 +28,13 @@ class TypesTest {
         assertTrue(Prefs.isValidEmail(" a@b.com "))
         assertFalse(Prefs.isValidEmail("a b@c.com"))
         assertFalse(Prefs.isValidEmail("a@b.com, c@d.com"))
+    }
+}
+
+class AppearanceTest {
+    @Test fun sageIsTheLastSwatchAndTheDefault() {
+        // 0xFF6F9C7E is the muted sage; it must stay the last swatch so the default index (lastIndex) points at it.
+        assertEquals(0xFF6F9C7EL.toInt(), Swatches.last().toArgb())
+        assertEquals(15, Swatches.size)
     }
 }

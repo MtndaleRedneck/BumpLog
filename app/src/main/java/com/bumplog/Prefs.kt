@@ -27,7 +27,7 @@ object Prefs {
     var severeG: Float get() = f("severe", 1.30f); set(v) = sp.edit().putFloat("severe", v).apply()
     var minSpeedMph: Int get() = i("minspeed", 15); set(v) = sp.edit().putInt("minspeed", v).apply()
     var theme: String get() = s("theme", "DARK"); set(v) = sp.edit().putString("theme", v).apply()
-    var accent: Int get() = i("accent", 0); set(v) = sp.edit().putInt("accent", v).apply()
+    var accent: Int get() = i("accent", Swatches.lastIndex); set(v) = sp.edit().putInt("accent", v).apply()
 
     /** Draft of the log form: "TYPE|confirmed|SEVERITY|fileTrip", kept so leaving the screen does not lose it. */
     fun logDraft(spotId: Long): String = s("logdraft_$spotId", "")
