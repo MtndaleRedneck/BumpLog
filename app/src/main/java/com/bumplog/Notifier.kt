@@ -91,7 +91,7 @@ object Notifier {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         val b = NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Major bump detected.")
+            .setContentTitle("Bump detected.")
             .setContentText("%.2fg near ${s.title}".format(s.maxG))
             .setPriority(NotificationCompat.PRIORITY_MAX).setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true).setContentIntent(openApp(ctx, s.id)).setColor(0xFFFF5228.toInt())
