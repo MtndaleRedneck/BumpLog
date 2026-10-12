@@ -2,6 +2,7 @@ package com.bumplog
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.compose.ui.graphics.toArgb
 
 /** All settings live in one SharedPreferences file on the phone. Nothing is synced anywhere. */
 object Prefs {
@@ -27,7 +28,18 @@ object Prefs {
     var severeG: Float get() = f("severe", 1.30f); set(v) = sp.edit().putFloat("severe", v).apply()
     var minSpeedMph: Int get() = i("minspeed", 15); set(v) = sp.edit().putInt("minspeed", v).apply()
     var theme: String get() = s("theme", "DARK"); set(v) = sp.edit().putString("theme", v).apply()
-    var accent: Int get() = i("accent", Swatches.lastIndex); set(v) = sp.edit().putInt("accent", v).apply()
+    /**
+     * The accent as a position in [Swatches]. It is saved as the colour (key "accent_rgb"), not the position, so the picker order can change.
+     * An old position-based "accent" is converted once, using the frozen older list.
+     */
+    var accent: Int
+        get() {
+            if (!sp.contains("accent_rgb") && sp.contains("accent")) {
+                sp.edit().putInt("accent_rgb", AccentStore.resolve(null, sp.getInt("accent", -1))).remove("accent").apply()
+            }
+            return AccentStore.indexOf(AccentStore.resolve(if (sp.contains("accent_rgb")) sp.getInt("accent_rgb", 0) else null, null))
+        }
+        set(v) = sp.edit().putInt("accent_rgb", Swatches[v.coerceIn(0, Swatches.lastIndex)].toArgb()).remove("accent").apply()
 
     /** Draft of the log form: "TYPE|confirmed|SEVERITY|fileTrip", kept so leaving the screen does not lose it. */
     fun logDraft(spotId: Long): String = s("logdraft_$spotId", "")
@@ -65,8 +77,8 @@ object Prefs {
         return o
     }
 
-    private val SETTING_KEYS = setOf("detection", "cutoff", "severe", "minspeed", "theme", "accent", "assistant", "addr_instinct", "addr_tab", "addr_custom",
-        "setup_done", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "voice_style", "hit_timeout", "lock_buttons")
+    private val SETTING_KEYS = setOf("detection", "cutoff", "severe", "minspeed", "theme", "accent_rgb", "accent", "assistant", "addr_instinct", "addr_tab", "addr_custom",
+        "setup_done", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons")
 
     /** Checks one restored value against the type and range its setting expects. Returns the clean value or null to skip it. */
     private fun checked(k: String, t: String, x: org.json.JSONObject): Any? {
@@ -76,14 +88,15 @@ object Prefs {
         return when (k) {
             "detection", "setup_done", "autostart", "lock_buttons" -> if (t == "b") x.getBoolean("v") else null
             "cutoff" -> flt(0.1f, 5f); "severe" -> flt(0.1f, 10f)
-            "minspeed" -> int(0, 100); "accent" -> int(0, Swatches.lastIndex)
+            "minspeed" -> int(0, 100)
+            "accent_rgb" -> if (t == "i") AccentStore.resolve(x.getInt("v"), null).takeIf { it == x.getInt("v") } else null
+            "accent" -> int(0, LegacySwatchArgb.lastIndex)?.let { AccentStore.resolve(null, it) }
             "warn_far" -> int(100, 10560); "warn_near" -> int(50, 5280)
             "hit_timeout" -> int(0, 30)?.takeIf { it in listOf(0, 10, 20, 30) }
             "theme" -> str(10)?.takeIf { it in listOf("DARK", "LIGHT", "SYSTEM") }
             "assistant" -> str(10)?.takeIf { it in listOf("INSTINCT", "TAB", "CUSTOM") }
             "audio_mode" -> str(10)?.takeIf { it in listOf("BOTH", "TONE", "VOICE", "OFF") }
             "tone" -> str(10)?.takeIf { it in listOf("CHIME", "ALARM", "BEEP", "DOUBLE") }
-            "voice_style" -> str(10)?.takeIf { it in listOf("PLAIN", "MAPS", "WAZE") }
             "voice" -> str(200)
             "car_addr", "car_name" -> str(64)
             "addr_instinct", "addr_tab", "addr_custom" -> str(254)?.let { cleanEmail(it) }?.takeIf { it.isEmpty() || isValidEmail(it) }
@@ -108,9 +121,13 @@ object Prefs {
                     continue
                 }
                 if (k !in SETTING_KEYS) continue
+                if (k == "accent" && o.has("accent_rgb")) continue
+                // An old backup holds the accent as a position; it is converted to the colour and saved under the colour key.
+                val dest = if (k == "accent") "accent_rgb" else k
                 when (val v = checked(k, t, x) ?: continue) {
-                    is Boolean -> e.putBoolean(k, v); is Int -> e.putInt(k, v); is Float -> e.putFloat(k, v); is String -> e.putString(k, v)
+                    is Boolean -> e.putBoolean(dest, v); is Int -> e.putInt(dest, v); is Float -> e.putFloat(dest, v); is String -> e.putString(dest, v)
                 }
+                if (dest == "accent_rgb") e.remove("accent")
                 n++
             } catch (ex: Exception) { }
         }
@@ -130,8 +147,6 @@ object Prefs {
     var warnNearFt: Int get() = i("warn_near", 600); set(v) = sp.edit().putInt("warn_near", v).apply()
     var audioMode: String get() = s("audio_mode", "BOTH"); set(v) = sp.edit().putString("audio_mode", v).apply()
     var tone: String get() = s("tone", "CHIME"); set(v) = sp.edit().putString("tone", v).apply()
-    /** How spoken alerts are phrased: PLAIN ("Major pothole ahead"), MAPS (distance first) or WAZE (short and casual). */
-    var voiceStyle: String get() = s("voice_style", "PLAIN"); set(v) = sp.edit().putString("voice_style", v).apply()
     var voice: String get() = s("voice", ""); set(v) = sp.edit().putString("voice", v).apply()
     var overlay: Boolean get() = b("overlay", false); set(v) = sp.edit().putBoolean("overlay", v).apply()
     /** Seconds before a major-hit alert dismisses itself: 10, 20, 30, or 0 for never. Default 20. */

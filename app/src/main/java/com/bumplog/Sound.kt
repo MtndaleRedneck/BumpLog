@@ -51,6 +51,9 @@ object Sound {
         return one.mapIndexed { i, v -> v.name to "Voice ${i + 1}" }
     }
 
+    /** Speaker key of the phone's default voice, or null when it can't be read. Used to hide a "Phone default" row that would duplicate a listed voice. */
+    fun defaultSpeakerKey(): String? = try { tts?.defaultVoice?.name?.let { speakerKey(it) } } catch (e: Exception) { null }
+
     /** Speaks a sample in one voice ("" = phone default), whatever the Sound setting is. */
     fun previewVoice(ctx: Context, voiceName: String) {
         if (voiceName == CUSTOM) { if (!playClip(ctx, "generic")) { init(ctx); tts?.takeIf { ttsReady }?.let { applyVoice(it, ""); it.speak(phraseFor(null, 0, true), TextToSpeech.QUEUE_FLUSH, null, "bumplog-preview") } }; return }
@@ -90,16 +93,10 @@ object Sound {
     fun clipFile(ctx: Context, key: String) = java.io.File(java.io.File(ctx.filesDir, "voice").apply { mkdirs() }, "$key.clip")
     fun hasClip(ctx: Context, key: String) = clipFile(ctx, key).let { it.isFile && it.length() > 0 }
 
-    /** Words for a heads-up, in the chosen style. A spot whose type is only a guess stays generic. */
+    /** Words for a heads-up. A spot whose type is only a guess stays generic. */
     fun phraseFor(s: Spot?, feet: Int, final: Boolean): String {
         val name = if (s == null) "Road defect ahead" else Notifier.aheadName(s)
-        val low = name.replaceFirstChar { it.lowercase() }
-        val dist = if (feet >= 1000) "in a quarter mile" else "in ${feet / 50 * 50} feet"
-        return when (Prefs.voiceStyle) {
-            "MAPS" -> if (final || feet <= 0) "$name." else "${dist.replaceFirstChar { it.uppercase() }}, $low."
-            "WAZE" -> if (final || feet <= 0) "$name, right ahead." else "Heads up, $low."
-            else -> "$name."
-        }
+        return "$name."
     }
 
     private var clipPlayer: android.media.MediaPlayer? = null
@@ -131,6 +128,9 @@ object Sound {
             r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
             r.setAudioEncodingBitRate(64000); r.setAudioSamplingRate(44100)
             r.setMaxDuration(8000)
+            r.setOnInfoListener { _, what, _ ->
+                if (what == android.media.MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) android.os.Handler(android.os.Looper.getMainLooper()).post { stopRecording(true); onRecordingEnded?.invoke() }
+            }
             // Records to a temp file; the old clip is only replaced once a new recording finished properly.
             val tmp = File(clipFile(ctx, key).path + ".tmp")
             tmp.delete()
@@ -141,7 +141,11 @@ object Sound {
 
     private var recordingCtx: Context? = null
 
-    fun stopRecording() {
+    /** Called on the main thread when a recording ends by itself (the 8 second limit). */
+    var onRecordingEnded: (() -> Unit)? = null
+
+    /** Stops the recorder and releases the mic. [save] false throws the take away (screen left, app backgrounded). */
+    fun stopRecording(save: Boolean = true) {
         val r = recorder ?: return
         val key = recordingKey; val ctx = recordingCtx
         var ok = true
@@ -150,7 +154,7 @@ object Sound {
         recorder = null; recordingKey = null
         if (key != null && ctx != null) {
             val tmp = File(clipFile(ctx, key).path + ".tmp")
-            if (tmp.length() > (if (ok) 0 else 2000)) tmp.copyTo(clipFile(ctx, key), overwrite = true)
+            if (save && tmp.length() > (if (ok) 0 else 2000)) tmp.copyTo(clipFile(ctx, key), overwrite = true)
             tmp.delete()
         }
     }
@@ -207,5 +211,8 @@ object Sound {
     }
 }
 
-/** Voice names look like "en-us-x-tpd-local"; the speaker is everything before the local/network/embedded suffix. */
+/**
+ * Voice names look like "en-us-x-tpd-local" or "en-us-x-sfg#female_1-network". The speaker is the part before any "#" variant
+ * and before the local/network/embedded suffix, so all the entries for one speaker share a key.
+ */
 fun speakerKey(name: String) = name.lowercase().replace(Regex("[-_](local|network|embedded)(-.*)?$"), "")
