@@ -203,7 +203,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                 val lat = num(c[5]); val lon = num(c[6])
                 val hd = num(c[7]); val spd = num(c[8])
                 if (lat !in -90.0..90.0 || lon !in -180.0..180.0 || hd !in 0.0..360.0 || spd !in 0.0..300.0) { bad++; continue }
-                val type = try { DefectType.valueOf(c[3]) } catch (e: Exception) { DefectType.POTHOLE }
+                val type = DefectType.parse(c[3]) // old JOINT rows read as Rough stretch
                 val g = num(c[9]).toFloat(); if (g !in 0f..50f) { bad++; continue };  val rv = if (c[1] in listOf("PENDING", "CONFIRMED", "DISMISSED", "FIXED")) c[1] else "PENDING"
                 var sid = made[c[0]]
                 if (sid == null) {

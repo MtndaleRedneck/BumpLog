@@ -368,11 +368,14 @@ private fun VoiceRecorder() {
         val k = importKey; importKey = null
         if (uri != null && k != null) runIo(ctx) {
             val f = Sound.clipFile(ctx, k)
+            val tmp = java.io.File(f.path + ".tmp")
             val n = ctx.contentResolver.openInputStream(uri)?.use { i ->
                 val b = i.readNBytes(5_000_001)
-                if (b.size > 5_000_000) -1 else { f.writeBytes(b); b.size }
+                if (b.size > 5_000_000) -1 else { tmp.writeBytes(b); b.size }
             } ?: -1
-            if (n <= 0) { f.delete(); "That audio file is empty or over 5 MB." } else "Imported."
+            if (n > 0) tmp.copyTo(f, overwrite = true)
+            tmp.delete()
+            if (n <= 0) "That audio file is empty or over 5 MB, so your existing recording was kept." else "Imported."
         }
     }
     Muted("Record your own voice for each alert, or import an audio file. Anything you leave empty uses the phone voice. Recordings stay on this phone.", 12)

@@ -12,6 +12,7 @@ import android.speech.tts.Voice
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import java.io.File
 import java.util.Locale
 
 /** Audio alerts: a tone, a spoken phrase, or both, depending on settings. Plays as navigation guidance so it sits over music. */
@@ -128,16 +129,28 @@ object Sound {
             r.setAudioEncoder(android.media.MediaRecorder.AudioEncoder.AAC)
             r.setAudioEncodingBitRate(64000); r.setAudioSamplingRate(44100)
             r.setMaxDuration(8000)
-            r.setOutputFile(clipFile(ctx, key).absolutePath)
-            r.prepare(); r.start(); recorder = r; recordingKey = key; true
-        } catch (e: Exception) { try { clipFile(ctx, key).delete() } catch (x: Exception) { }; recorder = null; recordingKey = null; false }
+            // Records to a temp file; the old clip is only replaced once a new recording finished properly.
+            val tmp = File(clipFile(ctx, key).path + ".tmp")
+            tmp.delete()
+            r.setOutputFile(tmp.absolutePath)
+            r.prepare(); r.start(); recorder = r; recordingKey = key; recordingCtx = ctx.applicationContext; true
+        } catch (e: Exception) { try { File(clipFile(ctx, key).path + ".tmp").delete() } catch (x: Exception) { }; recorder = null; recordingKey = null; false }
     }
+
+    private var recordingCtx: Context? = null
 
     fun stopRecording() {
         val r = recorder ?: return
-        try { r.stop() } catch (e: Exception) { }
+        val key = recordingKey; val ctx = recordingCtx
+        var ok = true
+        try { r.stop() } catch (e: Exception) { ok = false }
         try { r.release() } catch (e: Exception) { }
         recorder = null; recordingKey = null
+        if (key != null && ctx != null) {
+            val tmp = File(clipFile(ctx, key).path + ".tmp")
+            if (tmp.length() > (if (ok) 0 else 2000)) tmp.copyTo(clipFile(ctx, key), overwrite = true)
+            tmp.delete()
+        }
     }
 
     /** Speaks or plays the heads-up for [s] (null = the generic one) per the Sound setting and chosen voice. */

@@ -46,6 +46,7 @@ class MainActivity : ComponentActivity() {
     private var tab by mutableStateOf("home")
     private var stack by mutableStateOf(listOf<Screen>())
     private var pendingLink by mutableStateOf<PendingLink?>(null)
+    private var confirmFixed by mutableStateOf<Long?>(null)
     private var permsOk by mutableStateOf(false)
 
     private val askBg = registerForActivityResult(ActivityResultContracts.RequestPermission()) { refreshPerms() }
@@ -104,9 +105,9 @@ class MainActivity : ComponentActivity() {
             "damage" -> stack = listOf(Screen.Damage(0))
             "spot" -> stack = listOf(Screen.Spot(spot))
             "markfixed" -> {
-                // From the "may be fixed" prompt. Only acts on a spot that is still open, so a repeat tap does nothing.
+                // Opened from the "may be fixed" prompt, but any app can send this, so it only asks. Nothing changes until the user confirms in the app.
                 val s = Db.get(this).spot(spot)
-                if (s != null && s.review != "FIXED") { Db.get(this).markFixed(spot, System.currentTimeMillis()); Notifier.cancel(this, 3000 + spot.toInt()); Celebrate.trigger(); Live.bump() }
+                if (s != null && s.review != "FIXED") confirmFixed = spot
                 stack = emptyList()
             }
         }
@@ -161,6 +162,17 @@ class MainActivity : ComponentActivity() {
         val p = LocalPal.current
         val top = stack.lastOrNull()
         BackHandler(top != null) { stack = stack.dropLast(1) }
+        confirmFixed?.let { id ->
+            val sp = remember(id) { Db.get(this@MainActivity).spot(id) }
+            if (sp == null || sp.review == "FIXED") confirmFixed = null
+            else AlertDialog(
+                onDismissRequest = { confirmFixed = null },
+                title = { Text("Mark as fixed?") },
+                text = { Text("${sp.title}. No impact was detected there on recent passes. Marking it fixed stops warnings for it. You can restore it any time from its screen.") },
+                confirmButton = { TextButton({ Db.get(this@MainActivity).markFixed(id, System.currentTimeMillis()); Notifier.cancel(this@MainActivity, 3000 + id.toInt()); confirmFixed = null; Celebrate.trigger(); Live.bump() }) { Text("Mark fixed") } },
+                dismissButton = { TextButton({ confirmFixed = null }) { Text("Not yet") } },
+            )
+        }
         pendingLink?.let { pl ->
             val ctx = this@MainActivity
             when (pl) {

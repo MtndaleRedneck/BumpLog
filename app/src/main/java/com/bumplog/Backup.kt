@@ -27,7 +27,8 @@ object Backup {
     private const val MAX_JSON = 30_000_000
     private const val MAX_ENTRY = 60_000_000L
     private const val MAX_TOTAL = 1_500_000_000L
-    private val safeName = Regex("[A-Za-z0-9_.-]{1,80}")
+    /** No leading dot, so neither "." nor ".." can pass as a name. */
+    private val safeName = Regex("[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}")
 
     fun fileName(ext: String): String = "BumpLog-backup-" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date()) + "." + ext
 
@@ -99,6 +100,7 @@ object Backup {
         val v = ContentValues()
         for (k in o.keys()) {
             if (k in skip || k.startsWith("_") || k !in cols) continue
+            if (k == "type") { v.put(k, DefectType.parse(o.optString(k)).name); continue }
             when (val x = o.get(k)) {
                 is Int -> v.put(k, x); is Long -> v.put(k, x); is Double -> v.put(k, x); is String -> v.put(k, x)
             }
@@ -115,7 +117,9 @@ object Backup {
         var json: JSONObject? = null
         var photos = 0; var total = 0L
         val photoFiles = ArrayList<Triple<String, String, File>>()
+        val voiceFiles = ArrayList<Pair<String, File>>()
         val tmp = File(ctx.cacheDir, "restore").apply { deleteRecursively(); mkdirs() }
+        try {
         ZipInputStream(ins.buffered()).use { z ->
             while (true) {
                 val e = z.nextEntry ?: break
@@ -135,7 +139,7 @@ object Backup {
                     }
                     parts.size == 2 && parts[0] == "voice" && parts[1].endsWith(".clip") && Sound.clipPhrases.any { it.first + ".clip" == parts[1] } -> {
                         val b = z.readNBytes(5_000_000)
-                        if (b.isNotEmpty()) Sound.clipFile(ctx, parts[1].removeSuffix(".clip")).writeBytes(b)
+                        if (b.isNotEmpty()) { val f = File(tmp, "v-" + parts[1]); f.writeBytes(b); voiceFiles.add(parts[1].removeSuffix(".clip") to f) }
                     }
                 }
             }
@@ -186,12 +190,23 @@ object Backup {
                 w.setTransactionSuccessful()
             } finally { w.endTransaction() }
         }
+        // Photos only go into the folder of a damage report that is in this backup, and never outside the damage folder.
+        val damageRoot = File(ctx.filesDir, "damage").canonicalFile
+        val allowed = HashSet<String>()
+        val dj = j.optJSONArray("damage") ?: JSONArray()
+        for (i in 0 until dj.length()) dj.optJSONObject(i)?.optString("report_id")?.takeIf { okId(it) }?.let { allowed.add(DamagePhotos.dir(ctx, it).name) }
         for ((dir, name, f) in photoFiles) {
-            val dest = File(File(ctx.filesDir, "damage/$dir").apply { mkdirs() }, name)
+            if (dir !in allowed) continue
+            val folder = File(damageRoot, dir)
+            val dest = File(folder, name)
+            if (dest.canonicalFile.parentFile != folder.canonicalFile || folder.canonicalFile.parentFile != damageRoot) continue
+            folder.mkdirs()
             if (!dest.exists()) { f.copyTo(dest); photos++ }
         }
-        tmp.deleteRecursively()
+        // Voice clips only fill gaps, so a restore never overwrites recordings made since.
+        for ((key, f) in voiceFiles) if (!Sound.hasClip(ctx, key)) f.copyTo(Sound.clipFile(ctx, key), overwrite = true)
         val settings = j.optJSONObject("prefs")?.let { Prefs.restoreAll(it) } ?: 0
         return Restored(nSpots, nHits, nDmg, photos, settings, skipped)
+        } finally { tmp.deleteRecursively() }
     }
 }
