@@ -58,7 +58,7 @@ fun BugReportScreen(done: () -> Unit) {
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ScreenTitle("Feedback")
         Card {
-            Muted("Tell us what is on your mind: a bug, an idea or general feedback. Reports may become public issues on GitHub, so leave out personal details.", 13)
+            Muted("Tell us what is on your mind: a bug, an idea, or general feedback. Reports may become public issues on GitHub, so leave out personal details.", 13)
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(text, { text = it.take(MAX_TEXT) }, label = { Text("Your message") }, minLines = 4, modifier = Modifier.fillMaxWidth(),
                 colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = p.accent, unfocusedBorderColor = p.card2, focusedTextColor = p.text, unfocusedTextColor = p.text, cursorColor = p.accent))
@@ -68,7 +68,7 @@ fun BugReportScreen(done: () -> Unit) {
             Spacer(Modifier.height(6.dp))
             Muted(BugReport.preview(text, c), 13)
             Spacer(Modifier.height(6.dp))
-            Muted("No location, saved spots, addresses or damage records are included. Nothing is sent until you tap a button below, and then it opens in your browser for you to review and submit.", 12)
+            Muted("No location, saved spots, addresses, or damage records are included. Nothing is sent until you tap a button below, and then it opens in your browser for you to review and submit.", 12)
         }
         Card {
             Txt("GitHub issue", 16, FontWeight.Bold)

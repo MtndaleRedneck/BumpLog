@@ -6,7 +6,7 @@ It logs hard hits by watching the accelerometer and GPS while you drive, and war
 
 Built for highways with violent height steps between pavement sections, not only city street potholes.
 
-> Auto-start, passive GPS battery use and the hit thresholds need real drives to tune. See [Known limits](#known-limits).
+> Auto-start, passive GPS battery use, and the hit thresholds need real drives to tune. See [Known limits](#known-limits).
 
 ## Screens
 
@@ -19,9 +19,9 @@ Captured by CI from the debug build running on an Android emulator, with demo da
 
 ## How it works
 
-**Drive detection.** Auto-starts when your phone connects to your car's Bluetooth, or start it by hand. The accelerometer logs a hit at 0.80 g and a severe hit at 1.30 g (both adjustable), ignoring anything under 15 mph. Hits within 30 m in the same direction group into one spot. A Driver / Passenger switch on the home screen stops logging when you are not driving.
+**Drive detection.** Auto-starts when your phone connects to your car's Bluetooth, or start it by hand. The accelerometer logs a hit at 0.85 g and a severe hit at 1.30 g (both adjustable), ignoring anything under 15 mph. Hits within 30 m in the same direction group into one spot. A Driver / Passenger switch on the home screen stops logging when you are not driving.
 
-**Approach alerts.** Saved spots warn you about a quarter mile out, with a final chime at about 600 ft. Alerts name the defect once you have confirmed its type ("Major pothole ahead"). Tone, voice or both, all previewable in Settings.
+**Approach alerts.** Saved spots warn you about a quarter mile out, with a final chime at about 600 ft. Alerts name the defect once you have confirmed its type ("Major pothole ahead"). Tone, voice, or both, all previewable in Settings. Six built-in natural voices (Adam, Michael, Default, Bella, Sarah, Sky) are pre-recorded clips of the alert phrases, so they work offline and add under 1 MB; other voices use your phone's text-to-speech.
 
 **In-drive logging.** A major bump pops up "Major bump detected." with Log it / Ignore / Warn me here forever. Log it opens a short form: defect type (a labeled guess you confirm), major or minor, and whether to file at the end of the trip. The pop-up dismisses itself after 10, 20 or 30 seconds (default 20) or never, set in Settings.
 
@@ -29,7 +29,7 @@ Captured by CI from the debug build running on an Android emulator, with demo da
 
 **Damage reports.** Pick one of your recent hits, say what was damaged, add photos, and send now or at the end of the drive. The report quotes the measured jolt from the phone accelerometer. It is not proof of force or damage.
 
-**Scorecard.** Reports logged, filed and sent, times avoided (a warned spot's alert fired and you passed it again), avoided by type, most avoided, and your largest measured jolt.
+**Scorecard.** Reports logged, filed, and sent, times avoided (a warned spot's alert fired and you passed it again), avoided by type, most avoided, and your largest measured jolt.
 
 **Testing mode.** Settings can fire the real alerts and screens without driving, using TEST spots that never count toward your stats.
 
@@ -50,17 +50,17 @@ The app has no server and no accounts. It cannot send email by itself. **Send** 
 
 - **Sent** means the report was handed to your mail app. It does not mean it arrived.
 - **Filed** appears only after your assistant confirms a request was actually accepted. Nothing is ever marked Filed automatically. The assistant can reply with a link of the form `bumplog://filed?id=BL-20261011-ABCD&ref=<reference number>`. Tapping it opens a confirmation showing the ID and reference. The report is marked Filed only after you tap Mark Filed. The reference number is optional. A link for an unknown report ID is rejected, and a different reference never replaces an existing one without asking.
-- Each report email has a plain-text block: report ID, defect type and category, severity, hit count, coordinates, a map link, direction and timestamps. Speed is never included. Every email opens with a short "About this email" block that explains what it is and what the assistant should do. One assistant address per report.
+- Each report email has a plain-text block: report ID, defect type and category, severity, hit count, coordinates, a map link, direction, and timestamps. Speed is never included. Every email opens with a short "About this email" block that explains what it is and what the assistant should do. One assistant address per report.
 - Damage reports are separate emails, marked as damage claims, with the impact details and any photos you added. A damage report stands on its own and does not need a road defect report to be sent first.
 - Nothing is submitted to a city or agency without your approval. The email says so to the assistant.
 
-**Assistant picker.** Choose Instinct, Tab or Custom. Presets are empty slots you fill in once on first setup, so the app ships with no personal addresses. Pick a preset and it fills in the address you saved. **Send test report** and **Test email** send an email labeled TEST. **Set up your assistant** in Settings copies a short briefing you can paste into your own AI chat. A setup link (`bumplog://setup?assistant=instinct&email=you@example.com`) opens a confirmation showing the address. Nothing is saved until you tap Use address.
+**Assistant picker.** Choose Instinct, Tab, or Custom. Presets are empty slots you fill in once on first setup, so the app ships with no personal addresses. Pick a preset and it fills in the address you saved. **Send test report** and **Test email** send an email labeled TEST. **Set up your assistant** in Settings copies a short briefing you can paste into your own AI chat. A setup link (`bumplog://setup?assistant=instinct&email=you@example.com`) opens a confirmation showing the address. Nothing is saved until you tap Use address.
 
 ## Privacy
 
 - Runs offline. The only network use is your mail app sending the email you approve, and the phone's own geocoder naming roads (optional, falls back to coordinates).
 - No accounts, no analytics, no backend. Data is stored in a local database on your phone. Settings > Delete all logged data erases it.
-- The Feedback entry ("General feedback, bugs & feature suggestions") opens a screen where you see exactly what would be sent before you choose a GitHub issue or the private form. It only adds the app version, Android version and phone model. Never your location or logs.
+- The Feedback entry ("General feedback, bugs, and feature suggestions") opens a screen where you see exactly what would be sent before you choose a GitHub issue or the private form. It only adds the app version, Android version, and phone model. Never your location or logs.
 
 ## Known limits
 
@@ -79,6 +79,10 @@ v1.0.0 builds in CI and passes its unit tests. The screens render on an Android 
 ```
 
 Needs JDK 17 and the Android SDK 34. GitHub Actions builds the APK on every push to `main` and publishes a release when the version number is new. Without the signing secrets the release build is unsigned.
+
+## Credits
+
+The built-in natural voice clips were generated with the Kokoro-82M text-to-speech model (Apache-2.0, https://huggingface.co/hexgrad/Kokoro-82M), run through sherpa-onnx (Apache-2.0, https://github.com/k2-fsa/sherpa-onnx).
 
 ## License
 

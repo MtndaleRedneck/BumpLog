@@ -8,7 +8,7 @@ object Testing {
         Notifier.channels(ctx)
         val s = Db.get(ctx).addTestSpot(DefectType.POTHOLE, confirmed = false, severity = "MAJOR", fileTrip = false, maxG = 1.6f)
         Notifier.severe(ctx, s, false)
-        Sound.play(ctx, "Bump detected.", true)
+        Sound.play(ctx, "Bump detected.", true, "hit")
     }
 
     fun warnAhead(ctx: Context) {
