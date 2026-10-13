@@ -24,7 +24,7 @@ object Prefs {
     fun cleanEmail(t: String): String = t.trim { it.isWhitespace() || it in "\u200B\u200C\u200D\u2060\uFEFF\u00A0" }
 
     var detectionEnabled: Boolean get() = b("detection", true); set(v) = sp.edit().putBoolean("detection", v).apply()
-    var cutoffG: Float get() = f("cutoff", 0.80f); set(v) = sp.edit().putFloat("cutoff", v).apply()
+    var cutoffG: Float get() = f("cutoff", 0.85f); set(v) = sp.edit().putFloat("cutoff", v).apply()
     var severeG: Float get() = f("severe", 1.30f); set(v) = sp.edit().putFloat("severe", v).apply()
     var minSpeedMph: Int get() = i("minspeed", 15); set(v) = sp.edit().putInt("minspeed", v).apply()
     var theme: String get() = s("theme", "DARK"); set(v) = sp.edit().putString("theme", v).apply()

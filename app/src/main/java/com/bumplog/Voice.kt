@@ -36,14 +36,16 @@ fun VoiceScreen(openRecordings: () -> Unit, done: () -> Unit) {
     var voice by remember { mutableStateOf(Prefs.voice) }
     val voices = remember(Sound.voicesVersion) { Sound.init(ctx); Sound.voices() }
     val defKey = remember(Sound.voicesVersion) { Sound.defaultSpeakerKey() }
+    val natural = Sound.naturalVoices
     val rows = voiceChoices(voices, defKey) + listOf(Sound.CUSTOM to "My own recordings")
-    val selected = if (voice == Sound.CUSTOM) voice else selectedVoiceKey(voice, voices, defKey)
+    val selected = if (voice == Sound.CUSTOM || Sound.isNatural(voice)) voice else selectedVoiceKey(voice, voices, defKey)
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ScreenTitle("Voice")
         Card {
             Muted("Tap a voice to pick it. Tap Play to hear it.", 12)
             Spacer(Modifier.height(6.dp))
-            rows.forEach { (k, label) ->
+            @Composable
+            fun VoiceRow(k: String, label: String) {
                 val on = selected == k
                 Row(Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(14.dp))
                     .background(if (on) p.accent else p.card2)
@@ -54,6 +56,12 @@ fun VoiceScreen(openRecordings: () -> Unit, done: () -> Unit) {
                         modifier = Modifier.size(28.dp).clickable { Sound.previewVoice(ctx, k) })
                 }
             }
+            Txt("Natural voices", 14, FontWeight.Bold)
+            Muted("Built in, work offline. They speak the alert phrases only.", 12)
+            natural.forEach { (k, label) -> VoiceRow(k, label) }
+            Spacer(Modifier.height(10.dp))
+            Txt("Phone voices", 14, FontWeight.Bold)
+            rows.forEach { (k, label) -> VoiceRow(k, label) }
             if (voices.isEmpty()) Muted("No extra voices found on this phone. Install more in your phone's text-to-speech settings.", 12)
         }
         SmallButton("Done", Modifier.fillMaxWidth(), onClick = done)

@@ -29,9 +29,9 @@ class ReportsTest {
             assertTrue(h.contains(Reports.SPEED_RULE))
             assertTrue(h.contains("do not supply or invent one"))
             assertTrue(h.contains("wait for approval"))
-            assertTrue(h.contains("Do not submit, send or pay anything without it"))
+            assertTrue(h.contains("Do not submit, send, or pay anything without it"))
         }
-        assertTrue(Reports.ABOUT_REAL.contains("Never mention BumpLog, an app, AI or automation"))
+        assertTrue(Reports.ABOUT_REAL.contains("Never mention BumpLog, an app, AI, or automation"))
     }
 
     @Test fun testHeaderAsksForOnlyLowRiskActions() {

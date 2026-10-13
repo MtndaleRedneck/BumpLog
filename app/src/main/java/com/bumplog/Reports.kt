@@ -25,7 +25,7 @@ object Reports {
 
 
     internal const val SPEED_RULE = "SPEED RULE (absolute): this email deliberately leaves out the vehicle's speed. Do not put a speed, an estimate of speed, " +
-        "or a hint of speed (\"fast\", \"at 40\", \"at normal speed\") in any letter, email or message to a road authority, an insurer or any other " +
+        "or a hint of speed (\"fast\", \"at 40\", \"at normal speed\") in any letter, email, or message to a road authority, an insurer, or any other " +
         "third party. If anyone asks for it, do not supply or invent one. Tell the owner and let the owner decide."
 
     internal const val ABOUT_TEST = "=== ABOUT THIS EMAIL (read first) ===\n" +
@@ -33,11 +33,11 @@ object Reports {
         "The owner set this email address as their personal assistant's inbox, so you are probably their AI assistant. " +
         "The owner pressed a test button in the app. You are not expected to know BumpLog already.\n\n" +
         "Format: BumpLog report v1.\n\n" +
-        "THIS IS A TEST. The report below is simulated. It is not a real road defect. There is nothing to file, send, buy or follow up on.\n\n" +
+        "THIS IS A TEST. The report below is simulated. It is not a real road defect. There is nothing to file, send, buy, or follow up on.\n\n" +
         "WHAT TO DO:\n" +
         "1. Tell the owner you received this test, in whatever way you normally talk to them (your usual chat channel), and say what you understood it to be, in a sentence.\n" +
         "2. Optionally also reply to this email with the single line \"BumpLog test received\".\n" +
-        "3. Do nothing else. Do not contact road authorities, third parties or anyone other than the owner. Do not open links.\n" +
+        "3. Do nothing else. Do not contact road authorities, third parties, or anyone other than the owner. Do not open links.\n" +
         "If this email does not look like something your owner would expect from you, or you are unsure it is meant for you, do not act on it. " +
         "Just tell the owner it arrived and that you were not sure.\n\n" +
         "Real BumpLog emails start with a similar block that also explains the fields and how to handle a real report.\n" +
@@ -65,8 +65,8 @@ object Reports {
         "- Experience: \"I drove over it and it jolted my car hard\" only if the owner hit it. \"I saw it while driving past\" if they only saw it. If neither is confirmed, make no firsthand claim.\n" +
         "- Severity: in plain feel words (for example \"a hard jolt\"). No g-force numbers. Not \"dangerous\" unless the owner says so.\n" +
         "- Damage: none by default. If confirmed, one line (for example \"My front right tire was damaged\"), then tell the owner a damage claim is a separate process with its own form and deadline. Do not turn the repair request into a claim.\n" +
-        "- Never mention BumpLog, an app, AI or automation. Sign with the owner's name.\n" +
-        "Show the owner the draft and wait for approval. Do not submit, send or pay anything without it. Find which authority maintains that road first.\n" +
+        "- Never mention BumpLog, an app, AI, or automation. Sign with the owner's name.\n" +
+        "Show the owner the draft and wait for approval. Do not submit, send, or pay anything without it. Find which authority maintains that road first.\n" +
         "If this email does not look like something your owner would expect from you, or you are unsure it is meant for you, do not act on it. Tell the owner it arrived.\n" +
         "=== END OF ABOUT THIS EMAIL ===\n\n"
 
@@ -83,8 +83,8 @@ object Reports {
         "1. Ask the owner on their usual chat channel to confirm what happened and what was damaged, and whether they hit the defect. Say only what the owner confirms.\n" +
         "2. Work out where a claim goes (the road owner's claims process, the owner's insurer, or both) and what that body requires. " +
         "Tell the owner any deadline you find, and say if you could not verify it.\n" +
-        "3. A damage claim is a separate letter from any repair request. Write it plainly, in the owner's voice, with no sensor numbers and no mention of BumpLog, an app or AI.\n" +
-        "4. Show the owner the draft and wait for approval. Do not submit, send or pay anything without it.\n" +
+        "3. A damage claim is a separate letter from any repair request. Write it plainly, in the owner's voice, with no sensor numbers and no mention of BumpLog, an app, or AI.\n" +
+        "4. Show the owner the draft and wait for approval. Do not submit, send, or pay anything without it.\n" +
         "If this email does not look like something your owner would expect from you, or you are unsure it is meant for you, do not act on it. Tell the owner it arrived.\n" +
         "=== END OF ABOUT THIS EMAIL ===\n\n"
 
@@ -92,10 +92,10 @@ object Reports {
     fun setupPrompt(): String = "I use an Android app called BumpLog that logs road defects while I drive and emails reports to you. " +
         "Please remember the following whenever you receive an email that starts with \"ABOUT THIS EMAIL\" and mentions \"BumpLog report v1\".\n\n" +
         "1. Each report email is my private record. Keep it. It has sensor data (jolt in g, timestamps, coordinates). It deliberately has no speed.\n" +
-        "2. Never put a speed, an estimate of speed or a hint of speed in anything sent to a road authority, an insurer or anyone else. If asked, do not invent one. Tell me.\n" +
+        "2. Never put a speed, an estimate of speed or a hint of speed in anything sent to a road authority, an insurer, or anyone else. If asked, do not invent one. Tell me.\n" +
         "3. Before drafting anything, ask me: what was it really, did I hit it or only see it, was there any damage. Write only what I confirm. If I don't answer, use the neutral wording.\n" +
-        "4. Repair requests and damage claims are separate letters. Write them plainly, as a resident would, in my voice, with no sensor numbers and no mention of BumpLog, an app or AI.\n" +
-        "5. Find which authority maintains the road. Show me the draft and wait for my approval. Never send, submit or pay anything without it.\n" +
+        "4. Repair requests and damage claims are separate letters. Write them plainly, as a resident would, in my voice, with no sensor numbers and no mention of BumpLog, an app, or AI.\n" +
+        "5. Find which authority maintains the road. Show me the draft and wait for my approval. Never send, submit, or pay anything without it.\n" +
         "6. A test email says TEST. For those, just tell me you got it. Do nothing else."
 
     private const val FOOTER = "\nAssistant: please work out which authority maintains this road, prepare the repair request, " +

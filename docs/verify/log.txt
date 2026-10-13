@@ -1,0 +1,1 @@
+sqlite3 on device: /home/sandbox/v16/scripts/verify16.sh: line 42: adb: command not found

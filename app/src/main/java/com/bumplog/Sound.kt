@@ -56,6 +56,7 @@ object Sound {
 
     /** Speaks a sample in one voice ("" = phone default), whatever the Sound setting is. */
     fun previewVoice(ctx: Context, voiceName: String) {
+        if (isNatural(voiceName)) { if (!playNatural(ctx, voiceName, "generic")) { init(ctx); tts?.takeIf { ttsReady }?.let { applyVoice(it, ""); it.speak(phraseFor(null, 0, true), TextToSpeech.QUEUE_FLUSH, null, "bumplog-preview") } }; return }
         if (voiceName == CUSTOM) { if (!playClip(ctx, "generic")) { init(ctx); tts?.takeIf { ttsReady }?.let { applyVoice(it, ""); it.speak(phraseFor(null, 0, true), TextToSpeech.QUEUE_FLUSH, null, "bumplog-preview") } }; return }
         init(ctx)
         val t = tts ?: return
@@ -74,6 +75,32 @@ object Sound {
     }
 
     const val CUSTOM = "CUSTOM"
+
+    /** Built-in natural voices: pre-recorded clips shipped inside the app. The saved voice value is "natural:<id>". */
+    const val NATURAL_PREFIX = "natural:"
+    val naturalVoices: List<Pair<String, String>> = listOf(
+        "natural:am_adam" to "Adam", "natural:am_michael" to "Michael", "natural:af" to "Default",
+        "natural:af_bella" to "Bella", "natural:af_sarah" to "Sarah", "natural:af_sky" to "Sky",
+    )
+
+    fun isNatural(voice: String) = naturalVoices.any { it.first == voice }
+
+    /** Plays the built-in clip for [key] in a natural voice. Returns false when it can't, so the caller falls back to speech. */
+    fun playNatural(ctx: Context, voice: String, key: String): Boolean {
+        if (!isNatural(voice)) return false
+        return try {
+            val afd = ctx.assets.openFd("natural/" + voice.removePrefix(NATURAL_PREFIX) + "/" + key + ".m4a")
+            clipPlayer?.release()
+            val mp = android.media.MediaPlayer()
+            mp.setAudioAttributes(attrs)
+            mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
+            afd.close()
+            mp.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null }
+            mp.prepare(); mp.start(); clipPlayer = mp
+            android.util.Log.d("BumpLog", "natural clip played: $voice $key ${mp.duration}ms")
+            true
+        } catch (e: Exception) { android.util.Log.d("BumpLog", "natural clip failed: $voice $key ${e.message}"); false }
+    }
 
     /** Alerts that can be recorded: (key, spoken text). The key names the clip file. */
     val clipPhrases: List<Pair<String, String>> = listOf(
@@ -172,7 +199,7 @@ object Sound {
         if (mode == "BOTH" || mode == "TONE") tone(ctx, urgent)
         if (mode == "BOTH" || mode == "VOICE") {
             init(ctx)
-            main.postDelayed({ if (!(Prefs.voice == CUSTOM && playClip(ctx, key))) speak(phrase) }, if (mode == "BOTH") 700 else 0)
+            main.postDelayed({ if (!((Prefs.voice == CUSTOM && playClip(ctx, key)) || playNatural(ctx, Prefs.voice, key))) speak(phrase) }, if (mode == "BOTH") 700 else 0)
         }
     }
 

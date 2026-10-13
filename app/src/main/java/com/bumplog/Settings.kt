@@ -120,7 +120,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Row { Txt("Sensitivity", 18, FontWeight.Bold, modifier = Modifier.weight(1f)); Txt("%.2fg".format(cutoff), 18, FontWeight.Bold, p.accent) }
             Slider(cutoff, { cutoff = Math.round(it * 20) / 20f; Prefs.cutoffG = cutoff }, valueRange = 0.3f..1.6f,
                 colors = SliderDefaults.colors(thumbColor = p.accent, activeTrackColor = p.accent, inactiveTrackColor = p.card2))
-            Row(Modifier.fillMaxWidth()) { Muted("0.3 more alerts", 12, Modifier.weight(1f)); Muted("0.80 default", 12); Muted("  1.6 fewer", 12) }
+            Row(Modifier.fillMaxWidth()) { Muted("0.3 more alerts", 12, Modifier.weight(1f)); Muted("0.85 default", 12); Muted("  1.6 fewer", 12) }
             Spacer(Modifier.height(12.dp))
             Row { Txt("Severe hit level", 16, FontWeight.Bold, modifier = Modifier.weight(1f)); Txt("%.2fg".format(severe), 16, FontWeight.Bold, p.accent) }
             Slider(severe, { severe = Math.round(it * 20) / 20f; Prefs.severeG = severe }, valueRange = 0.8f..2.5f,
@@ -153,7 +153,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Txt("Voice", 18, FontWeight.Bold)
-                    Muted(when (voice) { "" -> "Phone default"; Sound.CUSTOM -> "My own recordings"; else -> voices.firstOrNull { it.first == voice }?.second ?: "Phone default" }, 12)
+                    Muted(when (voice) { "" -> "Phone default"; Sound.CUSTOM -> "My own recordings"; else -> Sound.naturalVoices.firstOrNull { it.first == voice }?.second?.let { "Natural: $it" } ?: voices.firstOrNull { it.first == voice }?.second ?: "Phone default" }, 12)
                 }
                 Icon(Icons.Default.PlayArrow, null, tint = p.muted)
             }
@@ -234,7 +234,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Txt("Feedback", 18, FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { openBug() }, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Txt("General feedback, bugs & feature suggestions", 16, FontWeight.Medium); Muted("You see exactly what is sent before you send it.", 12) }
+                Column(Modifier.weight(1f)) { Txt("General feedback, bugs, and feature suggestions", 16, FontWeight.Medium); Muted("You see exactly what is sent before you send it.", 12) }
                 Icon(Icons.Default.PlayArrow, null, tint = p.muted)
             }
         }
@@ -259,7 +259,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         if (confirmWipe) AlertDialog(onDismissRequest = { confirmWipe = false },
             confirmButton = { TextButton({ Db.get(ctx).wipeAll(); DamagePhotos.wipeAll(ctx); Prefs.wipeLocalExtras(ctx); Live.bump(); confirmWipe = false }) { Text("Delete") } },
             dismissButton = { TextButton({ confirmWipe = false }) { Text("Cancel") } },
-            title = { Text("Delete all data?") }, text = { Text("Every logged hit, spot, report, damage photo, voice recording, draft, saved reference and exported file on this phone will be erased.") })
+            title = { Text("Delete all data?") }, text = { Text("Every logged hit, spot, report, damage photo, voice recording, draft, saved reference, and exported file on this phone will be erased.") })
     }
 }
 
@@ -347,7 +347,7 @@ private fun BackupCards() {
     }
     Card(pad = 16.dp) {
         Txt("Backup", 18, FontWeight.Bold)
-        Muted("One file with your reports, damage records and photos, voice recordings and settings. Restore it after a reinstall to get everything back.", 12)
+        Muted("One file with your reports, damage records, photos, voice recordings, and settings. Restore it after a reinstall to get everything back.", 12)
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SmallButton("Save to device", Modifier.weight(1f)) { saveZip.launch(Backup.fileName("zip")) }
@@ -358,7 +358,7 @@ private fun BackupCards() {
     }
     Card(pad = 16.dp) {
         Txt("Spreadsheet CSV", 18, FontWeight.Bold)
-        Muted("Hits, spots and damage records for a spreadsheet. Photo file names are listed, the photos are in the backup file. Restore reads this too.", 12)
+        Muted("Hits, spots, and damage records for a spreadsheet. Photo file names are listed, the photos are in the backup file. Restore reads this too.", 12)
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SmallButton("Save to device", Modifier.weight(1f)) { saveCsv.launch("BumpLog-export.csv") }
