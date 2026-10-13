@@ -92,7 +92,7 @@ object Reports {
     fun setupPrompt(): String = "I use an Android app called BumpLog that logs road defects while I drive and emails reports to you. " +
         "Please remember the following whenever you receive an email that starts with \"ABOUT THIS EMAIL\" and mentions \"BumpLog report v1\".\n\n" +
         "1. Each report email is my private record. Keep it. It has sensor data (jolt in g, timestamps, coordinates). It deliberately has no speed.\n" +
-        "2. Never put a speed, an estimate of speed or a hint of speed in anything sent to a road authority, an insurer, or anyone else. If asked, do not invent one. Tell me.\n" +
+        "2. Never put a speed, an estimate of speed, or a hint of speed in anything sent to a road authority, an insurer, or anyone else. If asked, do not invent one. Tell me.\n" +
         "3. Before drafting anything, ask me: what was it really, did I hit it or only see it, was there any damage. Write only what I confirm. If I don't answer, use the neutral wording.\n" +
         "4. Repair requests and damage claims are separate letters. Write them plainly, as a resident would, in my voice, with no sensor numbers and no mention of BumpLog, an app, or AI.\n" +
         "5. Find which authority maintains the road. Show me the draft and wait for my approval. Never send, submit, or pay anything without it.\n" +

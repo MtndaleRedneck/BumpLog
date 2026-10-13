@@ -88,18 +88,31 @@ object Sound {
     /** Plays the built-in clip for [key] in a natural voice. Returns false when it can't, so the caller falls back to speech. */
     fun playNatural(ctx: Context, voice: String, key: String): Boolean {
         if (!isNatural(voice)) return false
+        var mp: android.media.MediaPlayer? = null
         return try {
             val afd = ctx.assets.openFd("natural/" + voice.removePrefix(NATURAL_PREFIX) + "/" + key + ".m4a")
-            clipPlayer?.release()
-            val mp = android.media.MediaPlayer()
-            mp.setAudioAttributes(attrs)
-            mp.setDataSource(afd.fileDescriptor, afd.startOffset, afd.length)
-            afd.close()
-            mp.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null }
-            mp.prepare(); mp.start(); clipPlayer = mp
-            android.util.Log.d("BumpLog", "natural clip played: $voice $key ${mp.duration}ms")
+            val p = android.media.MediaPlayer()
+            mp = p
+            p.setAudioAttributes(attrs)
+            afd.use { p.setDataSource(it.fileDescriptor, it.startOffset, it.length) }
+            p.prepare()
+            stopClip()
+            p.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null }
+            p.start(); clipPlayer = p
+            android.util.Log.d("BumpLog", "natural clip played: $voice $key ${p.duration}ms")
             true
-        } catch (e: Exception) { android.util.Log.d("BumpLog", "natural clip failed: $voice $key ${e.message}"); false }
+        } catch (e: Exception) {
+            try { mp?.release() } catch (x: Exception) { }
+            android.util.Log.d("BumpLog", "natural clip failed: $voice $key ${e.message}")
+            false
+        }
+    }
+
+    /** Stops and releases the clip that is playing, and forgets it. */
+    private fun stopClip() {
+        val old = clipPlayer
+        clipPlayer = null
+        try { old?.release() } catch (e: Exception) { }
     }
 
     /** Alerts that can be recorded: (key, spoken text). The key names the clip file. */
@@ -131,14 +144,17 @@ object Sound {
     /** Plays the user's own recording for [key]. Returns false when there is none, so the caller can fall back to speech. */
     fun playClip(ctx: Context, key: String): Boolean {
         if (!hasClip(ctx, key)) return false
+        var mp: android.media.MediaPlayer? = null
         return try {
-            clipPlayer?.release()
-            val mp = android.media.MediaPlayer()
-            mp.setAudioAttributes(attrs)
-            mp.setDataSource(clipFile(ctx, key).absolutePath)
-            mp.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null }
-            mp.prepare(); mp.start(); clipPlayer = mp; true
-        } catch (e: Exception) { false }
+            val p = android.media.MediaPlayer()
+            mp = p
+            p.setAudioAttributes(attrs)
+            p.setDataSource(clipFile(ctx, key).absolutePath)
+            p.prepare()
+            stopClip()
+            p.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null }
+            p.start(); clipPlayer = p; true
+        } catch (e: Exception) { try { mp?.release() } catch (x: Exception) { }; false }
     }
 
     private var recorder: android.media.MediaRecorder? = null

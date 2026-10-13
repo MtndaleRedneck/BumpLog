@@ -153,7 +153,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Txt("Voice", 18, FontWeight.Bold)
-                    Muted(when (voice) { "" -> "Phone default"; Sound.CUSTOM -> "My own recordings"; else -> Sound.naturalVoices.firstOrNull { it.first == voice }?.second?.let { "Natural: $it" } ?: voices.firstOrNull { it.first == voice }?.second ?: "Phone default" }, 12)
+                    Muted(when (voice) { "" -> "Phone default"; Sound.CUSTOM -> "My own recordings"; else -> Sound.naturalVoices.firstOrNull { it.first == voice }?.second?.let { "Natural voice: $it" } ?: voices.firstOrNull { it.first == voice }?.second ?: "Phone default" }, 12)
                 }
                 Icon(Icons.Default.PlayArrow, null, tint = p.muted)
             }
