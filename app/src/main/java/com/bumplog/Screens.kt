@@ -87,8 +87,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
         !live.gps -> "Waiting for GPS" to p.muted
         else -> "Detecting" to p.text
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("BumpLog")
+    Column(Modifier.fillMaxSize().pane("Home").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val detOn = Prefs.detectionEnabled
         val togglePower = {
             Prefs.detectionEnabled = !detOn
@@ -125,7 +124,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
         val speedTxt = "${live.speedMph.toInt()}"
         Card(dimA, pad = 14.dp) {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                Muted("LIVE DATA", 13)
+                Muted("LIVE DATA", 13, Modifier.asHeading())
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) { Row(verticalAlignment = Alignment.Bottom) { Txt(speedTxt, 44, FontWeight.Bold); Spacer(Modifier.width(4.dp)); Txt("mph", 16, FontWeight.Normal, p.muted, Modifier.padding(bottom = 7.dp)) } }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) { Row(verticalAlignment = Alignment.Bottom) { Txt("%.2f".format(live.lastG), 44, FontWeight.Bold); Spacer(Modifier.width(4.dp)); Txt("g", 16, FontWeight.Normal, p.muted, Modifier.padding(bottom = 7.dp)) } }
@@ -145,10 +144,9 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
             Tile(homeDriveLabel(live.running), "$today", null, Modifier.weight(1f))
             Tile(homeHardestHitLabel(live.running), "%.2f".format(live.hardestHitG), "g", Modifier.weight(1f))
         }
-        BigButton("Report last hit", Icons.Default.Warning) {
+        ActionButtonPair("Report last hit", Icons.Default.Warning, {
             val s = recent.firstOrNull(); if (s == null) toast(ctx, "No hits logged yet.") else openSpot(s.id)
-        }
-        SmallButton("File a damage report", Modifier.fillMaxWidth(), onClick = openDamage)
+        }, "File a damage report", openDamage)
         Txt("Recent", 20, FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
         if (recent.isEmpty()) Muted("Nothing yet. Start a drive and hits show up here.", 14, Modifier.padding(start = 4.dp))
         recent.forEach { SpotRow(it) { openSpot(it.id) } }
@@ -167,7 +165,7 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit) {
     var s by remember { mutableStateOf<Spot?>(null) }
     LoadingSpots(tick) { db -> s = db.spot(spotId) }
     val spot = s ?: return
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize().pane("Heads-up").verticalScroll(rememberScrollState()).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(24.dp))
         val alertColor = if (spot.severe) p.yellow else p.accent
         Txt("BUMP DETECTED", 22, FontWeight.Bold, alertColor)
@@ -207,10 +205,9 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
         sent = db.allSpots().filter { it.reportStatus != "NONE" }.take(10)
         saved = db.hitsSince(Db.startOfToday())
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("Drive complete")
+    Column(Modifier.fillMaxSize().pane("Review").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Card(pad = 20.dp) {
-            Muted("Today", 15, Modifier.fillMaxWidth(), TextAlign.Center)
+            Muted("Today", 15, Modifier.fillMaxWidth().asHeading(), TextAlign.Center)
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) { Txt("$saved", 54, FontWeight.Bold); Muted("hits saved", 16) }
@@ -252,8 +249,8 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
     val spot = s ?: return
     val db = Db.get(ctx)
     var confirmEnd by remember { mutableStateOf<String?>(null) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle(spot.title)
+    Column(Modifier.fillMaxSize().pane("Spot").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BackRow(spot.title, back)
         Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("%.2fg".format(spot.maxG), 40, FontWeight.Bold, spotColor(spot)); Spacer(Modifier.weight(1f)); Chip(Reports.statusLabel(spot))
@@ -337,9 +334,8 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
         if (photos.isNotEmpty()) DamagePhotos.add(ctx, d.reportId, photos)
         return d
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("File damage report")
-        Muted("Pick the impact that hurt your car. Your assistant works out where the claim should go.", 14)
+    Column(Modifier.fillMaxSize().pane("File damage report").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Muted("Pick the impact that hurt your car. Your assistant works out where the claim should go.", 14, Modifier.asHeading())
         if (hits.isEmpty()) Muted("No impacts logged yet.")
         if (recent.isNotEmpty()) { Txt("Last 20 minutes", 16, FontWeight.Bold); recent.forEach { hitRow(it) } }
         else if (hits.isNotEmpty()) Muted("Nothing in the last 20 minutes. Earlier impacts:", 13)
@@ -372,8 +368,8 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
     var list by remember { mutableStateOf(listOf<Damage>()) }
     var n by remember { mutableStateOf(0) }
     LoadingSpots(tick + n) { db -> list = db.queuedDamages() }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("Damage reports waiting")
+    Column(Modifier.fillMaxSize().pane("Damage reports waiting").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BackRow("Damage reports waiting", back)
         if (list.isEmpty()) Muted("Nothing waiting.")
         list.forEach { d ->
             Card {
@@ -405,29 +401,28 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     var byType by remember { mutableStateOf(listOf<Pair<DefectType?, Int>>()) }
     LoadingSpots(tick) { db -> sc = db.score(); top = db.topSaves(); byType = db.savesByType(); big = db.largestImpact() }
     val s = sc ?: return
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("Stats")
-        Card(pad = 20.dp) {
-            Muted("TIMES AVOIDED", 13)
+    Column(Modifier.fillMaxSize().pane("Stats").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Card(pad = 20.dp) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+            Muted("TIMES AVOIDED", 13, Modifier.asHeading())
             Txt("${s.saves}", 56, FontWeight.Bold)
-            Muted("Counts each time a warned spot's heads-up alert fired and you passed it again.", 13)
-        }
+            Muted("Counts each time a warned spot's heads-up alert fired and you passed it again.", 13, align = TextAlign.Center)
+        } }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Card(Modifier.weight(1f)) { Muted("REPORTS LOGGED", 12); Txt("${s.logged}", 34, FontWeight.Bold) }
-            Card(Modifier.weight(1f)) { Muted("REPORTS FILED", 12); Txt("${s.filed}", 34, FontWeight.Bold) }
+            Card(Modifier.weight(1f)) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Muted("REPORTS LOGGED", 12); Txt("${s.logged}", 34, FontWeight.Bold) } }
+            Card(Modifier.weight(1f)) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Muted("REPORTS FILED", 12); Txt("${s.filed}", 34, FontWeight.Bold) } }
         }
-        Card(pad = 16.dp) {
+        Card(pad = 16.dp) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Muted("FIXED AFTER YOU REPORTED", 12)
             Txt("${s.fixedAfterReport}", 34, FontWeight.Bold)
-            Muted("Spots you reported that were later marked fixed.", 12)
-        }
+            Muted("Spots you reported that were later marked fixed.", 12, align = TextAlign.Center)
+        } }
         big?.let { (h, sp) ->
             val what = if (!sp.typeUser) "road defect" else sp.type.spoken
-            Card(Modifier.clickable { openSpot(sp.id) }, pad = 16.dp) {
+            Card(Modifier.clickable { openSpot(sp.id) }, pad = 16.dp) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Muted("HARDEST HIT", 12)
                 Txt("%.2fg".format(h.peakG), 34, FontWeight.Bold)
-                Muted("${dayTime(h.ts)} - $what at %d mph. Tap to open the spot.".format(h.speedMph.toInt()), 12)
-            }
+                Muted("${dayTime(h.ts)} - $what at %d mph. Tap to open the spot.".format(h.speedMph.toInt()), 12, align = TextAlign.Center)
+            } }
         }
         if (byType.isNotEmpty()) Card {
             Txt("Avoided", 18, FontWeight.Bold)
@@ -446,7 +441,7 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
                 } }
             }
         }
-        Muted("Counts cover everything on this phone since you installed BumpLog or last deleted your data.", 12)
+        Muted("Counts cover everything on this phone since you installed BumpLog or last deleted your data.", 12, Modifier.fillMaxWidth(), TextAlign.Center)
     }
 }
 

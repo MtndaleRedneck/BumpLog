@@ -90,11 +90,9 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     val voices = remember(Sound.voicesVersion) { Sound.init(ctx); Sound.voices() }
     val cars = remember { pairedDevices(ctx) }
 
-    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("Settings")
-
+    Column(Modifier.fillMaxSize().pane("Settings").verticalScroll(scroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         SettingsCard {
-            Txt("Appearance", 18, FontWeight.Bold)
+            Txt("Appearance", 18, FontWeight.Bold, modifier = Modifier.asHeading())
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp)).background(p.bg).padding(4.dp)) {
                 listOf("DARK" to "Dark", "LIGHT" to "Light", "SYSTEM" to "System").forEach { (k, v) ->
@@ -294,8 +292,8 @@ fun SetupScreen(done: () -> Unit) {
     val ctx = LocalContext.current
     var assistant by remember { mutableStateOf(Prefs.assistant) }
     var address by remember { mutableStateOf(Prefs.rawActiveAddress) }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("Set up your assistant")
+    Column(Modifier.fillMaxSize().pane("Set up your assistant").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BackRow("Set up your assistant", done)
         Muted("BumpLog emails confirmed reports to an AI assistant that works out who owns the road and prepares the repair request. Nothing is filed without your approval. The address stays on this phone.", 14)
         Dropdown("Assistant", assistant, listOf("INSTINCT" to "Instinct", "TAB" to "Tab", "CUSTOM" to "Custom")) { assistant = it; Prefs.assistant = it; address = Prefs.rawActiveAddress }
         AddressField("Its email address", address) { address = it; Prefs.activeAddress = it }

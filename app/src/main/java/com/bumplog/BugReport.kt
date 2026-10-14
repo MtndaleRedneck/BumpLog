@@ -17,7 +17,7 @@ private const val MAX_TEXT = 3000
 private const val MAX_ENCODED = 4500
 
 /** The only things a bug report carries besides what the user typed. No location, spot, address or damage data. */
-data class BugContext(val appVersion: String, val androidVersion: String, val phoneModel: String)
+data class BugContext(val appVersion: String, val androidVersion: String, val phoneModel: String, val display: String = "")
 
 object BugReport {
     /** Trims the text so the encoded link stays well under the roughly 8 KB web servers accept. The preview shows this same trimmed text. */
@@ -29,23 +29,25 @@ object BugReport {
 
     /** Exactly what is sent, shown to the user before they tap. */
     fun preview(text: String, c: BugContext): String =
-        "Message:\n${clean(text).ifEmpty { "(nothing written yet)" }}\n\nApp version: ${c.appVersion}\nAndroid version: ${c.androidVersion}\nPhone model: ${c.phoneModel}"
+        "Message:\n${clean(text).ifEmpty { "(nothing written yet)" }}\n\nApp version: ${c.appVersion}\nAndroid version: ${c.androidVersion}\nPhone model: ${c.phoneModel}${displayLine(c)}"
+
+    private fun displayLine(c: BugContext) = if (c.display.isBlank()) "" else "\nDisplay: ${c.display}"
 
     fun githubUrl(text: String, c: BugContext): String {
         val t = clean(text)
         val title = "Feedback: " + t.lineSequence().firstOrNull().orEmpty().take(60)
-        val body = "$t\n\n---\nApp version: ${c.appVersion}\nAndroid version: ${c.androidVersion}\nPhone model: ${c.phoneModel}"
+        val body = "$t\n\n---\nApp version: ${c.appVersion}\nAndroid version: ${c.androidVersion}\nPhone model: ${c.phoneModel}${displayLine(c)}"
         return "$REPO_ISSUES/new?title=${enc(title)}&body=${enc(body)}"
     }
 
     fun formUrl(text: String, c: BugContext): String =
-        "$BUG_FORM_URL?usp=pp_url&entry.2115677078=${enc(clean(text))}&entry.2070006552=${enc(c.phoneModel)}" +
+        "$BUG_FORM_URL?usp=pp_url&entry.2115677078=${enc(clean(text) + (if (c.display.isBlank()) "" else "\n\nDisplay: ${c.display}"))}&entry.2070006552=${enc(c.phoneModel)}" +
             "&entry.1192035271=${enc(c.androidVersion)}&entry.1144301841=${enc(c.appVersion)}"
 
     private fun enc(s: String) = java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
 
-    fun context() = BugContext(BuildConfig.VERSION_NAME, "${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})",
-        listOf(android.os.Build.MANUFACTURER, android.os.Build.MODEL).filter { it.isNotBlank() }.joinToString(" "))
+    fun context(ctx: android.content.Context) = BugContext(BuildConfig.VERSION_NAME, "${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})",
+        listOf(android.os.Build.MANUFACTURER, android.os.Build.MODEL).filter { it.isNotBlank() }.joinToString(" "), DisplayInfo.current(ctx))
 }
 
 @Composable
@@ -53,10 +55,10 @@ fun BugReportScreen(done: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
     var text by remember { mutableStateOf("") }
-    val c = remember { BugReport.context() }
+    val c = remember { BugReport.context(ctx) }
     fun open(url: String) = ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("Feedback")
+    Column(Modifier.fillMaxSize().pane("Feedback").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BackRow("Feedback", done)
         Card {
             Muted("Tell us what is on your mind: a bug, an idea, or general feedback. Reports may become public issues on GitHub, so leave out personal details.", 13)
             Spacer(Modifier.height(10.dp))

@@ -1,7 +1,12 @@
-- Bump detection now has a raised power button at the far right of the top row. Off is a raised bright button, on is pushed in with an orange ring. It works with TalkBack (announced as On or Off) and respects reduced animation.
-- When detection is off, only the Live data card and Driver/Passenger are frozen. Tiles, buttons, Recent, and the tabs stay usable, and switching tabs no longer sends you back to Home.
-- Stats is now the fourth tab, after Review and before Settings. The Scorecard button is gone from Home.
-- The Permissions and Battery setup rows hide once they are handled, are rechecked every time you come back to the app, and return if Android takes a permission away.
-- Home tiles now read "Hardest hit this drive" and "Hardest hit last drive". Stats and emails say "Hardest hit" and "Hit strength".
-- New color scheme: numbers are white, the accent color is for controls and counts that need you, amber means a severe hit or a warning, and paused states are grey. Contrast was checked in dark and light themes.
-- Updates install over your current version and keep your data.
+## UI improvements
+- Home buttons now sit side by side, so you see more of the screen.
+- The four main tabs lose their big titles. Deeper pages get a small Back row instead, except the damage report page, which has no title.
+- Stats numbers are centered.
+
+## Bug fixes
+- Update notes now scroll, so long ones no longer get cut off.
+- Screen readers announce each screen by name.
+
+## Other
+- Feedback reports now include your screen size and font scale numbers, so layout problems are easier to track down.
+- Updates keep your data.
