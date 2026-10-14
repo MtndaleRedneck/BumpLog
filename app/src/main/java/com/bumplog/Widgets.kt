@@ -141,10 +141,11 @@ fun Gauge(value: Float, maxValue: Float, modifier: Modifier = Modifier) {
 }
 
 @Composable
-fun Wave(samples: FloatArray, modifier: Modifier = Modifier, dim: Boolean = false) {
+fun Wave(samples: FloatArray, modifier: Modifier = Modifier, dim: Boolean = false, color: Color? = null) {
     val p = LocalPal.current
     Canvas(modifier) {
-        if (samples.size < 2) return@Canvas
+        val c = color ?: p.accent
+        if (samples.size < 2) { drawLine(c.copy(alpha = 0.35f), Offset(0f, size.height * 0.62f), Offset(size.width, size.height * 0.62f), 3f); return@Canvas }
         val path = Path()
         val mid = size.height * 0.62f
         val scale = size.height * 0.5f / 2f
@@ -153,7 +154,7 @@ fun Wave(samples: FloatArray, modifier: Modifier = Modifier, dim: Boolean = fals
             val y = mid - (g.coerceAtMost(2.2f) * scale) * (if (i % 2 == 0) 1f else -0.6f)
             if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
-        drawPath(path, p.accent.copy(alpha = if (dim) 0.35f else 1f), style = Stroke(3f, join = StrokeJoin.Round))
+        drawPath(path, c.copy(alpha = if (dim) 0.35f else 1f), style = Stroke(4f, join = StrokeJoin.Round))
     }
 }
 

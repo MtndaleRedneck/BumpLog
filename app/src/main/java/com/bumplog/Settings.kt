@@ -66,6 +66,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     var assistant by remember { mutableStateOf(Prefs.assistant) }
     var address by remember { mutableStateOf(Prefs.rawActiveAddress) }
     var auto by remember { mutableStateOf(Prefs.autoStart) }
+    var updCheck by remember { mutableStateOf(Prefs.updateCheck) }
     var far by remember { mutableStateOf(Prefs.warnFarFt) }
     var near by remember { mutableStateOf(Prefs.warnNearFt) }
     var audio by remember { mutableStateOf(Prefs.audioMode) }
@@ -204,6 +205,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         }
         Muted("The test email is labeled TEST.", 12, Modifier.fillMaxWidth(), androidx.compose.ui.text.style.TextAlign.Center)
 
+        Toggle("Check for updates", updCheck, "Checks GitHub for a newer BumpLog when you open the app. No account or personal details are sent.") { updCheck = it; Prefs.updateCheck = it }
         Toggle("Auto-start when driving", auto, "Starts when your phone connects to the car's Bluetooth") { auto = it; Prefs.autoStart = it }
         if (auto && cars.isNotEmpty()) Card {
             Dropdown("Car Bluetooth", car, listOf("" to "Any car audio device") + cars) { car = it; Prefs.carAddress = it; Prefs.carName = cars.firstOrNull { c -> c.first == it }?.second ?: "" }

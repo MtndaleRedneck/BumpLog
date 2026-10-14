@@ -80,7 +80,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         driveId = System.currentTimeMillis()
         Prefs.lastDriveId = driveId
         lastMoveMs = driveId
-        Live.update { LiveState(running = true, paused = Prefs.passenger, driveId = driveId, tick = it.tick + 1) }
+        Live.update { driveStartState(it.tick, Prefs.passenger, driveId) }
         ServiceCompat.startForeground(this, Notifier.ID_FOREGROUND, Notifier.foreground(this, Live.state.value),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         startSensors()
@@ -132,7 +132,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         val hit = Hit(0, 0, driveId, now, loc.latitude, loc.longitude, heading, speed, ev.peakG, ev.durationMs, ev.peaks, guess)
         val spot = db.recordHit(hit, guess)
         passes.values.forEach { it.hit = true }
-        Live.update { it.copy(biggestG = maxOf(it.biggestG, ev.peakG)) }
+        Live.update { it.copy(biggestG = biggestAfterHit(it.biggestG, ev.peakG)) }
         Live.bump()
         if (spot.address.isBlank()) io.execute { lookupAddress(spot) }
         val quiet = guess == DefectType.RUMBLE || spot.type == DefectType.RUMBLE

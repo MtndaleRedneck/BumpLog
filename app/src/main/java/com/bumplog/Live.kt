@@ -29,3 +29,11 @@ fun homeDriveId(running: Boolean, liveDriveId: Long, lastDriveId: Long): Long =
     if (running) liveDriveId else lastDriveId
 
 fun homeDriveLabel(running: Boolean): String = if (running) "HITS THIS DRIVE" else "HITS LAST DRIVE"
+
+/** State at the start of a drive: the biggest jolt starts over so "this trip" only covers the current drive. */
+fun driveStartState(previousTick: Int, passenger: Boolean, driveId: Long) =
+    LiveState(running = true, paused = passenger, driveId = driveId, tick = previousTick + 1)
+
+fun biggestAfterHit(current: Float, peak: Float) = maxOf(current, peak)
+
+fun homeJoltLabel(running: Boolean): String = if (running) "BIGGEST JOLT THIS TRIP" else "BIGGEST JOLT LAST DRIVE"
