@@ -13,8 +13,8 @@ android {
         applicationId = "com.bumplog"
         minSdk = 31
         targetSdk = 34
-        versionCode = 8
-        versionName = "1.7.0"
+        versionCode = 9
+        versionName = "1.8.0"
     }
 
     // Release signing key is private and never committed. CI passes it in through environment
@@ -60,4 +60,5 @@ dependencies {
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.material:material-icons-core")
     testImplementation("junit:junit:4.13.2")
+    testImplementation("org.json:json:20240303")
 }

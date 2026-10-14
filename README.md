@@ -37,7 +37,7 @@ Also: local report IDs, CSV export and import (1 MB limit), and a "Fixed?" sugge
 
 ## Install
 
-1. Download `BumpLog-v1.0.0.apk` from the [v1.0.0 release](../../releases/tag/v1.0.0) on your phone.
+1. Download the APK from the [latest release](../../releases/latest) on your phone.
 2. Open it and allow installs from your browser when Android asks.
 3. Open BumpLog and follow the setup: set your assistant address, allow location (choose **Allow all the time**), notifications and Bluetooth.
 4. Tap **Battery setup** in Settings. On Samsung phones also add the app to Settings > Battery > Background usage limits > Never sleeping apps, or One UI can stop it mid-drive.
@@ -58,18 +58,19 @@ The app has no server and no accounts. It cannot send email by itself. **Send** 
 
 ## Privacy
 
-- Runs offline. The only network use is your mail app sending the email you approve, and the phone's own geocoder naming roads (optional, falls back to coordinates).
+- Logging runs on the phone. The app contacts GitHub when you open it to check for a newer version and to download it when you choose Update. We send no account or identifiers with that request, but GitHub sees your IP address like any web request. You can turn it off in Settings > Check for updates, and the app then makes no network requests of its own. The other network use is your mail app sending the email you approve, and the phone's own geocoder naming roads (optional, falls back to coordinates).
 - No accounts, no analytics, no backend. Data is stored in a local database on your phone. Settings > Delete all logged data erases it.
 - The Feedback entry ("General feedback, bugs, and feature suggestions") opens a screen where you see exactly what would be sent before you choose a GitHub issue or the private form. It only adds the app version, Android version, and phone model. Never your location or logs.
 
 ## Known limits
 
-v1.0.0 builds in CI and passes its unit tests. The screens render on an Android emulator (see screenshots above). Hit detection and alert timing have not been tuned on real roads.
+The app builds in CI and passes its unit tests. The screens render on an Android emulator (see screenshots above). Hit detection and alert timing have not been tuned on real roads.
 
 - Auto-start on car Bluetooth is a best effort. Android limits starting background services, so if it refuses, you get a "Car connected, tap to start" notification instead.
 - Hit detection uses fixed thresholds and simple pattern rules. Real mount and car tuning will change them.
 - Defect-type guessing is a heuristic. Always confirm.
 - "Fixed?" is offered after two clean passes through a spot. It is a suggestion, not proof.
+- In-app updates: the check runs once each time the app is opened and stays quiet when offline or rate limited. A download that is interrupted, or an app restart before you finish the Android install step, abandons the update; the file is deleted and the offer comes back at the next open. The new file must be signed by the same key as the installed app, or by a key that the new app's signing history ties to it, and Android makes the final decision when it installs. If the signing key is ever changed without that history, install the new version by hand.
 - No QR setup yet. The test report and setup link cover first setup.
 
 ## Build

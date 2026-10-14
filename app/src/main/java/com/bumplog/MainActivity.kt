@@ -30,10 +30,18 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 sealed class PendingLink {
     data class Setup(val assistant: String, val email: String) : PendingLink()
     data class Filed(val reportId: String, val ref: String, val existingRef: String = "") : PendingLink()
+}
+
+sealed class UpdateUi {
+    data class Offer(val info: UpdateInfo) : UpdateUi()
+    data class Downloading(val info: UpdateInfo, val progress: Float) : UpdateUi()
+    data class Failed(val message: String) : UpdateUi()
 }
 
 sealed class Screen {
@@ -53,6 +61,10 @@ class MainActivity : ComponentActivity() {
     private var stack by mutableStateOf(listOf<Screen>())
     private var pendingLink by mutableStateOf<PendingLink?>(null)
     private var confirmFixed by mutableStateOf<Long?>(null)
+    private var updateUi by mutableStateOf<UpdateUi?>(null)
+    private var updateReady: java.io.File? = null
+    private var updateJob: kotlinx.coroutines.Job? = null
+    private val ioScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main)
     private var permsOk by mutableStateOf(false)
 
     private val askBg = registerForActivityResult(ActivityResultContracts.RequestPermission()) { refreshPerms() }
@@ -80,6 +92,7 @@ class MainActivity : ComponentActivity() {
         refreshPerms()
         if (!Prefs.setupDone) stack = listOf(Screen.Setup)
         handle(intent)
+        if (savedInstanceState == null) checkForUpdate(if (BuildConfig.DEBUG) intent.getStringExtra("updatecheck") else null)
         setContent {
             val live by Live.state.collectAsState()
             var themeKey by remember { mutableStateOf(0) }
@@ -96,7 +109,58 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() { Sound.stopRecording(save = false); Sound.onRecordingEnded?.invoke(); super.onStop() }
-    override fun onResume() { super.onResume(); refreshPerms(); Live.bump() }
+    override fun onResume() {
+        super.onResume(); refreshPerms(); Live.bump()
+        // Back from the "Install unknown apps" screen with the file already downloaded and checked: carry on to the installer.
+        updateReady?.let { f -> if (packageManager.canRequestPackageInstalls()) { updateReady = null; launchInstaller(f) } }
+    }
+    override fun onDestroy() { updateJob?.cancel(); super.onDestroy() }
+
+    /** Once per cold open, only when the user has the Settings toggle on. Silent on any failure, and never shown during a drive. */
+    private fun checkForUpdate(fakeCurrent: String?) {
+        if (!Prefs.updateCheck) return
+        val current = fakeCurrent ?: BuildConfig.VERSION_NAME
+        Updater.clean(this)
+        ioScope.launch {
+            val info = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Updater.check(current) } ?: return@launch
+            if (info.versionName == Prefs.skippedUpdate || Live.state.value.running) return@launch
+            updateUi = UpdateUi.Offer(info)
+        }
+    }
+
+    private fun startUpdate(info: UpdateInfo) {
+        updateUi = UpdateUi.Downloading(info, 0f)
+        updateJob = ioScope.launch {
+            try {
+                val f = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    val file = Updater.download(this@MainActivity, info, { pr -> updateUi = UpdateUi.Downloading(info, pr.coerceIn(0f, 1f)) }, { !isActive })
+                    try { if (!(BuildConfig.DEBUG && intent.getBooleanExtra("skipverify", false))) Updater.verify(this@MainActivity, file) }
+                    catch (e: Updater.Failure) { file.delete(); throw e }
+                    file
+                }
+                updateUi = null
+                if (packageManager.canRequestPackageInstalls()) launchInstaller(f)
+                else {
+                    updateReady = f
+                    toast(this@MainActivity, "Allow BumpLog to install updates, then come back.")
+                    startActivity(Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName")))
+                }
+            } catch (e: Updater.Failure) {
+                updateUi = if (e.msg == "cancelled") null else UpdateUi.Failed(e.msg)
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                Updater.clean(this@MainActivity); updateUi = null
+            } catch (e: Exception) {
+                Updater.clean(this@MainActivity); updateUi = UpdateUi.Failed("The update could not be installed.")
+            }
+        }
+    }
+
+    private fun launchInstaller(f: java.io.File) {
+        try {
+            val uri = androidx.core.content.FileProvider.getUriForFile(this, "$packageName.files", f)
+            startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri, "application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (e: Exception) { updateUi = UpdateUi.Failed("Could not open the installer.") }
+    }
 
     private fun handle(i: Intent?) {
         i ?: return
@@ -143,6 +207,11 @@ class MainActivity : ComponentActivity() {
                 "bugreport" -> stack = listOf(Screen.BugReport)
             }
             if (i.getBooleanExtra("seedclips", false)) { Sound.clipPhrases.take(2).forEach { Sound.clipFile(this, it.first).writeBytes(ByteArray(2000)) }; Live.bump() }
+        }
+        if (BuildConfig.DEBUG && i.getBooleanExtra("mockdrive", false)) {
+            val live = i.getBooleanExtra("mocklive", true)
+            val w = FloatArray(120) { k -> if (!live) 0f else (0.2f + 0.35f * kotlin.math.abs(kotlin.math.sin(k * 0.7f)) + (if (k in 84..100) 1.1f * (1f - kotlin.math.abs(k - 92) / 8f).coerceAtLeast(0f) else 0f)).coerceAtLeast(0f) }
+            Live.update { it.copy(running = live, gps = live, speedMph = if (live) 38f else 0f, biggestG = 1.42f, lastG = if (live) 0.34f else 0f, wave = w) }
         }
         if (BuildConfig.DEBUG && i.hasExtra("detoff")) { Prefs.detectionEnabled = !i.getBooleanExtra("detoff", false); Live.bump() }
         // bumplog://setup?assistant=instinct&email=...  and  bumplog://filed?id=BL-...
@@ -195,6 +264,38 @@ class MainActivity : ComponentActivity() {
                 dismissButton = { TextButton({ confirmFixed = null }) { Text("Not yet") } },
             )
         }
+        updateUi?.let { u ->
+            when (u) {
+                is UpdateUi.Offer -> AlertDialog(
+                    onDismissRequest = { updateUi = null },
+                    title = { Text("BumpLog ${u.info.versionName} is available") },
+                    text = {
+                        Column {
+                            Text("You have ${BuildConfig.VERSION_NAME}.")
+                            if (u.info.notes.isNotEmpty()) { Spacer(Modifier.height(10.dp)); u.info.notes.forEach { Text("\u2022 $it"); Spacer(Modifier.height(4.dp)) } }
+                            Spacer(Modifier.height(8.dp))
+                            Text("Android will ask you to confirm the install.")
+                            Spacer(Modifier.height(4.dp))
+                            TextButton({ Prefs.skippedUpdate = u.info.versionName; updateUi = null }) { Text("Skip this version") }
+                        }
+                    },
+                    confirmButton = { TextButton({ startUpdate(u.info) }) { Text("Update") } },
+                    dismissButton = { TextButton({ updateUi = null }) { Text("Later") } },
+                )
+                is UpdateUi.Downloading -> AlertDialog(
+                    onDismissRequest = {},
+                    title = { Text("Downloading ${u.info.versionName}") },
+                    text = { androidx.compose.material3.LinearProgressIndicator(progress = { u.progress }, modifier = Modifier.fillMaxWidth()) },
+                    confirmButton = { TextButton({ updateJob?.cancel() }) { Text("Cancel") } },
+                )
+                is UpdateUi.Failed -> AlertDialog(
+                    onDismissRequest = { updateUi = null },
+                    title = { Text("Update not installed") },
+                    text = { Text(u.message) },
+                    confirmButton = { TextButton({ updateUi = null }) { Text("OK") } },
+                )
+            }
+        }
         pendingLink?.let { pl ->
             val ctx = this@MainActivity
             when (pl) {
@@ -238,7 +339,6 @@ class MainActivity : ComponentActivity() {
                         "review" -> ReviewScreen(live, { stack = listOf(Screen.Spot(it)) }) { stack = listOf(Screen.Setup) }
                         "settings" -> SettingsScreen(live.tick, settingsScroll, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) })
                         else -> HomeScreen(live, { stack = listOf(Screen.Spot(it)) }, { stack = listOf(Screen.Damage(0)) }, { stack = listOf(Screen.Score) }, permsOk, { askPerms() },
-                            { if (live.running) startService(Intent(this@MainActivity, DriveService::class.java).setAction(DriveService.ACTION_STOP)) else startDetection() },
                             {
                                 Prefs.passenger = !Prefs.passenger
                                 Live.update { it.copy(paused = Prefs.passenger) }

@@ -10,6 +10,9 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Only used by the update check, which the user can turn off in Settings. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <!-- Only used by the experimental overlay option, which is off by default. -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
@@ -27,6 +30,7 @@
 
     <application
         android:allowBackup="false"
+        android:networkSecurityConfig="@xml/network_security"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:label="BumpLog"

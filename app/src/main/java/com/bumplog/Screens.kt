@@ -20,6 +20,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -69,7 +71,7 @@ fun SpotRow(s: Spot, tag: String? = null, onClick: () -> Unit) {
 // ---------------------------------------------------------------- Home
 
 @Composable
-fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit, openScore: () -> Unit, permsOk: Boolean, askPerms: () -> Unit, startStop: () -> Unit, togglePassenger: () -> Unit) {
+fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit, openScore: () -> Unit, permsOk: Boolean, askPerms: () -> Unit, togglePassenger: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
     var recent by remember { mutableStateOf(listOf<Spot>()) }
@@ -85,53 +87,71 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ScreenTitle("BumpLog")
         val detOn = Prefs.detectionEnabled
-        DetectionCard(detOn) {
+        val togglePower = {
             Prefs.detectionEnabled = !detOn
             // Off is a full stop: end an active drive so GPS, sensors and the status notification shut down too.
             if (detOn && live.running) ctx.startService(Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_STOP))
             Live.bump()
         }
-        Box {
-        Column(Modifier.alpha(if (detOn) 1f else 0.35f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         val isPassenger = Prefs.passenger || live.paused
-        Row(Modifier.fillMaxWidth().height(76.dp).clip(RoundedCornerShape(20.dp)).background(p.card), verticalAlignment = Alignment.CenterVertically) {
-            listOf(false to "DRIVER" to "Logging hits", true to "PASSENGER" to "Not logging this drive").forEach { (k, sub) ->
-                val (mode, title) = k
+        Row(Modifier.fillMaxWidth().height(76.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            val seg = listOf(false to "DRIVER" to "Logging hits", true to "PASSENGER" to "Not logging")
+            @Composable fun Seg(k: Pair<Pair<Boolean, String>, String>, mod: Modifier) {
+                val (mode, title) = k.first
                 val on = isPassenger == mode
                 Column(
-                    Modifier.weight(1f).fillMaxHeight().padding(4.dp).clip(RoundedCornerShape(16.dp))
+                    mod.fillMaxHeight().alpha(if (detOn) 1f else 0.35f).clip(RoundedCornerShape(20.dp))
                         .background(if (on) p.accent else p.card)
-                        .clickable { if (!on) togglePassenger() },
+                        .clickable(enabled = detOn) { if (!on) togglePassenger() },
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                 ) {
                     Txt(title, 20, FontWeight.Bold, if (on) p.onAccent else p.text)
-                    Txt(sub, 13, FontWeight.Normal, if (on) p.onAccent else p.muted)
+                    Txt(k.second, 13, FontWeight.Normal, if (on) p.onAccent else p.muted)
                 }
             }
+            Seg(seg[0], Modifier.weight(1f))
+            Box(Modifier.size(76.dp).clip(RoundedCornerShape(20.dp)).background(p.card).clickable(onClick = togglePower)
+                .semantics { contentDescription = if (detOn) "Bump detection is on. Double tap to turn it off." else "Bump detection is off. Double tap to turn it on." }, contentAlignment = Alignment.Center) {
+                val c = if (detOn) PowerOrange else p.muted
+                androidx.compose.foundation.Canvas(Modifier.size(40.dp)) {
+                    val w = size.width * 0.09f
+                    val pad = size.width * 0.16f
+                    val d = size.width - 2 * pad
+                    drawArc(c, -60f, 300f, false, androidx.compose.ui.geometry.Offset(pad, pad + size.width * 0.04f), androidx.compose.ui.geometry.Size(d, d), style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+                    drawLine(c, androidx.compose.ui.geometry.Offset(size.width / 2, size.width * 0.08f), androidx.compose.ui.geometry.Offset(size.width / 2, size.width * 0.5f), w, androidx.compose.ui.graphics.StrokeCap.Round)
+                }
+            }
+            Seg(seg[1], Modifier.weight(1f))
         }
         if (!permsOk) Card(color = p.card2) {
             Txt("Allow location and notifications", 17, FontWeight.Bold)
             Muted("BumpLog needs these to log hits and warn you. Location stays on this phone.")
             Spacer(Modifier.height(10.dp)); SmallButton("Allow", Modifier.fillMaxWidth(), outline = false, onClick = askPerms)
         }
-        Card(pad = 20.dp) {
-            Box(Modifier.fillMaxWidth().height(240.dp), contentAlignment = Alignment.Center) {
-                Gauge(live.biggestG, 2f, Modifier.fillMaxSize().padding(8.dp))
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Txt("%.2fg".format(live.biggestG), 56, FontWeight.Bold)
-                    Muted("BIGGEST JOLT", 15)
+        val dimA = Modifier.alpha(if (detOn) 1f else 0.35f)
+        val speedTxt = "${live.speedMph.toInt()}"
+        Card(dimA, pad = 14.dp) {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Muted("LIVE DATA", 13)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { Row(verticalAlignment = Alignment.Bottom) { Txt(speedTxt, 44, FontWeight.Bold); Spacer(Modifier.width(4.dp)); Txt("mph", 16, FontWeight.Normal, p.muted, Modifier.padding(bottom = 7.dp)) } }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { Row(verticalAlignment = Alignment.Bottom) { Txt("%.2f".format(live.lastG), 44, FontWeight.Bold); Spacer(Modifier.width(4.dp)); Txt("g", 16, FontWeight.Normal, p.muted, Modifier.padding(bottom = 7.dp)) } }
                 }
-            }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                Dot(status.second); Spacer(Modifier.width(8.dp)); Txt(status.first, 16, FontWeight.Medium, status.second)
+                Wave(live.wave, Modifier.fillMaxWidth().height(96.dp).padding(top = 6.dp), color = p.accent)
+                Spacer(Modifier.height(6.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) { Dot(status.second); Spacer(Modifier.width(8.dp)); Txt(status.first, 15, FontWeight.Medium, status.second) }
             }
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Card(Modifier.weight(1f)) { Muted("SPEED", 13); Row(verticalAlignment = Alignment.Bottom) { Txt("${live.speedMph.toInt()}", 38, FontWeight.Bold); Spacer(Modifier.width(6.dp)); Muted("mph", 16, Modifier.padding(bottom = 6.dp)) } }
-            Card(Modifier.weight(1f)) { Muted(homeDriveLabel(live.running), 13); Txt("$today", 38, FontWeight.Bold) }
+        @Composable fun Tile(label: String, value: String, unit: String? = null, mod: Modifier) = Card(mod.fillMaxHeight(), pad = 10.dp) {
+            Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                Box(Modifier.heightIn(min = 40.dp), contentAlignment = Alignment.Center) { Txt(label, 11, FontWeight.Normal, p.muted, align = androidx.compose.ui.text.style.TextAlign.Center, modifier = Modifier.fillMaxWidth()) }
+                Row(verticalAlignment = Alignment.Bottom) { Txt(value, 30, FontWeight.Bold); if (unit != null) { Spacer(Modifier.width(3.dp)); Txt(unit, 14, FontWeight.Normal, p.muted, Modifier.padding(bottom = 4.dp)) } }
+            }
         }
-        Card(pad = 8.dp) { Wave(live.wave, Modifier.fillMaxWidth().height(90.dp).padding(8.dp), dim = live.running && live.speedMph > 5) }
-        SmallButton(if (live.running) "Stop" else "Start", Modifier.fillMaxWidth().height(60.dp), outline = true, onClick = startStop)
+        Row(dimA.height(androidx.compose.foundation.layout.IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Tile(homeDriveLabel(live.running), "$today", null, Modifier.weight(1f))
+            Tile(homeJoltLabel(live.running), "%.2f".format(live.biggestG), "g", Modifier.weight(1f))
+        }
         BigButton("Report last hit", Icons.Default.Warning) {
             val s = recent.firstOrNull(); if (s == null) toast(ctx, "No hits logged yet.") else openSpot(s.id)
         }
@@ -141,34 +161,10 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
         if (recent.isEmpty()) Muted("Nothing yet. Start a drive and hits show up here.", 14, Modifier.padding(start = 4.dp))
         recent.forEach { SpotRow(it) { openSpot(it.id) } }
         Spacer(Modifier.height(8.dp))
-        }
-        if (!detOn) Box(Modifier.matchParentSize().pointerInput(Unit) { awaitPointerEventScope { while (true) { awaitPointerEvent().changes.forEach { it.consume() } } } })
-        }
     }
 }
 
 val PowerOrange = Color(0xFFFF8A1F)
-
-@Composable
-fun DetectionCard(on: Boolean, toggle: () -> Unit) {
-    val p = LocalPal.current
-    Column(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(p.card).clickable(onClick = toggle).padding(vertical = 18.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        val c = if (on) PowerOrange else PowerOrange.copy(alpha = 0.45f)
-        androidx.compose.foundation.Canvas(Modifier.size(56.dp)) {
-            val w = size.width * 0.09f
-            val pad = size.width * 0.16f
-            val d = size.width - 2 * pad
-            drawArc(c, -60f, 300f, false, androidx.compose.ui.geometry.Offset(pad, pad + size.width * 0.04f), androidx.compose.ui.geometry.Size(d, d), style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-            drawLine(c, androidx.compose.ui.geometry.Offset(size.width / 2, size.width * 0.08f), androidx.compose.ui.geometry.Offset(size.width / 2, size.width * 0.5f), w, androidx.compose.ui.graphics.StrokeCap.Round)
-        }
-        Spacer(Modifier.height(8.dp))
-        Txt("Bump Detection", 20, FontWeight.Bold)
-        Muted(if (on) "On" else "Off until you turn it back on", 14)
-    }
-}
 
 // ---------------------------------------------------------------- Severe hit alert (opens from the notification)
 

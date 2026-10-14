@@ -138,6 +138,9 @@ object Prefs {
         get() = rawAddress().let { if (isValidEmail(it)) it else "" }
         set(v) = when (assistant) { "TAB" -> addrTab = v; "CUSTOM" -> addrCustom = v; else -> addrInstinct = v }
 
+    var updateCheck: Boolean get() = b("update_check", true); set(v) = sp.edit().putBoolean("update_check", v).apply()
+    /** Version name the user chose to skip in the update dialog. */
+    var skippedUpdate: String get() = s("skipped_update", ""); set(v) = sp.edit().putString("skipped_update", v).apply()
     var autoStart: Boolean get() = b("autostart", true); set(v) = sp.edit().putBoolean("autostart", v).apply()
     var carAddress: String get() = s("car_addr", ""); set(v) = sp.edit().putString("car_addr", v).apply()
     var carName: String get() = s("car_name", ""); set(v) = sp.edit().putString("car_name", v).apply()

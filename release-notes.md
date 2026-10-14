@@ -1,0 +1,8 @@
+- In-app update check: BumpLog tells you when a newer version is out and can download and install it. It checks when you open the app, never during a drive, and you can turn it off in Settings. Choose Update, Later, or Skip this version.
+- Downloads are checked against the checksum GitHub publishes and against BumpLog's signing key before Android's installer opens. A bad file is rejected.
+- Redesigned Home screen: Driver, power, and Passenger in one row, a Live data card, and tiles for hits and the biggest jolt.
+- The biggest jolt now resets at the start of each drive, and the tile reads "Biggest jolt last drive" when you are parked.
+- The power button turns grey when detection is off and now works with TalkBack.
+- Driver and Passenger are locked while detection is off.
+- Large-font fixes on the Home screen.
+- Updates install over your current version and keep your data. Android asks once for permission to install from BumpLog the first time you tap Update.
