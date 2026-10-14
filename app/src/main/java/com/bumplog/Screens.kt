@@ -17,11 +17,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -48,8 +51,8 @@ private fun LoadingSpots(tick: Int, load: (Db) -> Unit) {
     LaunchedEffect(tick) { load(Db.get(ctx)) }
 }
 
-fun spotIcon(s: Spot) = if (s.review == "DISMISSED") Icons.Default.Close else if (s.severe) Icons.Default.Warning else Icons.Default.Place
-@Composable fun spotColor(s: Spot): Color { val p = LocalPal.current; return when { s.reportStatus == "FILED" -> p.green; s.severe -> p.accent; else -> p.yellow } }
+fun spotIcon(s: Spot) = if (s.review == "DISMISSED") Icons.Default.Close else if (s.reportStatus == "FILED") Icons.Default.CheckCircle else if (s.severe) Icons.Default.Warning else Icons.Default.Place
+@Composable fun spotColor(s: Spot): Color { val p = LocalPal.current; return if (s.reportStatus != "FILED" && s.severe) p.yellow else p.text }
 
 @Composable
 fun SpotRow(s: Spot, tag: String? = null, onClick: () -> Unit) {
@@ -71,7 +74,7 @@ fun SpotRow(s: Spot, tag: String? = null, onClick: () -> Unit) {
 // ---------------------------------------------------------------- Home
 
 @Composable
-fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit, openScore: () -> Unit, permsOk: Boolean, askPerms: () -> Unit, togglePassenger: () -> Unit) {
+fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit, permsOk: Boolean, askPerms: () -> Unit, togglePassenger: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
     var recent by remember { mutableStateOf(listOf<Spot>()) }
@@ -80,9 +83,9 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     val status = when {
         !Prefs.detectionEnabled -> "Detection off" to p.muted
         !live.running -> "Not driving" to p.muted
-        live.paused -> "Paused - passenger" to p.yellow
-        !live.gps -> "Waiting for GPS" to p.yellow
-        else -> "Detecting" to p.green
+        live.paused -> "Paused - passenger" to p.muted
+        !live.gps -> "Waiting for GPS" to p.muted
+        else -> "Detecting" to p.text
     }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         ScreenTitle("BumpLog")
@@ -110,18 +113,8 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
                 }
             }
             Seg(seg[0], Modifier.weight(1f))
-            Box(Modifier.size(76.dp).clip(RoundedCornerShape(20.dp)).background(p.card).clickable(onClick = togglePower)
-                .semantics { contentDescription = if (detOn) "Bump detection is on. Double tap to turn it off." else "Bump detection is off. Double tap to turn it on." }, contentAlignment = Alignment.Center) {
-                val c = if (detOn) PowerOrange else p.muted
-                androidx.compose.foundation.Canvas(Modifier.size(40.dp)) {
-                    val w = size.width * 0.09f
-                    val pad = size.width * 0.16f
-                    val d = size.width - 2 * pad
-                    drawArc(c, -60f, 300f, false, androidx.compose.ui.geometry.Offset(pad, pad + size.width * 0.04f), androidx.compose.ui.geometry.Size(d, d), style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
-                    drawLine(c, androidx.compose.ui.geometry.Offset(size.width / 2, size.width * 0.08f), androidx.compose.ui.geometry.Offset(size.width / 2, size.width * 0.5f), w, androidx.compose.ui.graphics.StrokeCap.Round)
-                }
-            }
             Seg(seg[1], Modifier.weight(1f))
+            PowerButton(detOn, togglePower)
         }
         if (!permsOk) Card(color = p.card2) {
             Txt("Allow location and notifications", 17, FontWeight.Bold)
@@ -148,15 +141,14 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
                 Row(verticalAlignment = Alignment.Bottom) { Txt(value, 30, FontWeight.Bold); if (unit != null) { Spacer(Modifier.width(3.dp)); Txt(unit, 14, FontWeight.Normal, p.muted, Modifier.padding(bottom = 4.dp)) } }
             }
         }
-        Row(dimA.height(androidx.compose.foundation.layout.IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Tile(homeDriveLabel(live.running), "$today", null, Modifier.weight(1f))
-            Tile(homeJoltLabel(live.running), "%.2f".format(live.biggestG), "g", Modifier.weight(1f))
+            Tile(homeHardestHitLabel(live.running), "%.2f".format(live.hardestHitG), "g", Modifier.weight(1f))
         }
         BigButton("Report last hit", Icons.Default.Warning) {
             val s = recent.firstOrNull(); if (s == null) toast(ctx, "No hits logged yet.") else openSpot(s.id)
         }
         SmallButton("File a damage report", Modifier.fillMaxWidth(), onClick = openDamage)
-        SmallButton("Scorecard", Modifier.fillMaxWidth(), onClick = openScore)
         Txt("Recent", 20, FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
         if (recent.isEmpty()) Muted("Nothing yet. Start a drive and hits show up here.", 14, Modifier.padding(start = 4.dp))
         recent.forEach { SpotRow(it) { openSpot(it.id) } }
@@ -177,9 +169,10 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit) {
     val spot = s ?: return
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(24.dp))
-        Txt("BUMP DETECTED", 22, FontWeight.Bold, p.accent)
+        val alertColor = if (spot.severe) p.yellow else p.accent
+        Txt("BUMP DETECTED", 22, FontWeight.Bold, alertColor)
         Spacer(Modifier.height(12.dp))
-        Icon(Icons.Default.Warning, null, tint = p.accent, modifier = Modifier.size(110.dp))
+        Icon(Icons.Default.Warning, null, tint = alertColor, modifier = Modifier.size(110.dp))
         Txt("%.2fg".format(spot.maxG), 76, FontWeight.Bold)
         Muted("${spot.title}  -  ${spot.speedMph.toInt()} mph", 17)
         Spacer(Modifier.height(14.dp))
@@ -220,8 +213,8 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
             Muted("Today", 15, Modifier.fillMaxWidth(), TextAlign.Center)
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) { Txt("$saved", 54, FontWeight.Bold, p.accent); Muted("hits saved", 16) }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) { Txt("${pending.size}", 54, FontWeight.Bold); Muted("to review", 16) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) { Txt("$saved", 54, FontWeight.Bold); Muted("hits saved", 16) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) { Txt("${pending.size}", 54, FontWeight.Bold, if (pending.isEmpty()) p.text else p.accentText(p.card)); Muted("to review", 16) }
             }
         }
         BigButton("Review", Icons.Default.CheckCircle) { pending.firstOrNull()?.let { openSpot(it.id) } ?: toast(ctx, "Nothing left to review.") }
@@ -267,7 +260,7 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
             }
             Muted("${spot.hitCount} hit(s)  -  last ${dayTime(spot.lastTs)}  -  ${spot.speedMph.toInt()} mph")
             Muted("ID ${spot.reportId}  -  %.5f, %.5f".format(spot.lat, spot.lon))
-            if (spot.cleanPasses >= 2 && spot.review != "FIXED") { Spacer(Modifier.height(6.dp)); Txt("Drove past ${spot.cleanPasses} times without a hit. Fixed?", 14, color = p.yellow) }
+            if (spot.cleanPasses >= 2 && spot.review != "FIXED") { Spacer(Modifier.height(6.dp)); Txt("Drove past ${spot.cleanPasses} times without a hit. Fixed?", 14, color = p.muted) }
         }
         Dropdown(if (spot.typeUser) "Defect type" else "Defect type (guess - pick to confirm)", spot.type.name, DefectType.values().map { it.name to it.label }) { db.setType(spot.id, DefectType.parse(it)); Live.bump() }
         Toggle("Warn me here", spot.warn, "Heads-up before this spot on future drives") { db.setWarn(spot.id, it); Live.bump() }
@@ -335,7 +328,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
             .let { if (sel) it.border(2.dp, p.accent, RoundedCornerShape(16.dp)) else it }
             .clickable { picked = h.id }.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Txt(dayTime(h.ts), 16, FontWeight.Bold); Muted("${h.speedMph.toInt()} mph  -  ${h.type.label}") }
-            Txt("%.2fg".format(h.peakG), 17, FontWeight.Bold, if (h.peakG >= Prefs.severeG) p.accent else p.yellow)
+            Txt("%.2fg".format(h.peakG), 17, FontWeight.Bold, if (h.peakG >= Prefs.severeG) p.yellow else p.text)
         }
     }
     fun build(): Damage? {
@@ -401,10 +394,10 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
     }
 }
 
-// ---------------------------------------------------------------- Scorecard
+// ---------------------------------------------------------------- Stats
 
 @Composable
-fun ScorecardScreen(tick: Int, back: () -> Unit, openSpot: (Long) -> Unit) {
+fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     val p = LocalPal.current
     var sc by remember { mutableStateOf<Db.Score?>(null) }
     var top by remember { mutableStateOf(listOf<Spot>()) }
@@ -413,26 +406,26 @@ fun ScorecardScreen(tick: Int, back: () -> Unit, openSpot: (Long) -> Unit) {
     LoadingSpots(tick) { db -> sc = db.score(); top = db.topSaves(); byType = db.savesByType(); big = db.largestImpact() }
     val s = sc ?: return
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("Scorecard")
+        ScreenTitle("Stats")
         Card(pad = 20.dp) {
             Muted("TIMES AVOIDED", 13)
-            Txt("${s.saves}", 56, FontWeight.Bold, p.green)
+            Txt("${s.saves}", 56, FontWeight.Bold)
             Muted("Counts each time a warned spot's heads-up alert fired and you passed it again.", 13)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Card(Modifier.weight(1f)) { Muted("REPORTS LOGGED", 12); Txt("${s.logged}", 34, FontWeight.Bold) }
-            Card(Modifier.weight(1f)) { Muted("REPORTS FILED", 12); Txt("${s.filed}", 34, FontWeight.Bold, p.accent) }
+            Card(Modifier.weight(1f)) { Muted("REPORTS FILED", 12); Txt("${s.filed}", 34, FontWeight.Bold) }
         }
         Card(pad = 16.dp) {
             Muted("FIXED AFTER YOU REPORTED", 12)
-            Txt("${s.fixedAfterReport}", 34, FontWeight.Bold, p.green)
+            Txt("${s.fixedAfterReport}", 34, FontWeight.Bold)
             Muted("Spots you reported that were later marked fixed.", 12)
         }
         big?.let { (h, sp) ->
             val what = if (!sp.typeUser) "road defect" else sp.type.spoken
             Card(Modifier.clickable { openSpot(sp.id) }, pad = 16.dp) {
-                Muted("LARGEST JOLT", 12)
-                Txt("%.2fg".format(h.peakG), 34, FontWeight.Bold, p.accent)
+                Muted("HARDEST HIT", 12)
+                Txt("%.2fg".format(h.peakG), 34, FontWeight.Bold)
                 Muted("${dayTime(h.ts)} - $what at %d mph. Tap to open the spot.".format(h.speedMph.toInt()), 12)
             }
         }
@@ -449,11 +442,46 @@ fun ScorecardScreen(tick: Int, back: () -> Unit, openSpot: (Long) -> Unit) {
                 val what = if (!sp.typeUser) "road defect" else sp.type.spoken
                 Card(pad = 14.dp) { Row(verticalAlignment = Alignment.CenterVertically) {
                     Txt("Most avoided $what", 16, modifier = Modifier.weight(1f))
-                    Txt(if (sp.saves == 1) "1 time" else "${sp.saves} times", 16, FontWeight.Bold, p.green)
+                    Txt(if (sp.saves == 1) "1 time" else "${sp.saves} times", 16, FontWeight.Bold)
                 } }
             }
         }
         Muted("Counts cover everything on this phone since you installed BumpLog or last deleted your data.", 12)
-        SmallButton("Back", Modifier.fillMaxWidth(), onClick = back)
+    }
+}
+
+@Composable
+fun PowerButton(detOn: Boolean, onClick: () -> Unit) {
+    val p = LocalPal.current
+    val ctx = LocalContext.current
+    val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    val pressed by src.collectIsPressedAsState()
+    val shape = RoundedCornerShape(20.dp)
+    val reduce = remember { android.provider.Settings.Global.getFloat(ctx.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }
+    val sunk = detOn || pressed
+    val depth by androidx.compose.animation.core.animateDpAsState(if (sunk) 0.dp else 8.dp, androidx.compose.animation.core.tween(if (reduce) 0 else 90), label = "depth")
+    // Ring is darkened in light mode so it keeps 3:1 against the light background.
+    val ringColor = if (p.dark) PowerOrange else Color(0xFFC45E00)
+    val raisedTop = if (p.dark) Color(0xFF5E636D) else Color(0xFFFFFFFF)
+    val raisedBot = if (p.dark) Color(0xFF3B3F47) else Color(0xFFE2E2E8)
+    val insetTop = if (p.dark) Color(0xFF111316) else Color(0xFFCFCFD6)
+    val insetBot = if (p.dark) Color(0xFF26292F) else Color(0xFFE6E6EB)
+    val edge = if (p.dark) listOf(Color(0xFF8A8F9A), Color(0xFF1B1D22)) else listOf(Color(0xFFFFFFFF), Color(0xFFB4B4BE))
+    val m = Modifier.size(76.dp)
+        .shadow(depth, shape, ambientColor = Color.Black, spotColor = Color.Black)
+        .clip(shape)
+        .background(androidx.compose.ui.graphics.Brush.verticalGradient(if (sunk) listOf(insetTop, insetBot) else listOf(raisedTop, raisedBot)))
+        .border(if (detOn) 3.dp else 2.dp,
+            androidx.compose.ui.graphics.Brush.verticalGradient(if (detOn) listOf(ringColor, ringColor) else edge), shape)
+    val c = p.text
+    Box(m.clickable(interactionSource = src, indication = null, role = androidx.compose.ui.semantics.Role.Switch, onClick = onClick)
+        .semantics { contentDescription = "Bump detection"; stateDescription = if (detOn) "On" else "Off" }, contentAlignment = Alignment.Center) {
+        androidx.compose.foundation.Canvas(Modifier.size(40.dp).offset(y = if (sunk) 2.dp else 0.dp)) {
+            val w = size.width * 0.09f
+            val pad = size.width * 0.16f
+            val d = size.width - 2 * pad
+            drawArc(c, -60f, 300f, false, androidx.compose.ui.geometry.Offset(pad, pad + size.width * 0.04f), androidx.compose.ui.geometry.Size(d, d), style = androidx.compose.ui.graphics.drawscope.Stroke(w, cap = androidx.compose.ui.graphics.StrokeCap.Round))
+            drawLine(c, androidx.compose.ui.geometry.Offset(size.width / 2, size.width * 0.08f), androidx.compose.ui.geometry.Offset(size.width / 2, size.width * 0.5f), w, androidx.compose.ui.graphics.StrokeCap.Round)
+        }
     }
 }

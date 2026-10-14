@@ -78,7 +78,15 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     var car by remember { mutableStateOf(Prefs.carAddress) }
     var batt by remember { mutableStateOf(batteryDone(ctx)) }
     var confirmWipe by remember { mutableStateOf(false) }
-    LaunchedEffect(tick) { batt = batteryDone(ctx) }
+    var permsOk by remember { mutableStateOf(permsGranted(ctx)) }
+    LaunchedEffect(tick) { batt = batteryDone(ctx); permsOk = permsGranted(ctx) }
+    // Re-check live every time the app comes back to the front, so a row reappears if something is revoked later.
+    val owner = LocalContext.current as? androidx.lifecycle.LifecycleOwner
+    DisposableEffect(owner) {
+        val obs = androidx.lifecycle.LifecycleEventObserver { _, e -> if (e == androidx.lifecycle.Lifecycle.Event.ON_RESUME) { batt = batteryDone(ctx); permsOk = permsGranted(ctx) } }
+        owner?.lifecycle?.addObserver(obs)
+        onDispose { owner?.lifecycle?.removeObserver(obs) }
+    }
     val voices = remember(Sound.voicesVersion) { Sound.init(ctx); Sound.voices() }
     val cars = remember { pairedDevices(ctx) }
 
@@ -219,16 +227,17 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                 Icon(Icons.Default.PlayArrow, null, tint = p.muted)
             }
         }
-        Card(Modifier.clickable { askPerms() }, pad = 16.dp) {
+        // Setup rows only show while something still needs doing; they come back by themselves if a permission or the battery exemption is lost.
+        if (!permsOk) Card(Modifier.clickable { askPerms() }, pad = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Permissions", 18, FontWeight.Bold, modifier = Modifier.weight(1f))
-                Txt(if (permsGranted(ctx)) "Done" else "Set up", 17, FontWeight.Bold, if (permsGranted(ctx)) p.green else p.accent)
+                Txt("Set up", 17, FontWeight.Bold, p.accentText(p.card))
             }
         }
-        Card(Modifier.clickable { batterySetup(ctx) }, pad = 16.dp) {
+        if (!batt) Card(Modifier.clickable { batterySetup(ctx) }, pad = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Txt("Battery setup", 18, FontWeight.Bold); if (!batt) Muted("Samsung can stop BumpLog mid-drive. Tap to fix.", 12) }
-                Txt(if (batt) "Done" else "Set up", 17, FontWeight.Bold, if (batt) p.green else p.accent)
+                Column(Modifier.weight(1f)) { Txt("Battery setup", 18, FontWeight.Bold); Muted("Samsung can stop BumpLog mid-drive. Tap to fix.", 12) }
+                Txt("Set up", 17, FontWeight.Bold, p.accentText(p.card))
             }
         }
         BackupCards()
@@ -242,7 +251,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         }
         Card(pad = 16.dp) {
             Txt("Testing", 18, FontWeight.Bold)
-            Muted("Fires the real alerts and screens without driving. Test spots are flagged TEST and never count toward your Scorecard or stats.", 12)
+            Muted("Fires the real alerts and screens without driving. Test spots are flagged TEST and never count toward your Stats.", 12)
             Spacer(Modifier.height(8.dp))
             SmallButton("Simulate a major hit", Modifier.fillMaxWidth()) { Testing.majorHit(ctx); Live.bump() }
             Spacer(Modifier.height(6.dp))

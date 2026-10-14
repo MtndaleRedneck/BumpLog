@@ -240,3 +240,10 @@ fun ConfirmDialog(title: String, confirmLabel: String, onConfirm: () -> Unit, on
         }
     }
 }
+
+object StatsIcons {
+    private fun build(name: String, d: String): androidx.compose.ui.graphics.vector.ImageVector =
+        androidx.compose.ui.graphics.vector.ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).addPath(
+            androidx.compose.ui.graphics.vector.PathParser().parsePathString(d).toNodes(), fill = androidx.compose.ui.graphics.SolidColor(Color.Black)).build()
+    val bar = build("bar", "M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z")
+}

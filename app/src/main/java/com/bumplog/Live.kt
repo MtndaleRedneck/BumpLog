@@ -9,7 +9,7 @@ data class LiveState(
     val paused: Boolean = false,
     val speedMph: Float = 0f,
     val gps: Boolean = false,
-    val biggestG: Float = 0f,
+    val hardestHitG: Float = 0f,
     val lastG: Float = 0f,
     val tick: Int = 0,          // bumps when the database changes, so screens reload
     val driveId: Long = 0,
@@ -30,10 +30,10 @@ fun homeDriveId(running: Boolean, liveDriveId: Long, lastDriveId: Long): Long =
 
 fun homeDriveLabel(running: Boolean): String = if (running) "HITS THIS DRIVE" else "HITS LAST DRIVE"
 
-/** State at the start of a drive: the biggest jolt starts over so "this trip" only covers the current drive. */
+/** State at the start of a drive: the hardest hit starts over so "this trip" only covers the current drive. */
 fun driveStartState(previousTick: Int, passenger: Boolean, driveId: Long) =
     LiveState(running = true, paused = passenger, driveId = driveId, tick = previousTick + 1)
 
-fun biggestAfterHit(current: Float, peak: Float) = maxOf(current, peak)
+fun hardestAfterHit(current: Float, peak: Float) = maxOf(current, peak)
 
-fun homeJoltLabel(running: Boolean): String = if (running) "BIGGEST JOLT THIS TRIP" else "BIGGEST JOLT LAST DRIVE"
+fun homeHardestHitLabel(running: Boolean): String = if (running) "HARDEST HIT THIS DRIVE" else "HARDEST HIT LAST DRIVE"

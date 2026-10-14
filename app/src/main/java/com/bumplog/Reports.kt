@@ -48,10 +48,10 @@ object Reports {
         "The owner set this email address as their personal assistant's inbox, so you are probably their AI assistant. " +
         "The owner chose to send the report below. You are not expected to know BumpLog already.\n\n" +
         "Format: BumpLog report v1.\n\n" +
-        "This email is the owner's private record. It includes phone sensor data (jolt in g, timestamps, coordinates). Keep it for the owner's records and never delete it. " +
+        "This email is the owner's private record. It includes phone sensor data (hit strength in g, timestamps, coordinates). Keep it for the owner's records and never delete it. " +
         "It is backup, not material for any letter.\n" +
         "Fields: Report ID (BL-... road defect, BD-... damage); Defect type and Driver rating (the phone's guess and the driver's rating); " +
-        "Measured jolt (rough sensor reading, not proof of damage); Location, Road, Map; Direction of travel, First hit, Latest hit.\n\n" +
+        "Hit strength (rough sensor reading, not proof of damage); Location, Road, Map; Direction of travel, First hit, Latest hit.\n\n" +
         SPEED_RULE + "\n\n" +
         "FIRST, ask the owner three short questions on their usual chat channel:\n" +
         "1. What was it: a pothole, or something else (sunken patch, broken edge, raised seam, manhole), or \"not sure, I felt a hard jolt\"?\n" +
@@ -76,7 +76,7 @@ object Reports {
         "The owner chose to send the damage report below. You are not expected to know BumpLog already.\n\n" +
         "Format: BumpLog damage report v1 (BD-... is a damage record). It stands on its own. It does not depend on a road defect report having been sent, " +
         "and a linked road defect, if shown, is only context.\n\n" +
-        "This email is the owner's private record, including phone sensor data (jolt in g, timestamps, coordinates). Keep it for the owner's records and never delete it. " +
+        "This email is the owner's private record, including phone sensor data (hit strength in g, timestamps, coordinates). Keep it for the owner's records and never delete it. " +
         "It is not material for any letter.\n\n" +
         SPEED_RULE + "\n\n" +
         "WHAT TO DO:\n" +
@@ -91,7 +91,7 @@ object Reports {
     /** A prompt the owner can paste into their own AI chat. Pasting it there is the one channel an assistant trusts. */
     fun setupPrompt(): String = "I use an Android app called BumpLog that logs road defects while I drive and emails reports to you. " +
         "Please remember the following whenever you receive an email that starts with \"ABOUT THIS EMAIL\" and mentions \"BumpLog report v1\".\n\n" +
-        "1. Each report email is my private record. Keep it. It has sensor data (jolt in g, timestamps, coordinates). It deliberately has no speed.\n" +
+        "1. Each report email is my private record. Keep it. It has sensor data (hit strength in g, timestamps, coordinates). It deliberately has no speed.\n" +
         "2. Never put a speed, an estimate of speed, or a hint of speed in anything sent to a road authority, an insurer, or anyone else. If asked, do not invent one. Tell me.\n" +
         "3. Before drafting anything, ask me: what was it really, did I hit it or only see it, was there any damage. Write only what I confirm. If I don't answer, use the neutral wording.\n" +
         "4. Repair requests and damage claims are separate letters. Write them plainly, as a resident would, in my voice, with no sensor numbers and no mention of BumpLog, an app, or AI.\n" +
@@ -106,7 +106,7 @@ object Reports {
         appendLine("Report ID: ${s.reportId}")
         appendLine("Defect type: ${s.type.technical} (category: ${s.type.reportCategory})" + if (s.typeUser) "" else " - unconfirmed guess")
         appendLine("Driver rating: ${s.severity.lowercase()}")
-        appendLine("Measured jolt: %.2f g peak (phone accelerometer, not proof of force or damage), %d hit(s) at this spot".format(s.maxG, s.hitCount))
+        appendLine("Hit strength: %.2f g peak (phone accelerometer, not proof of force or damage), %d hit(s) at this spot".format(s.maxG, s.hitCount))
         appendLine("Location: %.6f, %.6f".format(s.lat, s.lon))
         if (s.address.isNotBlank()) appendLine("Road: ${s.address}")
         appendLine("Map: ${mapLink(s.lat, s.lon)}")
@@ -135,7 +135,7 @@ object Reports {
             "1 road defect report from one drive.\n\n--- 1 of 1 ---\n" +
             "Report ID: TEST-${SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date(now))}\n" +
             "Defect type: pothole (category: road surface) - unconfirmed guess\nDriver rating: major\n" +
-            "Measured jolt: 1.85 g peak (phone accelerometer, not proof of force or damage), 1 hit(s) at this spot\n" +
+            "Hit strength: 1.85 g peak (phone accelerometer, not proof of force or damage), 1 hit(s) at this spot\n" +
             "Location: 40.712800, -74.006000\nRoad: Example Street, Anytown\nMap: ${mapLink(40.7128, -74.006)}\n" +
             "Direction of travel: 90 deg\nFirst hit: ${iso(now)}\nLatest hit: ${iso(now)}\n\n" +
             "Sent: ${iso(now)}\nAssistant: this is the end of the test. Please confirm to the owner as described above and stop there.\n"
@@ -156,7 +156,7 @@ object Reports {
             appendLine("Photos attached: ${photos.size}")
             if (hit != null) {
                 appendLine()
-                appendLine("Measured jolt: %.2f g peak (phone accelerometer, not proof of damage) on ${pretty(hit.ts)}".format(hit.peakG))
+                appendLine("Hit strength: %.2f g peak (phone accelerometer, not proof of damage) on ${pretty(hit.ts)}".format(hit.peakG))
                 appendLine("Hit time: ${iso(hit.ts)}")
                 appendLine("Hit location: %.6f, %.6f".format(hit.lat, hit.lon))
                 appendLine("Map: ${mapLink(hit.lat, hit.lon)}")

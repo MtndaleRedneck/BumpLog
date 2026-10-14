@@ -94,21 +94,21 @@ class UpdaterTest {
     @Test fun hex() { assertEquals("00ff10", Updater.toHex(byteArrayOf(0, -1, 16))) }
 }
 
-class BiggestJoltTest {
-    @Test fun newDriveResetsBiggest() {
+class HardestHitTest {
+    @Test fun newDriveResetsHardestHit() {
         val s = driveStartState(5, false, 99L)
-        assertEquals(0f, s.biggestG, 0f)
+        assertEquals(0f, s.hardestHitG, 0f)
         assertTrue(s.running); assertEquals(99L, s.driveId); assertEquals(6, s.tick)
     }
     @Test fun keepsTheMaximum() {
-        assertEquals(1.4f, biggestAfterHit(1.4f, 0.9f), 0f)
-        assertEquals(2.0f, biggestAfterHit(1.4f, 2.0f), 0f)
-        assertEquals(0.7f, biggestAfterHit(0f, 0.7f), 0f)
+        assertEquals(1.4f, hardestAfterHit(1.4f, 0.9f), 0f)
+        assertEquals(2.0f, hardestAfterHit(1.4f, 2.0f), 0f)
+        assertEquals(0.7f, hardestAfterHit(0f, 0.7f), 0f)
     }
     @Test fun passengerStartIsPaused() { assertTrue(driveStartState(0, true, 1L).paused) }
-    @Test fun joltLabelFollowsRunning() {
-        assertEquals("BIGGEST JOLT THIS TRIP", homeJoltLabel(true))
-        assertEquals("BIGGEST JOLT LAST DRIVE", homeJoltLabel(false))
+    @Test fun hitLabelFollowsRunning() {
+        assertEquals("HARDEST HIT THIS DRIVE", homeHardestHitLabel(true))
+        assertEquals("HARDEST HIT LAST DRIVE", homeHardestHitLabel(false))
     }
     @Test fun labelFollowsRunning() {
         assertEquals("HITS THIS DRIVE", homeDriveLabel(true))

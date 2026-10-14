@@ -46,7 +46,6 @@ sealed class UpdateUi {
 
 sealed class Screen {
     object Setup : Screen()
-    object Score : Screen()
     object DamageQueue : Screen()
     object Voice : Screen()
     object Recordings : Screen()
@@ -171,7 +170,7 @@ class MainActivity : ComponentActivity() {
             "home" -> { tab = "home"; stack = emptyList() }
             "setup" -> stack = listOf(Screen.Setup)
             "alert" -> stack = listOf(Screen.Alert(spot))
-            "score" -> stack = listOf(Screen.Score)
+            "score", "stats" -> { tab = "stats"; stack = emptyList() }
             "damagequeue" -> stack = listOf(Screen.DamageQueue)
             "damage" -> stack = listOf(Screen.Damage(0))
             "spot" -> stack = listOf(Screen.Spot(spot))
@@ -211,7 +210,7 @@ class MainActivity : ComponentActivity() {
         if (BuildConfig.DEBUG && i.getBooleanExtra("mockdrive", false)) {
             val live = i.getBooleanExtra("mocklive", true)
             val w = FloatArray(120) { k -> if (!live) 0f else (0.2f + 0.35f * kotlin.math.abs(kotlin.math.sin(k * 0.7f)) + (if (k in 84..100) 1.1f * (1f - kotlin.math.abs(k - 92) / 8f).coerceAtLeast(0f) else 0f)).coerceAtLeast(0f) }
-            Live.update { it.copy(running = live, gps = live, speedMph = if (live) 38f else 0f, biggestG = 1.42f, lastG = if (live) 0.34f else 0f, wave = w) }
+            Live.update { it.copy(running = live, gps = live, speedMph = if (live) 38f else 0f, hardestHitG = 1.42f, lastG = if (live) 0.34f else 0f, wave = w) }
         }
         if (BuildConfig.DEBUG && i.hasExtra("detoff")) { Prefs.detectionEnabled = !i.getBooleanExtra("detoff", false); Live.bump() }
         // bumplog://setup?assistant=instinct&email=...  and  bumplog://filed?id=BL-...
@@ -251,7 +250,6 @@ class MainActivity : ComponentActivity() {
     private fun Root(live: LiveState) {
         val p = LocalPal.current
         val top = stack.lastOrNull()
-        LaunchedEffect(Prefs.detectionEnabled, top) { if (!Prefs.detectionEnabled) { tab = "home"; if (top != null) stack = emptyList() } }
         BackHandler(top != null) { stack = stack.dropLast(1) }
         confirmFixed?.let { id ->
             val sp = remember(id) { Db.get(this@MainActivity).spot(id) }
@@ -327,7 +325,6 @@ class MainActivity : ComponentActivity() {
             Box(Modifier.weight(1f)) {
                 when (top) {
                     is Screen.Setup -> SetupScreen { stack = emptyList() }
-                    is Screen.Score -> ScorecardScreen(live.tick, { stack = emptyList() }) { stack = listOf(Screen.Spot(it)) }
                     is Screen.Alert -> AlertScreen(top.id, live.tick) { stack = emptyList() }
                     is Screen.Spot -> SpotScreen(top.id, live.tick, { stack = stack.dropLast(1) }) { stack = stack + Screen.Damage(it) }
                     is Screen.Damage -> DamageScreen(top.spotId, live.tick, { stack = stack.dropLast(1) }) { stack = listOf(Screen.DamageQueue) }
@@ -337,8 +334,9 @@ class MainActivity : ComponentActivity() {
                     is Screen.BugReport -> BugReportScreen { tab = "settings"; stack = emptyList() }
                     null -> when (tab) {
                         "review" -> ReviewScreen(live, { stack = listOf(Screen.Spot(it)) }) { stack = listOf(Screen.Setup) }
+                        "stats" -> StatsScreen(live.tick) { stack = listOf(Screen.Spot(it)) }
                         "settings" -> SettingsScreen(live.tick, settingsScroll, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) })
-                        else -> HomeScreen(live, { stack = listOf(Screen.Spot(it)) }, { stack = listOf(Screen.Damage(0)) }, { stack = listOf(Screen.Score) }, permsOk, { askPerms() },
+                        else -> HomeScreen(live, { stack = listOf(Screen.Spot(it)) }, { stack = listOf(Screen.Damage(0)) }, permsOk, { askPerms() },
                             {
                                 Prefs.passenger = !Prefs.passenger
                                 Live.update { it.copy(paused = Prefs.passenger) }
@@ -346,12 +344,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            val detOn = Prefs.detectionEnabled
-            if (top == null || top is Screen.Spot) Row(Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp)
-                .alpha(if (detOn) 1f else 0.35f)
-                .pointerInput(detOn) { if (!detOn) awaitPointerEventScope { while (true) awaitPointerEvent(PointerEventPass.Initial).changes.forEach { it.consume() } } }) {
+            if (top == null || top is Screen.Spot) Row(Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp)) {
                 NavItem("Home", Icons.Default.Home, tab == "home" && top == null, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
                 NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
+                NavItem("Stats", StatsIcons.bar, tab == "stats" && top == null, Modifier.weight(1f)) { tab = "stats"; stack = emptyList() }
                 NavItem("Settings", Icons.Default.Settings, tab == "settings" && top == null, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }
             }
         }
