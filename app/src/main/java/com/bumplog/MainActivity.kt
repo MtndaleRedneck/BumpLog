@@ -14,6 +14,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.AlertDialog
@@ -212,6 +214,7 @@ class MainActivity : ComponentActivity() {
             val w = FloatArray(120) { k -> if (!live) 0f else (0.2f + 0.35f * kotlin.math.abs(kotlin.math.sin(k * 0.7f)) + (if (k in 84..100) 1.1f * (1f - kotlin.math.abs(k - 92) / 8f).coerceAtLeast(0f) else 0f)).coerceAtLeast(0f) }
             Live.update { it.copy(running = live, gps = live, speedMph = if (live) 38f else 0f, hardestHitG = 1.42f, lastG = if (live) 0.34f else 0f, wave = w) }
         }
+        if (BuildConfig.DEBUG && i.hasExtra("theme")) { Prefs.theme = i.getStringExtra("theme")!!; Live.bump() }
         if (BuildConfig.DEBUG && i.hasExtra("detoff")) { Prefs.detectionEnabled = !i.getBooleanExtra("detoff", false); Live.bump() }
         // bumplog://setup?assistant=instinct&email=...  and  bumplog://filed?id=BL-...
         // Links never change state on their own. They open a confirmation the user must accept.
@@ -270,7 +273,18 @@ class MainActivity : ComponentActivity() {
                     text = {
                         Column {
                             Text("You have ${BuildConfig.VERSION_NAME}.")
-                            if (u.info.notes.isNotEmpty()) { Spacer(Modifier.height(10.dp)); u.info.notes.forEach { Text("\u2022 $it"); Spacer(Modifier.height(4.dp)) } }
+                            if (u.info.notes.isNotEmpty()) {
+                                Spacer(Modifier.height(10.dp))
+                                // Long notes scroll inside this box, so the buttons below never get pushed off the dialog.
+                                val maxNotes = (androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp * 0.38f).dp
+                                Column(Modifier.heightIn(max = maxNotes).verticalScroll(rememberScrollState())) {
+                                    u.info.notes.forEach {
+                                        if (it.startsWith("## ")) { Spacer(Modifier.height(4.dp)); Text(it.drop(3), fontWeight = androidx.compose.ui.text.font.FontWeight.Bold) }
+                                        else Text("\u2022 $it")
+                                        Spacer(Modifier.height(4.dp))
+                                    }
+                                }
+                            }
                             Spacer(Modifier.height(8.dp))
                             Text("Android will ask you to confirm the install.")
                             Spacer(Modifier.height(4.dp))

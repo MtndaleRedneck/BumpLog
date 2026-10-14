@@ -39,8 +39,8 @@ fun VoiceScreen(openRecordings: () -> Unit, done: () -> Unit) {
     val natural = Sound.naturalVoices
     val rows = voiceChoices(voices, defKey) + listOf(Sound.CUSTOM to "My own recordings")
     val selected = if (voice == Sound.CUSTOM || Sound.isNatural(voice)) voice else selectedVoiceKey(voice, voices, defKey)
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("Voice")
+    Column(Modifier.fillMaxSize().pane("Voice").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BackRow("Voice", done)
         Card {
             Muted("Tap a voice to pick it. Tap Play to hear it.", 12)
             Spacer(Modifier.height(6.dp))
@@ -111,8 +111,8 @@ fun RecordingsScreen(done: () -> Unit) {
         ConfirmDialog("Delete this recording?", "Delete",
             onConfirm = { Sound.clipFile(ctx, k).delete(); deleteKey = null; bump++ }, onCancel = { deleteKey = null })
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        ScreenTitle("My own recordings")
+    Column(Modifier.fillMaxSize().pane("My own recordings").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BackRow("My own recordings", done)
         Card(pad = 12.dp) {
             Muted("Record your own voice for each alert, or import an audio file. Anything you leave empty uses the phone voice. Recordings stay on this phone.", 12, Modifier.padding(horizontal = 4.dp))
             key(bump) {

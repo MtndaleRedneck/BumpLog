@@ -63,9 +63,11 @@ class UpdaterTest {
 
     @Test fun notesBullets() {
         val body = "## What's new\n- **Update check** inside the app\n* Cleaner `Home` screen\nplain line\n-not a bullet\n- \n"
-        assertEquals(listOf("Update check inside the app", "Cleaner Home screen"), Updater.notesBullets(body))
+        assertEquals(listOf("## What's new", "Update check inside the app", "Cleaner Home screen"), Updater.notesBullets(body))
         assertTrue(Updater.notesBullets(null).isEmpty())
-        assertEquals(8, Updater.notesBullets((1..20).joinToString("\n") { "- item $it" }).size)
+        assertEquals(16, Updater.notesBullets((1..20).joinToString("\n") { "- item $it" }).size)
+        assertEquals(listOf("## UI improvements", "Side by side buttons", "## Bug fixes", "Notes scroll"),
+            Updater.notesBullets("## UI improvements\n- Side by side buttons\n\n### **Bug fixes**\n* Notes scroll\nplain line ignored\n#\n"))
         assertEquals(200, Updater.notesBullets("- " + "x".repeat(500)).first().length)
     }
 

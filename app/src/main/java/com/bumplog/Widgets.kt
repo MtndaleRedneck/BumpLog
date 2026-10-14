@@ -30,6 +30,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
 
 @Composable
 fun Card(modifier: Modifier = Modifier, color: Color = LocalPal.current.card, pad: Dp = 16.dp, content: @Composable ColumnScope.() -> Unit) {
@@ -247,3 +253,62 @@ object StatsIcons {
             androidx.compose.ui.graphics.vector.PathParser().parsePathString(d).toNodes(), fill = androidx.compose.ui.graphics.SolidColor(Color.Black)).build()
     val bar = build("bar", "M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z")
 }
+
+
+// ---------------------------------------------------------------- Screen chrome (titles, back row, accessibility)
+
+/** Announces the screen to TalkBack when it appears. Put it on each screen's root. */
+fun Modifier.pane(title: String): Modifier = this.semantics { paneTitle = title }
+
+/** Marks a section label so TalkBack users can jump between sections. */
+fun Modifier.asHeading(): Modifier = this.semantics { heading() }
+
+/** The small "< Title" row at the top of deeper pages. The whole row is a Back button, 48dp tall. */
+@Composable
+fun BackRow(title: String, back: () -> Unit) {
+    val p = LocalPal.current
+    Row(Modifier.fillMaxWidth().height(48.dp)
+        .clickable(onClickLabel = "Back", role = androidx.compose.ui.semantics.Role.Button, onClick = back),
+        verticalAlignment = Alignment.CenterVertically) {
+        androidx.compose.material3.Icon(Icons.Default.ArrowBack, null, tint = p.text, modifier = Modifier.size(24.dp))
+        Spacer(Modifier.width(8.dp))
+        Txt(title, 18, FontWeight.Bold, modifier = Modifier.asHeading())
+    }
+}
+
+/** Two equal buttons side by side, with the icon above the label. Falls back to stacked full-width buttons on narrow screens or large text. */
+@Composable
+fun ActionButtonPair(primaryLabel: String, primaryIcon: ImageVector, onPrimary: () -> Unit, secondaryLabel: String, onSecondary: () -> Unit) {
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (maxWidth < SIDE_BY_SIDE_MIN_DP.dp || fontScale >= SIDE_BY_SIDE_MAX_FONT) {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                BigButton(primaryLabel, primaryIcon, onClick = onPrimary)
+                SmallButton(secondaryLabel, Modifier.fillMaxWidth(), onClick = onSecondary)
+            }
+        } else {
+            val p = LocalPal.current
+            val shape = RoundedCornerShape(32.dp)
+            Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Column(Modifier.weight(1f).fillMaxHeight().heightIn(min = 76.dp).clip(shape).background(p.accent)
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onPrimary).padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    androidx.compose.material3.Icon(primaryIcon, null, tint = p.onAccent, modifier = Modifier.size(26.dp))
+                    Txt(primaryLabel, 17, FontWeight.Bold, p.onAccent, align = TextAlign.Center)
+                }
+                Column(Modifier.weight(1f).fillMaxHeight().heightIn(min = 76.dp).clip(shape).background(p.card2)
+                    .border(BorderStroke(2.dp, p.accent), shape)
+                    .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onSecondary).padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                    Txt(secondaryLabel, 17, FontWeight.Bold, p.text, align = TextAlign.Center)
+                }
+            }
+        }
+    }
+}
+
+const val SIDE_BY_SIDE_MIN_DP = 360
+const val SIDE_BY_SIDE_MAX_FONT = 1.5f
+
+/** Pure rule behind [ActionButtonPair], kept testable. */
+fun sideBySide(widthDp: Float, fontScale: Float) = widthDp >= SIDE_BY_SIDE_MIN_DP && fontScale < SIDE_BY_SIDE_MAX_FONT

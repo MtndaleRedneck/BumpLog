@@ -44,11 +44,16 @@ object Updater {
         return false
     }
 
-    /** Bullet lines from the release notes, with simple markdown removed. Other lines are ignored. */
+    /** Bullet lines and section headings from the release notes, with simple markdown removed. A heading comes back as "## Name". Other lines are ignored. */
     fun notesBullets(body: String?): List<String> = body.orEmpty().lines().map { it.trim() }
-        .filter { it.startsWith("- ") || it.startsWith("* ") }
-        .map { it.drop(2).replace("**", "").replace("`", "").trim().take(200) }
-        .filter { it.isNotEmpty() }.take(8)
+        .mapNotNull {
+            when {
+                it.startsWith("- ") || it.startsWith("* ") -> it.drop(2).replace("**", "").replace("`", "").trim().take(200)
+                it.startsWith("#") -> it.trimStart('#').replace("**", "").replace("`", "").trim().take(60).let { h -> if (h.isEmpty()) "" else "## $h" }
+                else -> null
+            }
+        }
+        .filter { it.isNotEmpty() }.take(16)
 
     /** The offer for a release JSON, or null when it is a draft, a prerelease, has no usable APK, or is not newer than [current]. */
     fun parseRelease(json: String, current: String): UpdateInfo? = try {
