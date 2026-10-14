@@ -61,6 +61,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     var cutoff by remember { mutableStateOf(Prefs.cutoffG) }
     var severe by remember { mutableStateOf(Prefs.severeG) }
     var minSpeed by remember { mutableStateOf(Prefs.minSpeedMph) }
+    var autoOff by remember { mutableStateOf(Prefs.autoOffMin) }
     var theme by remember { mutableStateOf(Prefs.theme) }
     var accent by remember { mutableStateOf(Prefs.accent) }
     var assistant by remember { mutableStateOf(Prefs.assistant) }
@@ -135,6 +136,8 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Muted("Hits above this pop an alert. 1.30 default.", 12)
         }
         Stepper("Minimum speed", "$minSpeed mph", { minSpeed = (minSpeed - 5).coerceAtLeast(5); Prefs.minSpeedMph = minSpeed }, { minSpeed = (minSpeed + 5).coerceAtMost(60); Prefs.minSpeedMph = minSpeed })
+        Stepper("Turn off when not driving", "$autoOff min", { autoOff = (autoOff - 5).coerceAtLeast(10); Prefs.autoOffMin = autoOff }, { autoOff = (autoOff + 5).coerceAtMost(120); Prefs.autoOffMin = autoOff })
+        Muted("Power turns itself off after the phone has been stopped this long, and a notification lets you turn it back on.", 12)
 
         SettingsCard {
             Txt("Warnings before a saved spot", 18, FontWeight.Bold)
@@ -212,9 +215,9 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         Muted("The test email is labeled TEST.", 12, Modifier.fillMaxWidth(), androidx.compose.ui.text.style.TextAlign.Center)
 
         Toggle("Check for updates", updCheck, "Checks GitHub for a newer BumpLog when you open the app. No account or personal details are sent.") { updCheck = it; Prefs.updateCheck = it }
-        Toggle("Auto-start when driving", auto, "Starts when your phone connects to the car's Bluetooth") { auto = it; Prefs.autoStart = it }
+        Toggle("Car Bluetooth prompts", auto, "Offers to start logging when your car connects and to stop when it disconnects. Off by default.") { auto = it; Prefs.autoStart = it }
         if (auto && cars.isNotEmpty()) Card {
-            Dropdown("Car Bluetooth", car, listOf("" to "Any car audio device") + cars) { car = it; Prefs.carAddress = it; Prefs.carName = cars.firstOrNull { c -> c.first == it }?.second ?: "" }
+            Dropdown("Car Bluetooth", car, listOf("" to "Choose your car") + cars) { car = it; Prefs.carAddress = it; Prefs.carName = cars.firstOrNull { c -> c.first == it }?.second ?: "" }
         }
         Card(Modifier.clickable { Notifier.openPersistentSettings(ctx) }, pad = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {

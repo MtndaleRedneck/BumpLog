@@ -112,6 +112,8 @@ class MainActivity : ComponentActivity() {
     override fun onStop() { Sound.stopRecording(save = false); Sound.onRecordingEnded?.invoke(); super.onStop() }
     override fun onResume() {
         super.onResume(); refreshPerms(); Live.bump()
+        // Power on means logging is running. Bring it back if Android or the user ended it.
+        if (permsOk && Prefs.detectionEnabled && !Live.state.value.running) try { DriveService.start(this) } catch (e: Exception) { }
         // Back from the "Install unknown apps" screen with the file already downloaded and checked: carry on to the installer.
         updateReady?.let { f -> if (packageManager.canRequestPackageInstalls()) { updateReady = null; launchInstaller(f) } }
     }
@@ -195,7 +197,7 @@ class MainActivity : ComponentActivity() {
             val s = Db.get(this).spot(spot)
             stack = listOf(if (s != null && s.severe && s.review == "PENDING") Screen.Alert(spot) else Screen.Spot(spot))
         }
-        if (i.getBooleanExtra("start", false)) startDetection()
+        if (i.getBooleanExtra("start", false)) { Prefs.detectionEnabled = true; startDetection() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("demo", false)) { Demo.seed(this); Live.bump() }
         // Debug builds only, for the CI screenshot run: pick the voice source and trigger the celebration.
         if (BuildConfig.DEBUG && i.hasExtra("setvoice")) { Prefs.voice = i.getStringExtra("setvoice").orEmpty(); Live.bump() }

@@ -280,8 +280,10 @@ fun BackRow(title: String, back: () -> Unit) {
 @Composable
 fun ActionButtonPair(primaryLabel: String, primaryIcon: ImageVector, onPrimary: () -> Unit, secondaryLabel: String, onSecondary: () -> Unit) {
     val fontScale = LocalDensity.current.fontScale
+    // The rule is about the screen width, not the content width inside the page padding.
+    val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
     BoxWithConstraints(Modifier.fillMaxWidth()) {
-        if (maxWidth < SIDE_BY_SIDE_MIN_DP.dp || fontScale >= SIDE_BY_SIDE_MAX_FONT) {
+        if (!sideBySide(screenWidthDp.toFloat(), fontScale)) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 BigButton(primaryLabel, primaryIcon, onClick = onPrimary)
                 SmallButton(secondaryLabel, Modifier.fillMaxWidth(), onClick = onSecondary)
