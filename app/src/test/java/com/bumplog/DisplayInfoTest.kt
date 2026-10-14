@@ -24,6 +24,6 @@ class DisplayInfoTest {
         assertFalse(BugReport.preview("x", BugContext("1", "2", "3")).contains("Display:"))
     }
     @Test fun sideBySideRule() {
-        assertTrue(sideBySide(392f, 1.15f)); assertFalse(sideBySide(340f, 1.0f)); assertFalse(sideBySide(412f, 1.5f)); assertTrue(sideBySide(360f, 1.49f))
+        assertTrue(sideBySide(392f, 1.15f)); assertTrue(sideBySide(360f, 1.0f)); assertFalse(sideBySide(340f, 1.0f)); assertFalse(sideBySide(412f, 1.5f)); assertTrue(sideBySide(360f, 1.49f))
     }
 }

@@ -42,6 +42,18 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     private var lastFixMs = 0L
     private var lastNotifMs = 0L
     private var lastMoveMs = 0L
+    private var lastDrivingMs = 0L // last time the phone was actually moving (above standstill), for auto-off
+    private var lastSpeedMph = 0f
+    private val clock = object : Runnable {
+        override fun run() {
+            // Wall-clock tick so the timers still advance when GPS has no fix (indoors, tunnels).
+            val now = System.currentTimeMillis()
+            val fresh = now - lastFixMs < 30_000L
+            passengerTick(if (fresh) lastSpeedMph else 99f) // without a fresh fix we cannot confirm a stop, so Passenger waits
+            if (Live.state.value.running && autoOffDue(lastDrivingMs, now, Prefs.autoOffMin)) { autoOff(); return }
+            main.postDelayed(this, 30_000L)
+        }
+    }
     private val wave = FloatArray(120)
     private var waveI = 0
     private var waveTick = 0
@@ -68,7 +80,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         when (i?.action) {
             ACTION_STOP -> { finishDrive(); return START_NOT_STICKY }
             ACTION_CAR_GONE -> {
-                if (autoStarted) { main.removeCallbacks(stopRunnable); main.postDelayed(stopRunnable, 90_000) }
+                // Power is the master switch: leaving the car does not end logging.
                 return START_STICKY
             }
         }
@@ -80,10 +92,12 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         driveId = System.currentTimeMillis()
         Prefs.lastDriveId = driveId
         lastMoveMs = driveId
+        lastDrivingMs = driveId
         Live.update { driveStartState(it.tick, Prefs.passenger, driveId) }
         ServiceCompat.startForeground(this, Notifier.ID_FOREGROUND, Notifier.foreground(this, Live.state.value),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         startSensors()
+        main.removeCallbacks(clock); main.postDelayed(clock, 30_000L)
         return START_STICKY
     }
 
@@ -155,10 +169,13 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     override fun onLocationChanged(l: Location) {
         last = l; lastFixMs = System.currentTimeMillis()
         val sp = mph(l)
+        passengerTick(sp)
         val prev = Live.state.value
         Live.update { it.copy(speedMph = sp, gps = true) }
-        if (sp > 3) lastMoveMs = lastFixMs
-        if (lastFixMs - lastMoveMs > 15 * 60_000L) { finishDrive(); return }
+        lastSpeedMph = sp
+        if (sp > STANDSTILL_MPH) { lastMoveMs = lastFixMs; lastDrivingMs = lastFixMs }
+        if (autoOffDue(lastDrivingMs, lastFixMs, Prefs.autoOffMin)) { autoOff(); return }
+        if (lastFixMs - lastMoveMs > 15 * 60_000L) { rollTrip(); return }
         if (!prev.paused && Prefs.detectionEnabled) checkSpots(l, sp)
         if (lastFixMs - lastNotifMs > 5000 || prev.paused != Live.state.value.paused) {
             lastNotifMs = lastFixMs
@@ -219,9 +236,46 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         }
     }
 
+    /** Passenger mode timer: heads-up 10 minutes before, flip to Driver only once stopped, with Undo afterwards. */
+    private fun passengerTick(speedMph: Float) {
+        if (!Prefs.passenger) return
+        val left = Prefs.passengerLeftMs()
+        when (passengerStep(left, Prefs.passengerWarned, speedMph, System.currentTimeMillis() - lastMoveMs)) {
+            PassengerStep.NONE -> return
+            PassengerStep.WARN -> { Prefs.passengerWarned = true; Notifier.passengerSoon(this, ((left + 59_999) / 60_000).toInt()); return }
+            PassengerStep.FLIP -> {}
+        }
+        Prefs.passenger = false
+        Prefs.passengerUndoUntil = System.currentTimeMillis() + 5 * 60_000L
+        Live.update { it.copy(paused = false) }
+        Notifier.passengerBack(this)
+        Notifier.cancelAndRefresh(this)
+    }
+
+    /** Parked for 15 minutes: close the trip with its summary, then keep logging as a fresh one. Passenger mode carries over. */
+    private fun rollTrip() {
+        val hits = db.hitsInDrive(driveId)
+        val toFile = db.tripSpots(driveId).size
+        if (hits > 0) Notifier.driveDone(this, hits, toFile, driveId)
+        val dq = db.queuedDamages().size
+        if (dq > 0) Notifier.damageWaiting(this, dq)
+        // Passenger mode is left alone here: only its own timer (or the user) switches it back to Driver.
+        driveId = System.currentTimeMillis(); Prefs.lastDriveId = driveId; lastMoveMs = driveId
+        Live.update { tripRolloverState(it, Prefs.passenger, driveId) }
+        Notifier.cancelAndRefresh(this)
+    }
+
+    /** Not driving for the whole auto-off time: turn Power off and say so, since nothing can turn it back on by itself. */
+    private fun autoOff() {
+        Prefs.detectionEnabled = false
+        Prefs.passenger = false
+        finishDrive()
+        Notifier.autoOff(this, Prefs.autoOffMin)
+    }
+
     private fun finishDrive() {
         if (!Live.state.value.running) { stopSelf(); return }
-        main.removeCallbacks(stopRunnable)
+        main.removeCallbacks(stopRunnable); main.removeCallbacks(clock)
         sm.unregisterListener(this)
         try { lm.removeUpdates(this) } catch (e: Exception) { }
         val hits = db.hitsInDrive(driveId)
@@ -237,6 +291,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     }
 
     override fun onDestroy() {
+        main.removeCallbacks(clock)
         sm.unregisterListener(this)
         try { lm.removeUpdates(this) } catch (e: Exception) { }
         if (Live.state.value.running) Live.update { it.copy(running = false) }

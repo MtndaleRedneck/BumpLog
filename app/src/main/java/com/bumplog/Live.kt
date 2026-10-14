@@ -37,3 +37,22 @@ fun driveStartState(previousTick: Int, passenger: Boolean, driveId: Long) =
 fun hardestAfterHit(current: Float, peak: Float) = maxOf(current, peak)
 
 fun homeHardestHitLabel(running: Boolean): String = if (running) "HARDEST HIT THIS DRIVE" else "HARDEST HIT LAST DRIVE"
+
+enum class PassengerStep { NONE, WARN, FLIP }
+
+/** Passenger timer rule: warn in the last 10 minutes, flip only after time is up AND the phone has been still for 2 minutes. */
+fun passengerStep(leftMs: Long, warned: Boolean, speedMph: Float, stillMs: Long): PassengerStep = when {
+    leftMs > 10 * 60_000L -> PassengerStep.NONE
+    leftMs > 0 -> if (warned) PassengerStep.NONE else PassengerStep.WARN
+    speedMph < 3f && stillMs >= 2 * 60_000L -> PassengerStep.FLIP
+    else -> PassengerStep.NONE
+}
+
+/** A new trip after a long stop keeps the GPS state and, above all, the Passenger/Driver mode the user chose. */
+fun tripRolloverState(previous: LiveState, passenger: Boolean, driveId: Long) =
+    driveStartState(previous.tick, passenger, driveId).copy(gps = previous.gps)
+
+const val STANDSTILL_MPH = 3f
+
+/** Auto-off counts real standstill (not the speed gate), so crawling traffic never turns logging off mid-drive. */
+fun autoOffDue(lastMovingMs: Long, nowMs: Long, minutes: Int) = nowMs - lastMovingMs > minutes * 60_000L

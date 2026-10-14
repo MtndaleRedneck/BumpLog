@@ -15,6 +15,8 @@ object Prefs {
     private fun b(k: String, d: Boolean) = sp.getBoolean(k, d)
     private fun f(k: String, d: Float) = sp.getFloat(k, d)
     private fun i(k: String, d: Int) = sp.getInt(k, d)
+    private fun l(k: String, d: Long) = sp.getLong(k, d)
+    const val PASSENGER_MS = 3 * 60 * 60 * 1000L
     private fun s(k: String, d: String) = sp.getString(k, d) ?: d
 
     /**
@@ -141,13 +143,21 @@ object Prefs {
     var updateCheck: Boolean get() = b("update_check", true); set(v) = sp.edit().putBoolean("update_check", v).apply()
     /** Version name the user chose to skip in the update dialog. */
     var skippedUpdate: String get() = s("skipped_update", ""); set(v) = sp.edit().putString("skipped_update", v).apply()
-    var autoStart: Boolean get() = b("autostart", true); set(v) = sp.edit().putBoolean("autostart", v).apply()
+    var autoStart: Boolean get() = b("autostart", false); set(v) = sp.edit().putBoolean("autostart", v).apply()
     var carAddress: String get() = s("car_addr", ""); set(v) = sp.edit().putString("car_addr", v).apply()
     var carName: String get() = s("car_name", ""); set(v) = sp.edit().putString("car_name", v).apply()
     /** Start time (also the id) of the most recent drive, so Home can show its hit count while parked. */
     var lastDriveId: Long get() = sp.getLong("last_drive_id", 0L); set(v) = sp.edit().putLong("last_drive_id", v).apply()
-    var passenger: Boolean get() = b("passenger", false); set(v) = sp.edit().putBoolean("passenger", v).apply()
+    var passenger: Boolean get() = b("passenger", false)
+        set(v) = sp.edit().putBoolean("passenger", v).putLong("pass_until", if (v) System.currentTimeMillis() + PASSENGER_MS else 0L).putBoolean("pass_warned", false).apply()
+    /** Passenger mode runs for three hours, then returns to Driver (never while moving, see DriveService). */
+    fun passengerLeftMs(): Long = if (!passenger) 0L else (l("pass_until", 0L) - System.currentTimeMillis()).coerceAtLeast(0L)
+    fun extendPassenger() { sp.edit().putLong("pass_until", l("pass_until", System.currentTimeMillis()).coerceAtLeast(System.currentTimeMillis()) + 3 * 60 * 60_000L).putBoolean("pass_warned", false).apply() }
+    var passengerWarned: Boolean get() = b("pass_warned", false); set(v) = sp.edit().putBoolean("pass_warned", v).apply()
+    /** Until this time, the Undo button on the "back to Driver" notice puts Passenger mode back. */
+    var passengerUndoUntil: Long get() = l("pass_undo", 0L); set(v) = sp.edit().putLong("pass_undo", v).apply()
 
+    var autoOffMin: Int get() = i("autooff", 30).coerceIn(10, 120); set(v) = sp.edit().putInt("autooff", v.coerceIn(10, 120)).apply()
     var warnFarFt: Int get() = i("warn_far", 1320); set(v) = sp.edit().putInt("warn_far", v).apply()
     var warnNearFt: Int get() = i("warn_near", 600); set(v) = sp.edit().putInt("warn_near", v).apply()
     var audioMode: String get() = s("audio_mode", "BOTH"); set(v) = sp.edit().putString("audio_mode", v).apply()

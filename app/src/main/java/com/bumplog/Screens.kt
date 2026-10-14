@@ -82,8 +82,9 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     LoadingSpots(live.tick) { db -> recent = db.allSpots().take(6); val id = homeDriveId(live.running, live.driveId, Prefs.lastDriveId); today = if (id > 0) db.hitsInDrive(id) else 0 }
     val status = when {
         !Prefs.detectionEnabled -> "Detection off" to p.muted
-        !live.running -> "Not driving" to p.muted
-        live.paused -> "Paused - passenger" to p.muted
+        !permsOk -> "Needs permission" to p.muted
+        !live.running -> "Starting..." to p.muted
+        live.paused -> { val m = (Prefs.passengerLeftMs() + 59_999) / 60_000; "Paused - passenger, ${m / 60}h ${m % 60}m left" to p.muted }
         !live.gps -> "Waiting for GPS" to p.muted
         else -> "Detecting" to p.text
     }
@@ -91,8 +92,11 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
         val detOn = Prefs.detectionEnabled
         val togglePower = {
             Prefs.detectionEnabled = !detOn
+            if (detOn) Prefs.passenger = false // Power off always returns to Driver
             // Off is a full stop: end an active drive so GPS, sensors and the status notification shut down too.
             if (detOn && live.running) ctx.startService(Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_STOP))
+            // On is the master switch: logging starts right away and keeps running until Power is turned off.
+            if (!detOn) try { DriveService.start(ctx) } catch (e: Exception) { }
             Live.bump()
         }
         val isPassenger = Prefs.passenger || live.paused
@@ -147,9 +151,6 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
         ActionButtonPair("Report last hit", Icons.Default.Warning, {
             val s = recent.firstOrNull(); if (s == null) toast(ctx, "No hits logged yet.") else openSpot(s.id)
         }, "File a damage report", openDamage)
-        Txt("Recent", 20, FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
-        if (recent.isEmpty()) Muted("Nothing yet. Start a drive and hits show up here.", 14, Modifier.padding(start = 4.dp))
-        recent.forEach { SpotRow(it) { openSpot(it.id) } }
         Spacer(Modifier.height(8.dp))
     }
 }

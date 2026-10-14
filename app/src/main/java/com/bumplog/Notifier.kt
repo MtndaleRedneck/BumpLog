@@ -32,6 +32,8 @@ object Notifier {
     const val ID_CAR = 3
     const val ID_TEST = 4
     const val ID_DAMAGE = 5
+    const val ID_AUTO_OFF = 6
+    const val ID_PASSENGER = 7
     private val main = Handler(Looper.getMainLooper())
     private var overlayView: View? = null
 
@@ -86,7 +88,7 @@ object Notifier {
 
     fun foreground(ctx: Context, state: LiveState): Notification {
         val text = when {
-            state.paused -> "Paused (passenger mode). Not logging."
+            state.paused -> { val m = (Prefs.passengerLeftMs() + 59_999) / 60_000; "Paused (passenger). Back to Driver in ${m / 60}h ${m % 60}m." }
             !state.gps -> "Detecting. Waiting for GPS."
             else -> "Detecting. %d mph".format(state.speedMph.toInt())
         }
@@ -180,7 +182,38 @@ object Notifier {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         nm.notify(ID_CAR, NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_stat).setContentTitle("Car connected")
-            .setContentText("Android would not let BumpLog start by itself. Tap to start watching the road.")
+            .setContentText("Tap to start logging this drive.")
+            .setAutoCancel(true).setContentIntent(openApp(ctx, 0, null, true)).build())
+    }
+
+    fun passengerSoon(ctx: Context, minutes: Int) {
+        ctx.getSystemService(NotificationManager::class.java).notify(ID_PASSENGER, NotificationCompat.Builder(ctx, CH_ALERT)
+            .setSmallIcon(R.drawable.ic_stat).setContentTitle("Passenger mode ends soon")
+            .setContentText("Back to Driver in about $minutes min, once you are stopped.")
+            .addAction(0, "Extend 3 hours", action(ctx, ActionReceiver.EXTEND))
+            .setAutoCancel(true).setContentIntent(openApp(ctx)).build())
+    }
+
+    fun passengerBack(ctx: Context) {
+        ctx.getSystemService(NotificationManager::class.java).notify(ID_PASSENGER, NotificationCompat.Builder(ctx, CH_ALERT)
+            .setSmallIcon(R.drawable.ic_stat).setContentTitle("Back to Driver")
+            .setContentText("BumpLog is logging hits again. Tap Undo to stay in Passenger mode.")
+            .addAction(0, "Undo", action(ctx, ActionReceiver.UNDO))
+            .setAutoCancel(true).setTimeoutAfter(5 * 60_000L).setContentIntent(openApp(ctx)).build())
+    }
+
+    fun carGone(ctx: Context) {
+        ctx.getSystemService(NotificationManager::class.java).notify(ID_CAR, NotificationCompat.Builder(ctx, CH_ALERT)
+            .setSmallIcon(R.drawable.ic_stat).setContentTitle("Car disconnected")
+            .setContentText("Stop logging? It keeps running until you stop it.")
+            .addAction(0, "Stop logging", action(ctx, ActionReceiver.STOP))
+            .setAutoCancel(true).setContentIntent(openApp(ctx)).build())
+    }
+
+    fun autoOff(ctx: Context, minutes: Int) {
+        ctx.getSystemService(NotificationManager::class.java).notify(ID_AUTO_OFF, NotificationCompat.Builder(ctx, CH_ALERT)
+            .setSmallIcon(R.drawable.ic_stat).setContentTitle("BumpLog turned off")
+            .setContentText("No driving for $minutes minutes. Tap to turn it back on.")
             .setAutoCancel(true).setContentIntent(openApp(ctx, 0, null, true)).build())
     }
 

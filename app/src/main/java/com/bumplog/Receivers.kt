@@ -1,7 +1,6 @@
 package com.bumplog
 
 import android.Manifest
-import android.bluetooth.BluetoothClass
 import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -21,7 +20,12 @@ class ActionReceiver : BroadcastReceiver() {
             WARN -> db.setWarn(id, true)
             STILL -> { db.resetCleanPasses(id); Notifier.cancel(ctx, 3000 + id.toInt()) }
             PAUSE -> { Prefs.passenger = !Prefs.passenger; Live.update { it.copy(paused = Prefs.passenger) } }
-            STOP -> ctx.startService(Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_STOP))
+            EXTEND -> { Prefs.extendPassenger(); Notifier.cancel(ctx, Notifier.ID_PASSENGER) }
+            UNDO -> {
+                Notifier.cancel(ctx, Notifier.ID_PASSENGER)
+                if (System.currentTimeMillis() < Prefs.passengerUndoUntil) { Prefs.passengerUndoUntil = 0L; Prefs.passenger = true; Live.update { it.copy(paused = true) } }
+            }
+            STOP -> { Prefs.detectionEnabled = false; Prefs.passenger = false; Notifier.cancel(ctx, Notifier.ID_CAR); ctx.startService(Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_STOP)) }
         }
         if (id != 0L) {
             Notifier.cancel(ctx, 1000 + id.toInt())
@@ -37,41 +41,35 @@ class ActionReceiver : BroadcastReceiver() {
         const val PAUSE = "com.bumplog.PAUSE"
         const val STOP = "com.bumplog.STOP"
         const val STILL = "com.bumplog.STILL"
+        const val EXTEND = "com.bumplog.EXTEND"
+        const val UNDO = "com.bumplog.UNDO"
     }
 }
 
-/** Starts and stops detection when the phone connects to or leaves the car's Bluetooth. */
+/** Offers to start or stop logging when the phone connects to or leaves the car device chosen in Settings. */
 class BluetoothReceiver : BroadcastReceiver() {
     @Suppress("DEPRECATION")
     override fun onReceive(ctx: Context, i: Intent) {
         Prefs.init(ctx)
-        if (!Prefs.autoStart || !Prefs.detectionEnabled) return
+        if (!Prefs.autoStart) return
         if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) return
         val dev = i.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE) ?: return
         if (!isCar(dev)) return
+        Notifier.channels(ctx)
         when (i.action) {
+            // Only the one device chosen in Settings counts. Both cases only offer; the tap is what changes anything.
             BluetoothDevice.ACTION_ACL_CONNECTED -> {
-                Prefs.passenger = false // a new drive starts un-paused
-                try {
-                    ContextCompat.startForegroundService(ctx, Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_START).putExtra("auto", true))
-                } catch (e: Exception) {
-                    // Android refused a background start. Ask the user to tap instead.
-                    Notifier.channels(ctx)
-                    Notifier.carConnected(ctx)
-                }
+                if (!(Prefs.detectionEnabled && Live.state.value.running)) Notifier.carConnected(ctx)
             }
-            BluetoothDevice.ACTION_ACL_DISCONNECTED ->
-                try { ctx.startService(Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_CAR_GONE)) } catch (e: Exception) { }
+            BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                if (Live.state.value.running) Notifier.carGone(ctx)
+            }
         }
     }
 
     @Suppress("MissingPermission")
     private fun isCar(d: BluetoothDevice): Boolean {
         val chosen = Prefs.carAddress
-        if (chosen.isNotBlank()) return d.address == chosen
-        return try {
-            val c = d.bluetoothClass?.deviceClass
-            c == BluetoothClass.Device.AUDIO_VIDEO_CAR_AUDIO || c == BluetoothClass.Device.AUDIO_VIDEO_HANDSFREE
-        } catch (e: Exception) { false }
+        return chosen.isNotBlank() && d.address == chosen
     }
 }
