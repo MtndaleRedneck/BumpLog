@@ -71,10 +71,17 @@ jobs:
             echo "Release $TAG already exists. Bump versionName to publish a new release."
             exit 0
           fi
-          gh release create "$TAG" "BumpLog-v$VERSION.apk" \
-            --target "$(git rev-parse HEAD)" \
-            --title "BumpLog $TAG" \
-            --notes "BumpLog $TAG. Android 12+. Install by opening the APK on your phone and allowing installs from your browser. See the README for setup. The APK is signed with a private release key kept in encrypted repository secrets."
+          if [ -f release-notes.md ]; then
+            gh release create "$TAG" "BumpLog-v$VERSION.apk" \
+              --target "$(git rev-parse HEAD)" \
+              --title "BumpLog $TAG" \
+              --notes-file release-notes.md
+          else
+            gh release create "$TAG" "BumpLog-v$VERSION.apk" \
+              --target "$(git rev-parse HEAD)" \
+              --title "BumpLog $TAG" \
+              --notes "BumpLog $TAG. Android 12+. See the README for setup."
+          fi
 
   screenshots:
     needs: build
