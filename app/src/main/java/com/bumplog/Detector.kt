@@ -5,7 +5,7 @@ import kotlin.math.sqrt
 
 /**
  * [label] is the plain name shown in the app. [technical] is the engineering term used in report emails.
- * [spoken] is how the type is named in alerts and prompts, [avoidedName] is its Scorecard line.
+ * [spoken] is how the type is named in alerts and prompts, [avoidedName] is its Stats line.
  */
 enum class DefectType(val label: String, val reportCategory: String, val technical: String, val spoken: String, val avoidedName: String) {
     POTHOLE("Pothole", "Pothole", "Pothole", "pothole", "Potholes avoided"),
@@ -18,7 +18,7 @@ enum class DefectType(val label: String, val reportCategory: String, val technic
     }
 }
 
-/** One continuous jolt: from the first sample over the cutoff to a quiet gap. */
+/** One continuous impact event: from the first sample over the cutoff to a quiet gap. */
 data class HitEvent(
     val startMs: Long,
     val peakG: Float,

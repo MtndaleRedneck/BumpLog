@@ -13,7 +13,7 @@ class ReportsTest {
         assertFalse(b.contains("mph", ignoreCase = true))
         assertFalse(b.contains("speed", ignoreCase = true))
         assertFalse(b.contains("47"))
-        assertTrue(b.contains("Measured jolt"))
+        assertTrue(b.contains("Hit strength"))
     }
 
     @Test fun everyHeaderStartsWithTheSelfDescribingBlockAndNoHeaderGivesASpeed() {

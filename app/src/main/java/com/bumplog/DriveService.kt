@@ -132,7 +132,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         val hit = Hit(0, 0, driveId, now, loc.latitude, loc.longitude, heading, speed, ev.peakG, ev.durationMs, ev.peaks, guess)
         val spot = db.recordHit(hit, guess)
         passes.values.forEach { it.hit = true }
-        Live.update { it.copy(biggestG = biggestAfterHit(it.biggestG, ev.peakG)) }
+        Live.update { it.copy(hardestHitG = hardestAfterHit(it.hardestHitG, ev.peakG)) }
         Live.bump()
         if (spot.address.isBlank()) io.execute { lookupAddress(spot) }
         val quiet = guess == DefectType.RUMBLE || spot.type == DefectType.RUMBLE

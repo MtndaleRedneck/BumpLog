@@ -337,7 +337,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         return out
     }
 
-    /** Creates a flagged test spot. It has no hits, never warns on the road, and is invisible to lists and the scorecard. */
+    /** Creates a flagged test spot. It has no hits, never warns on the road, and is invisible to lists and Stats. */
     @Synchronized fun addTestSpot(type: DefectType, confirmed: Boolean, severity: String, fileTrip: Boolean, maxG: Float): Spot {
         val now = System.currentTimeMillis()
         val id = writableDatabase.insert("spots", null, ContentValues().apply {

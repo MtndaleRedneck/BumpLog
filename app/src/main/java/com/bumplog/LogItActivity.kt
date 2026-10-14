@@ -59,7 +59,7 @@ class LogItActivity : ComponentActivity() {
                     type = DefectType.valueOf(it); confirmed = true
                 }
                 if (!confirmed) {
-                    Muted("BumpLog guessed from your speed and the jolt. It could be wrong.", 13)
+                    Muted("BumpLog guessed from your speed and how hard the hit was. It could be wrong.", 13)
                     SmallButton("Yes, it is: ${guess.label}", Modifier.fillMaxWidth().heightIn(min = 56.dp), outline = false) { confirmed = true }
                 } else Muted("Type confirmed.", 13)
                 Txt("How bad?", 16, FontWeight.Bold)

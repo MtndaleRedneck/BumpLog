@@ -1,8 +1,7 @@
-- In-app update check: BumpLog tells you when a newer version is out and can download and install it. It checks when you open the app, never during a drive, and you can turn it off in Settings. Choose Update, Later, or Skip this version.
-- Downloads are checked against the checksum GitHub publishes and against BumpLog's signing key before Android's installer opens. A bad file is rejected.
-- Redesigned Home screen: Driver, power, and Passenger in one row, a Live data card, and tiles for hits and the biggest jolt.
-- The biggest jolt now resets at the start of each drive, and the tile reads "Biggest jolt last drive" when you are parked.
-- The power button turns grey when detection is off and now works with TalkBack.
-- Driver and Passenger are locked while detection is off.
-- Large-font fixes on the Home screen.
-- Updates install over your current version and keep your data. Android asks once for permission to install from BumpLog the first time you tap Update.
+- Bump detection now has a raised power button at the far right of the top row. Off is a raised bright button, on is pushed in with an orange ring. It works with TalkBack (announced as On or Off) and respects reduced animation.
+- When detection is off, only the Live data card and Driver/Passenger are frozen. Tiles, buttons, Recent, and the tabs stay usable, and switching tabs no longer sends you back to Home.
+- Stats is now the fourth tab, after Review and before Settings. The Scorecard button is gone from Home.
+- The Permissions and Battery setup rows hide once they are handled, are rechecked every time you come back to the app, and return if Android takes a permission away.
+- Home tiles now read "Hardest hit this drive" and "Hardest hit last drive". Stats and emails say "Hardest hit" and "Hit strength".
+- New color scheme: numbers are white, the accent color is for controls and counts that need you, amber means a severe hit or a warning, and paused states are grey. Contrast was checked in dark and light themes.
+- Updates install over your current version and keep your data.
