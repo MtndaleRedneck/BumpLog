@@ -296,6 +296,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         return out
     }
 
+    @Synchronized fun lastHitOf(spotId: Long): Hit? {
+        readableDatabase.query("hits", hitCols, "spot_id=?", arrayOf(spotId.toString()), null, null, "ts DESC", "1").use { c ->
+            return if (c.moveToFirst()) hitOf(c) else null
+        }
+    }
+
     @Synchronized fun hit(id: Long): Hit? {
         readableDatabase.query("hits", hitCols, "id=?", arrayOf(id.toString()), null, null, null).use { c ->
             return if (c.moveToFirst()) hitOf(c) else null

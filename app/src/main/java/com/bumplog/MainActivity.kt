@@ -217,6 +217,10 @@ class MainActivity : ComponentActivity() {
             Live.update { it.copy(running = live, gps = live, speedMph = if (live) 38f else 0f, hardestHitG = 1.42f, lastG = if (live) 0.34f else 0f, wave = w) }
         }
         if (BuildConfig.DEBUG && i.hasExtra("theme")) { Prefs.theme = i.getStringExtra("theme")!!; Live.bump() }
+        if (BuildConfig.DEBUG && i.hasExtra("drv")) { Prefs.passenger = false; Live.update { it.copy(paused = false) }; Live.bump() }
+        if (BuildConfig.DEBUG && i.hasExtra("pass")) { Prefs.passenger = true; Live.update { it.copy(paused = true) }; Live.bump() }
+        if (BuildConfig.DEBUG && i.getBooleanExtra("lastdemo", false)) { Db.get(this).hits(1).firstOrNull()?.let { Prefs.lastDriveId = it.driveId }; Live.bump() }
+        if (BuildConfig.DEBUG && i.getBooleanExtra("emptylast", false)) { Prefs.lastDriveId = System.currentTimeMillis(); Live.bump() }
         if (BuildConfig.DEBUG && i.hasExtra("detoff")) { Prefs.detectionEnabled = !i.getBooleanExtra("detoff", false); Live.bump() }
         // bumplog://setup?assistant=instinct&email=...  and  bumplog://filed?id=BL-...
         // Links never change state on their own. They open a confirmation the user must accept.
