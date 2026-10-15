@@ -99,11 +99,11 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     var extraAct by remember { mutableStateOf(0.dp) }   // extra space above the action buttons
     var extraTop by remember { mutableStateOf(0.dp) }   // extra space above everything
     val nGaps = if (permsOk) 3 else 4
-    Column(Modifier.fillMaxSize().pane("Home").verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 16.dp + extraTop, bottom = 6.dp)) {
+    Column(Modifier.fillMaxSize().pane("Home").verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 24.dp + extraTop, bottom = 6.dp)) {
       Column(Modifier.onSizeChanged {
           val h = with(dens) { it.height.toDp() }
           val fixed = h - gap * nGaps - extraAct
-          val free = viewH - 22.dp - fixed
+          val free = viewH - 30.dp - fixed
           var g: Dp; var ea = 0.dp; var et = 0.dp
           g = (free / nGaps).coerceIn(4.dp, 16.dp); ea = (free - g * nGaps).coerceIn(0.dp, 32.dp)
           if (kotlin.math.abs((g - gap).value) > 0.5f) gap = g
@@ -460,11 +460,12 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     val dens = androidx.compose.ui.platform.LocalDensity.current
     // Slight fixed padding top and bottom; the gaps between the summary cards flex with the screen height (cards and text never change size).
     var gap by remember { mutableStateOf(10.dp) }
-    Column(Modifier.fillMaxSize().pane("Stats").verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(gap)) {
+    Column(Modifier.fillMaxSize().pane("Stats").verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = gap, bottom = gap), verticalArrangement = Arrangement.spacedBy(gap)) {
       Column(Modifier.onSizeChanged {
           val h = with(dens) { it.height.toDp() }
           val cards = h - gap * 3
-          val want = ((viewH - 22.dp - cards) / 3).coerceIn(4.dp, 24.dp)
+          // One spacing S: above the first card, between cards, and below the last card (above the nav bar).
+          val want = ((viewH - cards) / 5).coerceIn(8.dp, 16.dp)
           if (kotlin.math.abs((want - gap).value) > 0.5f) gap = want
       }, verticalArrangement = Arrangement.spacedBy(gap)) {
         Card(pad = 20.dp) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
