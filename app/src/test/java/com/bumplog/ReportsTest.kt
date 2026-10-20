@@ -65,9 +65,9 @@ class ReportsTest {
         assertFalse(b.contains("Report BL-"))
     }
 
-    @Test fun bodyIsV2WithNoteAndGuideLink() {
+    @Test fun bodyHasHeaderNoteAndGuideLink() {
         val body = Reports.reportsBody(listOf(spot, spot.copy(id = 2, reportId = "BL-20261019-B7MN", reportNo = 13)))
-        assertTrue(body.startsWith("BumpLog report v2"))
+        assertTrue(body.startsWith("BumpLog report\n"))
         assertTrue(body.contains("2 road defect reports."))
         assertTrue(body.indexOf("--- 2 of 2 ---") < body.indexOf("The owner sent this from an Android app called BumpLog"))
         assertTrue(body.contains("https://raw.githubusercontent.com/MtndaleRedneck/BumpLog/" + BuildConfig.GUIDE_REF + "/docs/assistant.md"))
@@ -77,6 +77,7 @@ class ReportsTest {
 
     @Test fun assistantNoteCarriesTheOwnerRulesVerbatim() {
         val n = Reports.assistantNote()
+        assertTrue(n.startsWith("If my owner hasn't confirmed BumpLog with you yet, ask them first (\"Did you set up BumpLog?\") and wait for a yes."))
         assertTrue(n.contains("They want each one fixed."))
         assertTrue(n.contains("the town is the phone's guess based on location - don't blindly accept that"))
         assertTrue(n.contains("Verify actual ownership of the road."))
@@ -104,7 +105,9 @@ class ReportsTest {
     @Test fun bundledGuideMatchesTheAppVersionAndAskWording() {
         // The guide the app bundles and emails is the repo doc; keep them in lockstep.
         val guide = File("../docs/assistant.md").readText()
-        assertTrue(guide.startsWith("# BumpLog assistant guide v" + Reports.GUIDE_VERSION + "\n"))
+        assertTrue(guide.startsWith("# BumpLog assistant guide\n"))
+        assertTrue(guide.contains("## Before you act"))
+        assertTrue(guide.contains("Did you set this up?"))
         assertTrue(guide.contains("Could someone inspect it and have it repaired? I'd appreciate an update if you can share one."))
         assertTrue(guide.contains("Verify actual ownership of the road"))
         assertTrue(guide.contains("Never send, submit, or pay anything without it"))

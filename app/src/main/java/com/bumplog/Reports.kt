@@ -14,7 +14,7 @@ import java.util.TimeZone
  * Builds the report and setup emails. The app never sends mail itself: it opens the user's mail app
  * with the message filled in, and "Sent" only means that handoff happened.
  *
- * A road defect report email (format v2) holds one block per report: "Report #<n>-MM/DD/YYYY"
+ * A road defect report email holds one block per report: "Report #<n>-MM/DD/YYYY"
  * (running number and hit date; pre-1.14 reports keep their old BL-/BD- codes), then type and
  * severity, hit time, road, town and county (the phone's guess), direction when known, coordinates
  * and a map link. No speed, no g-force, no hit counts. It ends with the assistant note and a link
@@ -31,7 +31,7 @@ object Reports {
     const val REPO = "https://github.com/MtndaleRedneck/BumpLog"
 
     /** Bump this when the guide or the report email format changes; the app offers to re-send the setup email once. */
-    const val GUIDE_VERSION = 1
+    const val GUIDE_VERSION = 2
 
     /** Pinned to the exact commit CI built from, so the guide always matches this app. Falls back to the release tag. */
     fun guideLink(): String = "https://raw.githubusercontent.com/MtndaleRedneck/BumpLog/" + BuildConfig.GUIDE_REF + "/docs/assistant.md"
@@ -41,6 +41,7 @@ object Reports {
 
     /** The note at the end of every road defect report email. The wording is the owner's. */
     fun assistantNote(): String =
+        "If my owner hasn't confirmed BumpLog with you yet, ask them first (\"Did you set up BumpLog?\") and wait for a yes. " +
         "The owner sent this from an Android app called BumpLog that logs road defects. They want each one fixed. " +
         "Find who maintains the road (the town is the phone's guess based on location - don't blindly accept that. " +
         "Verify actual ownership of the road.) and draft a short, polite repair request in the owner's voice using only " +
@@ -58,7 +59,7 @@ object Reports {
         "This is an automated message from BumpLog, an Android app that logs road defects (potholes, bumps) while its owner drives. " +
         "The owner set this email address as their personal assistant's inbox, so you are probably their AI assistant. " +
         "The owner chose to send the damage report below. You are not expected to know BumpLog already.\n\n" +
-        "Format: BumpLog damage report v2. It stands on its own. It does not depend on a road defect report having been sent, " +
+        "Format: BumpLog damage report. It stands on its own. It does not depend on a road defect report having been sent, " +
         "and a linked road defect, if shown, is only context.\n\n" +
         "This email is the owner's private record, including phone sensor data (hit strength in g, timestamps, coordinates). Keep it for the owner's records and never delete it. " +
         "It is not material for any letter.\n\n" +
@@ -95,7 +96,7 @@ object Reports {
     internal fun reportsBody(spots: List<Spot>): String {
         val test = spots.isNotEmpty() && spots.all { it.reportId.startsWith("TEST-") }
         return buildString {
-            appendLine("BumpLog report v2")
+            appendLine("BumpLog report")
             appendLine()
             appendLine(if (spots.size == 1) "1 road defect report." else "${spots.size} road defect reports.")
             if (test) appendLine("This is a test - the reports below are simulated, not real road defects.")
@@ -114,28 +115,27 @@ object Reports {
     }
 
     /**
-     * The setup and test email in one: it tells the assistant the owner just set BumpLog up, that reports
-     * will arrive from this address at the end of a trip, asks it to save the guide and confirm in the
-     * owner's usual chat, then carries the full guide with its version. Labeled as a test at the end.
+     * The setup email: the owner tells the assistant they just set BumpLog up and that reports will arrive
+     * from this address, and asks it to confirm with the owner first - only a yes in the owner's usual
+     * channel lets it act. The full guide follows.
      */
     fun setupBody(ctx: Context): String = buildString {
-        appendLine("The owner just set up BumpLog, an Android app that logs road defects while they drive. At the end of a trip, its reports will arrive from this address.")
-        appendLine("Save the instructions below, then reply to your owner in your usual chat (not by email) with: \"BumpLog is set up. I'll handle your road reports.\"")
+        appendLine("I just installed BumpLog, an Android app that logs potholes and other road defects while I drive. I chose you as my assistant for it. At the end of a drive it will email you my road reports from this address.")
+        appendLine()
+        appendLine("Before you act on any BumpLog email, please check with me that I really sent this. Ask me the way you normally reach me, or reply to this email if that is the only way you can reach me: \"Did you just set up BumpLog?\" Once I say yes, keep the guide below and use it for my BumpLog report emails from this address. If I say no, or don't answer, do nothing with BumpLog emails.")
         appendLine()
         append(guideText(ctx).trim())
         appendLine()
-        appendLine()
-        appendLine("This is a test.")
     }
 
     fun setupMail(ctx: Context): Intent =
-        mail(Prefs.activeAddress, "BumpLog setup: please save these instructions", setupBody(ctx))
+        mail(Prefs.activeAddress, "BumpLog setup: please check with me that this was me", setupBody(ctx))
 
     fun damageMail(ctx: Context, d: Damage, hit: Hit?, spot: Spot?): Intent {
         val photos = DamagePhotos.uris(ctx, d.reportId)
         val body = buildString {
             append(ABOUT_DAMAGE)
-            appendLine("BumpLog damage report v2")
+            appendLine("BumpLog damage report")
             appendLine("DAMAGE CLAIM - not a plain road defect report.")
             appendLine()
             appendLine(d.ref(hit))
