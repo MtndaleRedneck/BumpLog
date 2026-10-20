@@ -144,10 +144,18 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     fun setAddress(id: Long, a: String) = update(id, "address" to a)
     /** The user confirmed what this is during the drive. [fileTrip] = include it in the end-of-trip email. */
     fun logSpot(id: Long, t: DefectType, severity: String, fileTrip: Boolean) {
-        update(id, "type" to t.name, "type_user" to true, "severity" to severity, "file_trip" to fileTrip, "review" to "CONFIRMED", "warn" to true)
+        confirmForTrip(id, fileTrip, t, severity)
     }
-    /** Exactly the spots marked for end-of-trip filing during this drive that have not been handed to mail yet. */
-    @Synchronized fun tripSpots(driveId: Long): List<Spot> = spots("file_trip=1 AND report_status='NONE' AND drive_id=?", arrayOf(driveId.toString()), test = driveId == TEST_DRIVE)
+    /** Every confirmation path uses the same update; the form can explicitly opt out of batching. */
+    @Synchronized fun confirmForTrip(id: Long, fileTrip: Boolean = true, type: DefectType? = null, severity: String? = null) {
+        val values = mutableListOf<Pair<String, Any>>("review" to "CONFIRMED", "warn" to true, "file_trip" to fileTrip)
+        if (type != null) values += listOf("type" to type.name, "type_user" to true)
+        if (severity != null) values += "severity" to severity
+        update(id, *values.toTypedArray())
+    }
+    /** Carry unsent confirmations across drives. Re-hits may change drive_id, but never remove a queued spot. */
+    @Synchronized fun tripSpots(driveId: Long): List<Spot> =
+        spots(TripReportPolicy.queueWhere(driveId == TEST_DRIVE), null, test = driveId == TEST_DRIVE)
     /** A warned spot's heads-up fired and the driver passed it again (hit or no hit). */
     @Synchronized fun addSave(id: Long) { writableDatabase.execSQL("UPDATE spots SET saves=saves+1 WHERE id=?", arrayOf(id)) }
     /** Lifetime counters, all derived from the logged spots (so they go when the data is deleted). */
