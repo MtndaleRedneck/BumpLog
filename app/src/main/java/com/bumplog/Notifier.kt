@@ -30,7 +30,6 @@ object Notifier {
     const val ID_FOREGROUND = 1
     const val ID_DRIVE_DONE = 2
     const val ID_CAR = 3
-    const val ID_TEST = 4
     const val ID_DAMAGE = 5
     const val ID_AUTO_OFF = 6
     const val ID_PASSENGER = 7
@@ -218,15 +217,6 @@ object Notifier {
     }
 
     fun cancel(ctx: Context, id: Int) = ctx.getSystemService(NotificationManager::class.java).cancel(id)
-
-    fun testAlert(ctx: Context) {
-        val nm = ctx.getSystemService(NotificationManager::class.java)
-        nm.notify(ID_TEST, NotificationCompat.Builder(ctx, CH_ALERT)
-            .setSmallIcon(R.drawable.ic_stat).setContentTitle("TEST alert - road defect ahead")
-            .setContentText("This is only a test. Nothing was logged.")
-            .setPriority(NotificationCompat.PRIORITY_MAX).setTimeoutAfter(8000).setAutoCancel(true).build())
-        Sound.play(ctx, "Road defect ahead", true)
-    }
 
     // ---- experimental overlay (off by default) ----
 
