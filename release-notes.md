@@ -1,11 +1,10 @@
-BumpLog 1.14.0
+BumpLog 1.14.1
 
-- Reports get a running number, Report #n-MM/DD/YYYY, assigned when you confirm a spot or create a damage report. The counter continues from the reports you already have, is never reused, and survives Delete all logged data, so it can run ahead of the reports you still have. A reinstall without a backup restarts it at 1. Older reports keep their BL-/BD- codes.
-- Sent replaces Filed: a report counts as Sent once it reaches your mail app. Old Filed states migrate automatically.
-- New trip email format (v2): per report it lists the number, defect type, time, road, the phone's guess of town and county, direction, coordinates, and a map link. Speed, hit strength, and hit counts are no longer included.
-- The email ends with a note for your assistant and a link to the full assistant guide, pinned to the build.
-- First-run assistant setup: add the address, send the test email (it carries the guide), then Done. Required before the first report goes out; it never blocks driving or logging. Settings can copy the guide or resend the setup email at any time.
-- Review cards: swipe left on a "To review" card to dismiss it, with Undo.
-- Spot screen: Mark fixed moved into the top-right menu on confirmed spots, and the info line shows the report number once confirmed.
+- The setup email now asks your assistant to check with you first: it should ask "Did you set up BumpLog?" the way it normally reaches you, and leave BumpLog emails alone until you say yes. The scripted test reply is gone; the setup email is no longer labeled as a test.
+- The assistant guide has a "Before you act" section with the same rule, and the note at the end of every report email opens with it. Version tags drop from the guide title and the email headers; the version stays internal.
+- Setup state survives the trip to your mail app: every setup send lands on the same "Your assistant will check with you" step, and Done never waits on a reply. Settings can resend the setup email or copy the guide at any time.
+- Settings: the Test email and Test alert buttons are gone (the Testing card still simulates alerts).
+- Stats shows one full-width Reports sent card.
+- A standalone CSV import now moves the report counter by the same rule as a full backup restore.
 
-Android 12+. Installs over 1.13.0; all data and the update check carry over.
+Android 12+. Installs over 1.14.0; all data and the update check carry over.
