@@ -13,9 +13,11 @@ class ReportNumbersTest {
         assertEquals(12, ReportNumbers.initialNext(11))
     }
 
-    @Test fun restoreNeverCountsDownAndNeverReissues() {
-        assertEquals(9, ReportNumbers.afterRestore(9, 3))
-        assertEquals(4, ReportNumbers.afterRestore(2, 3))
+    @Test fun restoreContinuesPastNumbersStoredCounterAndExistingReports() {
+        assertEquals(4, ReportNumbers.restoreNext(3, 0, 0))     // past the highest number in the backup
+        assertEquals(9, ReportNumbers.restoreNext(3, 9, 0))     // past the stored counter
+        assertEquals(13, ReportNumbers.restoreNext(0, 0, 12))   // old backup: past the 12 reports already owned
+        assertEquals(13, ReportNumbers.restoreNext(5, 9, 12))   // all three rules at once
     }
 
     @Test fun refIsReportNumberDashHitDate() {

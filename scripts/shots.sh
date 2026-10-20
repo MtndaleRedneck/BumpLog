@@ -8,6 +8,10 @@ adb shell settings put global hide_error_dialogs 1
 adb install -r $APK
 for p in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION POST_NOTIFICATIONS BLUETOOTH_CONNECT; do adb shell pm grant com.bumplog android.permission.$p; done
 shot() { adb shell am force-stop com.bumplog; sleep 1; adb shell am start -n com.bumplog/.MainActivity "${@:2}"; sleep 5; adb exec-out screencap -p > $OUT/$1.png; }
+# First launch after install needs longer: it seeds the demo data and warms up. Captured, then discarded.
+shot warmup --ez demo true --es screen home
+sleep 5
+rm -f $OUT/warmup.png
 shot home --ez demo true --es screen home
 shot alert --es screen alert --el spot 3
 shot review --es screen review

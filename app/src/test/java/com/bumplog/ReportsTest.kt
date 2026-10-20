@@ -59,6 +59,12 @@ class ReportsTest {
         assertEquals("Report #12-10/19/2026", spot.ref())
     }
 
+    @Test fun oldReportsPrintTheirBareCodeNowhereWithAReportPrefix() {
+        val b = Reports.spotBlock(spot.copy(reportNo = 0))
+        assertTrue(b.startsWith("BL-20261019-A3KQ\n"))
+        assertFalse(b.contains("Report BL-"))
+    }
+
     @Test fun bodyIsV2WithNoteAndGuideLink() {
         val body = Reports.reportsBody(listOf(spot, spot.copy(id = 2, reportId = "BL-20261019-B7MN", reportNo = 13)))
         assertTrue(body.startsWith("BumpLog report v2"))

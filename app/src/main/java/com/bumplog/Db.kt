@@ -73,7 +73,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             db.execSQL("UPDATE spots SET report_status='SENT' WHERE report_status='FILED'")
             db.execSQL("UPDATE damage SET status='SENT' WHERE status='FILED'")
             // The counter continues after the reports the owner already has (confirmed spots plus damage records, test spots excluded).
-            val existing = db.rawQuery("SELECT (SELECT COUNT(*) FROM spots WHERE review IN ('CONFIRMED','FIXED') AND report_id NOT LIKE 'TEST-%') + (SELECT COUNT(*) FROM damage)", null)
+            val existing = db.rawQuery("SELECT (SELECT COUNT(*) FROM spots WHERE (review='CONFIRMED' OR (review='FIXED' AND report_status<>'NONE')) AND report_id NOT LIKE 'TEST-%') + (SELECT COUNT(*) FROM damage)", null)
                 .use { it.moveToFirst(); it.getInt(0) }
             db.execSQL("INSERT OR REPLACE INTO meta(k, v) VALUES('report_counter', ?)", arrayOf(ReportNumbers.initialNext(existing).toString()))
         }
