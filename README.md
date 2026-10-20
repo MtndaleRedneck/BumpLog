@@ -20,7 +20,7 @@ Built for highways with violent height steps between pavement sections, not only
 
 **Damage reports.** Pick one of your recent hits, say what was damaged, add photos, and send now or at the end of the drive. The report quotes the measured hit strength from the phone accelerometer. It is not proof of force or damage.
 
-**Stats.** Reports logged and sent, times avoided (a warned spot's alert fired and you passed it again), avoided by type, most avoided, and your hardest measured hit.
+**Stats.** Reports sent, times avoided (a warned spot's alert fired and you passed it again), avoided by type, most avoided, and your hardest measured hit.
 
 **Testing mode.** Settings can fire the real alerts and screens without driving, using TEST spots that never count toward your stats.
 

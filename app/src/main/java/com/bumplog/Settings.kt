@@ -200,7 +200,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         }
         Card(pad = 16.dp) {
             Txt("Set up your assistant", 18, FontWeight.Bold)
-            Muted("Copy the BumpLog guide to paste into your own AI chat, or send the setup email again. The guide and the setup email are the same text. After the setup email, your assistant checks with you that it was really you.", 12)
+            Muted("Copy the BumpLog guide to paste into your own AI chat, or send the setup email again. The setup email carries the full guide. After the setup email, your assistant checks with you that it was really you.", 12)
             Spacer(Modifier.height(8.dp))
             SmallButton("Copy assistant guide", Modifier.fillMaxWidth()) {
                 val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
