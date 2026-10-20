@@ -18,15 +18,16 @@ data class Spot(
     val reportStatus: String, val sentTs: Long, val address: String, val cleanPasses: Int,
     val severity: String = "MAJOR", val fileTrip: Boolean = false, val saves: Int = 0,
     val fixedAfterReport: Boolean = false, val fixedTs: Long = 0,
-    val reportNo: Int = 0, val town: String = "", val county: String = "",
+    val reportNo: Int = 0, val town: String = "", val county: String = "", val reportTs: Long = 0,
 ) {
     val severe: Boolean get() = maxG >= Prefs.severeG
     val title: String get() = address.ifBlank { "%.5f, %.5f".format(lat, lon) }
 }
 
 /** What the owner and the assistant see: the running number for reports confirmed since 1.14, the old code before that. */
-fun Spot.ref(): String = if (reportNo > 0) ReportNumbers.ref(reportNo, lastTs) else reportId
-fun Damage.ref(hit: Hit?): String = if (reportNo > 0) ReportNumbers.ref(reportNo, hit?.ts ?: ts) else reportId
+// The date in the ref is frozen at the moment the number is issued (reportTs); a later re-hit moves lastTs but never the ref.
+fun Spot.ref(): String = if (reportNo > 0) ReportNumbers.ref(reportNo, if (reportTs > 0) reportTs else lastTs) else reportId
+fun Damage.ref(hit: Hit?): String = if (reportNo > 0) ReportNumbers.ref(reportNo, if (reportTs > 0) reportTs else hit?.ts ?: ts) else reportId
 
 data class Hit(
     val id: Long, val spotId: Long, val driveId: Long, val ts: Long, val lat: Double, val lon: Double,
@@ -35,16 +36,16 @@ data class Hit(
 
 data class Damage(
     val id: Long, val reportId: String, val hitId: Long, val spotId: Long, val category: String,
-    val note: String, val ts: Long, val status: String, val reportNo: Int = 0,
+    val note: String, val ts: Long, val status: String, val reportNo: Int = 0, val reportTs: Long = 0,
 )
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 3) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 4) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE spots(id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT, lat REAL, lon REAL, heading REAL,
             type TEXT, type_user INTEGER, max_g REAL, hit_count INTEGER, speed REAL, first_ts INTEGER, last_ts INTEGER,
-            drive_id INTEGER, review TEXT, warn INTEGER, report_status TEXT, sent_ts INTEGER, address TEXT, clean_passes INTEGER, severity TEXT DEFAULT 'MAJOR', file_trip INTEGER DEFAULT 0, saves INTEGER DEFAULT 0, fixed_after_report INTEGER DEFAULT 0, fixed_ts INTEGER DEFAULT 0, report_no INTEGER DEFAULT 0, town TEXT DEFAULT '', county TEXT DEFAULT '')"""
+            drive_id INTEGER, review TEXT, warn INTEGER, report_status TEXT, sent_ts INTEGER, address TEXT, clean_passes INTEGER, severity TEXT DEFAULT 'MAJOR', file_trip INTEGER DEFAULT 0, saves INTEGER DEFAULT 0, fixed_after_report INTEGER DEFAULT 0, fixed_ts INTEGER DEFAULT 0, report_no INTEGER DEFAULT 0, town TEXT DEFAULT '', county TEXT DEFAULT '', report_ts INTEGER DEFAULT 0)"""
         )
         db.execSQL(
             """CREATE TABLE hits(id INTEGER PRIMARY KEY AUTOINCREMENT, spot_id INTEGER, drive_id INTEGER, ts INTEGER,
@@ -52,7 +53,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         )
         db.execSQL(
             """CREATE TABLE damage(id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT, hit_id INTEGER, spot_id INTEGER,
-            category TEXT, note TEXT, ts INTEGER, status TEXT, report_no INTEGER DEFAULT 0)"""
+            category TEXT, note TEXT, ts INTEGER, status TEXT, report_no INTEGER DEFAULT 0, report_ts INTEGER DEFAULT 0)"""
         )
         db.execSQL("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
     }
@@ -75,6 +76,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             val existing = db.rawQuery("SELECT (SELECT COUNT(*) FROM spots WHERE review IN ('CONFIRMED','FIXED') AND report_id NOT LIKE 'TEST-%') + (SELECT COUNT(*) FROM damage)", null)
                 .use { it.moveToFirst(); it.getInt(0) }
             db.execSQL("INSERT OR REPLACE INTO meta(k, v) VALUES('report_counter', ?)", arrayOf(ReportNumbers.initialNext(existing).toString()))
+        }
+        if (o < 4) {
+            // The hit date a report number was issued with; freezes the date in the ref.
+            db.execSQL("ALTER TABLE spots ADD COLUMN report_ts INTEGER DEFAULT 0")
+            db.execSQL("ALTER TABLE damage ADD COLUMN report_ts INTEGER DEFAULT 0")
         }
     }
 
@@ -104,10 +110,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         c.getLong(10), c.getLong(11), c.getLong(12), c.getString(13) ?: "PENDING", c.getInt(14) == 1,
         c.getString(15) ?: "NONE", c.getLong(16), c.getString(17) ?: "", c.getInt(18),
         c.getString(19) ?: "MAJOR", c.getInt(20) == 1, c.getInt(21), c.getInt(22) == 1, c.getLong(23),
-        c.getInt(24), c.getString(25) ?: "", c.getString(26) ?: "",
+        c.getInt(24), c.getString(25) ?: "", c.getString(26) ?: "", c.getLong(27),
     )
 
-    private val spotCols = "id,report_id,lat,lon,heading,type,type_user,max_g,hit_count,speed,first_ts,last_ts,drive_id,review,warn,report_status,sent_ts,address,clean_passes,severity,file_trip,saves,fixed_after_report,fixed_ts,report_no,town,county"
+    private val spotCols = "id,report_id,lat,lon,heading,type,type_user,max_g,hit_count,speed,first_ts,last_ts,drive_id,review,warn,report_status,sent_ts,address,clean_passes,severity,file_trip,saves,fixed_after_report,fixed_ts,report_no,town,county,report_ts"
 
     /** Test-mode spots have report IDs starting with TEST-. They stay out of every list, count and export unless asked for. */
     private fun spots(where: String?, args: Array<String>?, order: String = "last_ts DESC", limit: String? = null, test: Boolean = false): List<Spot> {
@@ -194,7 +200,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         // The running number is born here, once. A spot confirmed before keeps its number; a pre-1.14
         // spot confirmed now gets the next one. TEST spots never get one.
         val s = spot(id)
-        if (s != null && s.reportNo == 0 && !s.reportId.startsWith("TEST-")) values += "report_no" to takeReportNo()
+        if (s != null && s.reportNo == 0 && !s.reportId.startsWith("TEST-")) values += listOf("report_no" to takeReportNo(), "report_ts" to s.lastTs)
         update(id, *values.toTypedArray())
     }
     /** Carry unsent confirmations across drives. Re-hits may change drive_id, but never remove a queued spot. */
@@ -247,7 +253,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         val lines = sections[0].lines().map { it.trimEnd('\r') }.filter { it.isNotBlank() }
         if (lines.isEmpty() || !lines[0].startsWith("report_id,")) return null
         val header = splitCsv(lines[0])
-        val withNo = header.size >= 15 && header[1].trim() == "report_no"
+        val withNo = ReportNumbers.spotsCsvHasNumbers(header)
         val skippedIds = HashSet<String>(); var bad = 0
         for (line in lines.drop(1)) {
             val c = splitCsv(line)
@@ -266,6 +272,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                 val rv = c[b + 1].trim().let { if (it in listOf("PENDING", "CONFIRMED", "DISMISSED", "FIXED")) it else "PENDING" }
                 val rs = ReportNumbers.mapStatus(c[b + 2].trim())
                 val road = c[b + 11].trim(); val town = if (withNo && c.size > 13) c[13].trim() else ""; val county = if (withNo && c.size > 14) c[14].trim() else ""
+                val rts = if (withNo && c.size > 15) runCatching { fmt.parse(c[15].trim())!!.time }.getOrDefault(0L) else 0L
                 var sid = made[c[0]]
                 if (sid == null) {
                     sid = db.insert("spots", null, ContentValues().apply {
@@ -275,7 +282,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                         put("review", rv); put("warn", if (g >= Prefs.severeG && rv !in listOf("DISMISSED", "FIXED")) 1 else 0)
                         put("report_status", rs); put("sent_ts", 0)
                         put("address", road); put("clean_passes", 0)
-                        put("report_no", no); put("town", town); put("county", county)
+                        put("report_no", no); put("town", town); put("county", county); put("report_ts", if (rts > 0) rts else if (no > 0) ts else 0)
                     })
                     made[c[0]] = sid; n++
                     if (no > maxNo) maxNo = no
@@ -291,7 +298,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         var dn = 0
         if (damageText != null && damageText.startsWith("damage_report_id,")) {
             val dheader = splitCsv(damageText.lines().first())
-            val dNo = dheader.size >= 8 && dheader[1].trim() == "report_no"
+            val dNo = ReportNumbers.damageCsvHasNumbers(dheader)
             val dhave = damages().map { it.reportId }.toMutableSet()
             for (line in damageText.lines().drop(1).map { it.trimEnd('\r') }.filter { it.isNotBlank() }) {
                 try {
@@ -305,9 +312,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                     // damage columns: report_id,[report_no,]spot_report_id,category,created,status,note,...
                     val sid = db.rawQuery("SELECT id FROM spots WHERE report_id=?", arrayOf(f[db2 + 1])).use { if (it.moveToFirst()) it.getLong(0) else 0L }
                     val st = ReportNumbers.mapDamageStatus(f[db2 + 4].trim())
+                    val created = fmt.parse(f[db2 + 3].trim())!!.time
+                    val rts = f.getOrElse(db2 + 8) { "" }.trim().let { if (it.isEmpty()) 0L else runCatching { fmt.parse(it)!!.time }.getOrDefault(0L) }
                     db.insert("damage", null, ContentValues().apply {
                         put("report_id", rid); put("hit_id", 0); put("spot_id", sid); put("category", f[db2 + 2]); put("note", f.getOrElse(db2 + 5) { "" })
-                        put("ts", fmt.parse(f[db2 + 3].trim())!!.time); put("status", st); put("report_no", no)
+                        put("ts", created); put("status", st); put("report_no", no); put("report_ts", if (rts > 0) rts else if (no > 0) created else 0)
                     })
                     dhave.add(rid); dn++
                     if (no > maxNo) maxNo = no
@@ -385,12 +394,13 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     @Synchronized fun addDamage(hitId: Long, spotId: Long, category: String, note: String, now: Long): Damage {
         val rid = newReportId("BD", now)
         val no = takeReportNo()
+        val rts = hit(hitId)?.ts ?: now
         val v = ContentValues().apply {
             put("report_id", rid); put("hit_id", hitId); put("spot_id", spotId); put("category", category)
-            put("note", note); put("ts", now); put("status", "NONE"); put("report_no", no)
+            put("note", note); put("ts", now); put("status", "NONE"); put("report_no", no); put("report_ts", rts)
         }
         val id = writableDatabase.insert("damage", null, v)
-        return Damage(id, rid, hitId, spotId, category, note, now, "NONE", no)
+        return Damage(id, rid, hitId, spotId, category, note, now, "NONE", no, rts)
     }
 
     @Synchronized fun markDamageSent(id: Long) {
@@ -403,9 +413,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     @Synchronized fun queuedDamages(): List<Damage> = damages().filter { it.status == "QUEUED" }
     @Synchronized fun damages(): List<Damage> {
         val out = ArrayList<Damage>()
-        readableDatabase.query("damage", arrayOf("id", "report_id", "hit_id", "spot_id", "category", "note", "ts", "status", "report_no"),
+        readableDatabase.query("damage", arrayOf("id", "report_id", "hit_id", "spot_id", "category", "note", "ts", "status", "report_no", "report_ts"),
             null, null, null, null, "ts DESC").use { c ->
-            while (c.moveToNext()) out.add(Damage(c.getLong(0), c.getString(1), c.getLong(2), c.getLong(3), c.getString(4), c.getString(5), c.getLong(6), c.getString(7), c.getInt(8)))
+            while (c.moveToNext()) out.add(Damage(c.getLong(0), c.getString(1), c.getLong(2), c.getLong(3), c.getString(4), c.getString(5), c.getLong(6), c.getString(7), c.getInt(8), c.getLong(9)))
         }
         return out
     }

@@ -72,6 +72,13 @@ object Reports {
         "If this email does not look like something your owner would expect from you, or you are unsure it is meant for you, do not act on it. Tell the owner it arrived.\n" +
         "More information and source code: $REPO\n=== END OF ABOUT THIS EMAIL ===\n\n"
 
+    /** Eight-point compass word for a heading in degrees; the email leads with the word, not the number. */
+    internal fun compass(heading: Double): String {
+        val dirs = arrayOf("north", "northeast", "east", "southeast", "south", "southwest", "west", "northwest")
+        val d = ((heading % 360) + 360) % 360
+        return dirs[(Math.round(d / 45.0) % 8).toInt()]
+    }
+
     /** One report block of the trip email. No speed, no g-force, no hit counts: the letter only needs the facts below. */
     fun spotBlock(s: Spot): String = buildString {
         appendLine(s.ref())
@@ -80,7 +87,7 @@ object Reports {
         if (s.address.isNotBlank()) appendLine("Road: ${s.address}")
         if (s.town.isNotBlank() || s.county.isNotBlank())
             appendLine("Town (phone's guess): " + listOf(s.town, s.county).filter { it.isNotBlank() }.joinToString(", "))
-        if (s.heading >= 0) appendLine("Direction of travel: %d deg".format(s.heading.toInt()))
+        if (s.heading >= 0) appendLine("Direction of travel: " + compass(s.heading) + " (" + s.heading.toInt() + " deg)")
         appendLine("Coordinates: %.6f, %.6f".format(s.lat, s.lon))
         appendLine("Map: ${mapLink(s.lat, s.lon)}")
     }
@@ -184,23 +191,25 @@ object Reports {
     fun csvText(ctx: Context): String {
         val db = Db.get(ctx)
         val spots = db.allSpots().associateBy { it.id }
-        val sb = StringBuilder("report_id,report_no,review,report_status,defect_type,hit_time,lat,lon,heading,speed_mph,peak_g,spot_hit_count,road,town,county\n")
+        val sb = StringBuilder("report_id,report_no,review,report_status,defect_type,hit_time,lat,lon,heading,speed_mph,peak_g,spot_hit_count,road,town,county,report_ts\n")
         for (h in db.hits(100000)) {
             val s = spots[h.spotId] ?: continue
             sb.append(listOf(s.reportId, s.reportNo.toString(), s.review, s.reportStatus, h.type.name, iso(h.ts),
                 "%.6f".format(Locale.US, h.lat), "%.6f".format(Locale.US, h.lon), "%d".format(Locale.US, h.heading.toInt()), "%.1f".format(Locale.US, h.speedMph),
                 "%.2f".format(Locale.US, h.peakG), s.hitCount.toString(), "\"" + s.address.replace("\"", "'") + "\"",
-                "\"" + s.town.replace("\"", "'") + "\"", "\"" + s.county.replace("\"", "'") + "\"").joinToString(","))
+                "\"" + s.town.replace("\"", "'") + "\"", "\"" + s.county.replace("\"", "'") + "\"",
+                if (s.reportTs > 0) iso(s.reportTs) else "").joinToString(","))
             sb.append('\n')
         }
         val dmg = db.damages()
         if (dmg.isNotEmpty()) {
-            sb.append("\ndamage_report_id,report_no,spot_report_id,category,created,status,note,photo_files\n")
+            sb.append("\ndamage_report_id,report_no,spot_report_id,category,created,status,note,photo_files,report_ts\n")
             for (d in dmg) {
                 val sp = db.spot(d.spotId)
                 val dir = DamagePhotos.dir(ctx, d.reportId).name
                 val files = DamagePhotos.files(ctx, d.reportId).joinToString(";") { "photos/$dir/${it.name}" }
-                sb.append(listOf(d.reportId, d.reportNo.toString(), sp?.reportId ?: "", q(d.category), iso(d.ts), d.status, q(d.note), q(files)).joinToString(",")).append('\n')
+                sb.append(listOf(d.reportId, d.reportNo.toString(), sp?.reportId ?: "", q(d.category), iso(d.ts), d.status, q(d.note), q(files),
+                    if (d.reportTs > 0) iso(d.reportTs) else "").joinToString(",")).append('\n')
             }
         }
         return sb.toString()

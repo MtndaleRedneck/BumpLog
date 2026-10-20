@@ -257,12 +257,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Setup finished: a trip that waited for it goes out now. */
+    /** Setup screen closed. A trip that waited for it goes out only if setup actually completed; otherwise it stays queued. */
     private fun finishSetup() {
         stack = emptyList()
         val driveId = pendingTrip
         pendingTrip = 0
-        if (driveId != 0L) sendTrip(driveId)
+        if (driveId == 0L) return
+        if (Prefs.setupDone) sendTrip(driveId)
+        else toast(this, "The trip's reports are still waiting. Finish the assistant setup to send them.")
     }
 
     @Composable
