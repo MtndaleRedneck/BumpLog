@@ -23,7 +23,7 @@ The app has no server and no accounts. It cannot send email by itself. **Send** 
 - Damage reports are separate emails, marked as damage claims, with the impact details and any photos you added. A damage report stands on its own and does not need a road defect report to be sent first.
 - Nothing is submitted to a city or agency without your approval. The email says so to the assistant.
 
-**Assistant picker.** Choose Instinct, Tab, or Custom. Presets are empty slots you fill in once on first setup, so the app ships with no personal addresses. Pick a preset and it fills in the address you saved. **Set up your assistant** in Settings copies the assistant guide or resends the setup email; the guide and the setup email are the same text. A setup link (`bumplog://setup?assistant=instinct&email=you@example.com`) opens a confirmation showing the address. Nothing is saved until you tap Use address.
+**Assistant picker.** Choose Instinct, Tab, or Custom. Presets are empty slots you fill in once on first setup, so the app ships with no personal addresses. Pick a preset and it fills in the address you saved. **Set up your assistant** in Settings copies the assistant guide or resends the setup email; the setup email carries the full guide. A setup link (`bumplog://setup?assistant=instinct&email=you@example.com`) opens a confirmation showing the address. Nothing is saved until you tap Use address.
 
 ## Privacy
 
