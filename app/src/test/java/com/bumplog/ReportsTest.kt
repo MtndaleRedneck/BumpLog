@@ -87,6 +87,16 @@ class ReportsTest {
         assertTrue(n.endsWith("The owner can copy the guide from BumpLog Settings."))
     }
 
+    @Test fun emailNumbersBlocksOldestFirst() {
+        val newer = spot.copy(id = 2, reportId = "BL-20261020-B7MN", reportNo = 13, firstTs = ts + 86_400_000, lastTs = ts + 86_400_000)
+        // Passed newest-first, the way the trip query returns them.
+        val body = Reports.reportsBody(listOf(newer, spot))
+        val one = body.indexOf("Report #1-10/19/2026")
+        val two = body.indexOf("Report #2-10/20/2026")
+        assertTrue(one > body.indexOf("--- 1 of 2 ---") && one < body.indexOf("--- 2 of 2 ---"))
+        assertTrue(two > body.indexOf("--- 2 of 2 ---"))
+    }
+
     @Test fun testReportsSaySoAtBothEnds() {
         val body = Reports.reportsBody(listOf(spot.copy(reportId = "TEST-1")))
         assertTrue(body.contains("This is a test - the reports below are simulated, not real road defects."))

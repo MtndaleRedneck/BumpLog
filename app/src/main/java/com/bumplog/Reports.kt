@@ -31,7 +31,7 @@ object Reports {
     const val REPO = "https://github.com/MtndaleRedneck/BumpLog"
 
     /** Bump this when the guide or the report email format changes; the app offers to re-send the setup email once. */
-    const val GUIDE_VERSION = 2
+    const val GUIDE_VERSION = 3
 
     /** Pinned to the exact commit CI built from, so the guide always matches this app. Falls back to the release tag. */
     fun guideLink(): String = "https://raw.githubusercontent.com/MtndaleRedneck/BumpLog/" + BuildConfig.GUIDE_REF + "/docs/assistant.md"
@@ -81,8 +81,8 @@ object Reports {
     }
 
     /** One report block of the trip email. No speed, no g-force, no hit counts: the letter only needs the facts below. */
-    fun spotBlock(s: Spot): String = buildString {
-        appendLine(s.ref())
+    fun spotBlock(s: Spot, label: String = s.ref()): String = buildString {
+        appendLine(label)
         appendLine("Type: " + s.type.label + " (" + s.severity.lowercase() + ")" + if (s.typeUser) "" else ", type not confirmed")
         appendLine("Hit: ${pretty(s.lastTs)}")
         if (s.address.isNotBlank()) appendLine("Road: ${s.address}")
@@ -95,13 +95,15 @@ object Reports {
 
     internal fun reportsBody(spots: List<Spot>): String {
         val test = spots.isNotEmpty() && spots.all { it.reportId.startsWith("TEST-") }
+        // The email numbers its reports 1..N, oldest first; the app's stored report number stays in the app.
+        val ordered = spots.sortedBy { it.firstTs }
         return buildString {
             appendLine("BumpLog report")
             appendLine()
-            appendLine(if (spots.size == 1) "1 road defect report." else "${spots.size} road defect reports.")
+            appendLine(if (ordered.size == 1) "1 road defect report." else "${ordered.size} road defect reports.")
             if (test) appendLine("This is a test - the reports below are simulated, not real road defects.")
             appendLine()
-            spots.forEachIndexed { i, s -> appendLine("--- ${i + 1} of ${spots.size} ---"); append(spotBlock(s)); appendLine() }
+            ordered.forEachIndexed { i, s -> appendLine("--- ${i + 1} of ${ordered.size} ---"); append(spotBlock(s, ReportNumbers.ref(i + 1, s.firstTs))); appendLine() }
             if (test) appendLine("This is a test. Tell the owner you received it, in your usual chat, and do nothing else.")
             appendLine()
             append(assistantNote())
@@ -120,9 +122,9 @@ object Reports {
      * channel lets it act. The full guide follows.
      */
     fun setupBody(ctx: Context): String = buildString {
-        appendLine("I just installed BumpLog, an Android app that logs potholes and other road defects while I drive. I chose you as my assistant for it. At the end of a drive it will email you my road reports from this address.")
+        appendLine("You don't need to know BumpLog; everything you need is below.")
         appendLine()
-        appendLine("Before you act on any BumpLog email, please check with me that I really sent this. Ask me the way you normally reach me, or reply to this email if that is the only way you can reach me: \"Did you just set up BumpLog?\" Once I say yes, keep the guide below and use it for my BumpLog report emails from this address. If I say no, or don't answer, do nothing with BumpLog emails.")
+        appendLine("I just installed BumpLog, an Android app that logs potholes and other road defects while I drive. I chose you as my assistant for it. At the end of a drive it will email you my road reports from this address. This email asks nothing of you. Before you act on any BumpLog email, please check with me that I really sent this. Ask me the way you normally reach me - never by email: \"Did you just set up BumpLog?\" Once I say yes, keep the guide below and use it for my BumpLog report emails from this address. If I say no, or don't answer, do nothing with BumpLog emails.")
         appendLine()
         append(guideText(ctx).trim())
         appendLine()
