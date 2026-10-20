@@ -40,6 +40,12 @@ object ReportNumbers {
 
     fun validNo(no: Long): Boolean = no in 1..999_999_999
 
+    /** Spots CSV has the post-1.14 layout when a report_no column follows report_id (12 pre-1.14 columns, 15+ after). */
+    fun spotsCsvHasNumbers(header: List<String>): Boolean = header.size >= 15 && header[0].trim() == "report_id" && header[1].trim() == "report_no"
+
+    /** Same check for the damage section of the CSV (8+ columns). */
+    fun damageCsvHasNumbers(header: List<String>): Boolean = header.size >= 8 && header[0].trim() == "damage_report_id" && header[1].trim() == "report_no"
+
     /** Spot report status as of 1.14: Filed is gone, old FILED values read as SENT. */
     fun mapStatus(s: String): String = when (s) { "SENT", "FILED" -> "SENT"; else -> "NONE" }
 

@@ -48,6 +48,19 @@ class ReportNumbersTest {
         assertFalse(ReportNumbers.validNo(1_000_000_000))
     }
 
+    @Test fun csvHeaderDetectionRoundTripsBothLayouts() {
+        val old12 = "report_id,review,report_status,defect_type,hit_time,lat,lon,heading,speed_mph,peak_g,spot_hit_count,road".split(",")
+        val new16 = "report_id,report_no,review,report_status,defect_type,hit_time,lat,lon,heading,speed_mph,peak_g,spot_hit_count,road,town,county,report_ts".split(",")
+        assertFalse(ReportNumbers.spotsCsvHasNumbers(old12))
+        assertTrue(ReportNumbers.spotsCsvHasNumbers(new16))
+        assertFalse(ReportNumbers.spotsCsvHasNumbers(new16.dropLast(2))) // 14 cols is neither layout
+        val oldDmg = "damage_report_id,spot_report_id,category,created,status,note,photo_files".split(",")
+        val newDmg = "damage_report_id,report_no,spot_report_id,category,created,status,note,photo_files,report_ts".split(",")
+        assertFalse(ReportNumbers.damageCsvHasNumbers(oldDmg))
+        assertTrue(ReportNumbers.damageCsvHasNumbers(newDmg))
+        assertFalse(ReportNumbers.damageCsvHasNumbers(new16)) // wrong section never matches
+    }
+
     @Test fun filedReadsAsSentEverywhere() {
         assertEquals("SENT", ReportNumbers.mapStatus("FILED"))
         assertEquals("SENT", ReportNumbers.mapStatus("SENT"))

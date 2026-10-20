@@ -12,7 +12,7 @@ class ReportsTest {
     private val ts = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse("2026-10-19")!!.time
     private val spot = Spot(1, "BL-20261019-A3KQ", 40.7128, -74.006, 90.0, DefectType.POTHOLE, false, 1.85f, 3, 47f,
         ts, ts, 1, "CONFIRMED", true, "NONE", 0, "Main Street", 0,
-        severity = "MAJOR", reportNo = 12, town = "Anytown", county = "Example County")
+        severity = "MAJOR", reportNo = 12, town = "Anytown", county = "Example County", reportTs = ts)
 
     @Test fun reportBlockHasThePublicFactsAndNothingElse() {
         val b = Reports.spotBlock(spot)
@@ -20,7 +20,7 @@ class ReportsTest {
         assertTrue(b.contains("Type: Pothole (major)"))
         assertTrue(b.contains("Road: Main Street"))
         assertTrue(b.contains("Town (phone's guess): Anytown, Example County"))
-        assertTrue(b.contains("Direction of travel: 90 deg"))
+        assertTrue(b.contains("Direction of travel: east (90 deg)"))
         assertTrue(b.contains("Coordinates: 40.712800, -74.006000"))
         assertTrue(b.contains("Map: http"))
     }
@@ -33,6 +33,25 @@ class ReportsTest {
         assertFalse(b.contains("47"))
         assertFalse(b.contains("1.85"))
         assertFalse(b.contains("3 hit"))
+    }
+
+    @Test fun refDateIsFrozenWhenTheNumberIsIssued() {
+        // A re-hit two days later moves lastTs; the issued ref must not change.
+        val later = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse("2026-10-21")!!.time
+        assertEquals("Report #12-10/19/2026", spot.copy(lastTs = later).ref())
+        // Pre-freeze rows (reportTs == 0) fall back to lastTs.
+        assertEquals("Report #12-10/21/2026", spot.copy(reportTs = 0, lastTs = later).ref())
+        val d = Damage(1, "BD-20261019-Q7XZ", 9, 1, "Tire", "", ts, "NONE", reportNo = 13, reportTs = ts)
+        assertEquals("Report #13-10/19/2026", d.ref(null))
+    }
+
+    @Test fun headingsReadAsCompassWords() {
+        assertEquals("north", Reports.compass(0.0))
+        assertEquals("north", Reports.compass(360.0))
+        assertEquals("east", Reports.compass(90.0))
+        assertEquals("southwest", Reports.compass(225.0))
+        assertEquals("northwest", Reports.compass(315.0))
+        assertEquals("north", Reports.compass(-5.0))
     }
 
     @Test fun unnumberedSpotKeepsItsOldCodeAsRef() {

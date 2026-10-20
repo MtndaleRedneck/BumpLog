@@ -200,7 +200,10 @@ object Backup {
                 for (i in 0 until arr.length()) { val o = arr.optJSONObject(i) ?: continue; if (o.optString("k") == "report_counter") c = o.optString("v").toIntOrNull() ?: 0 }
                 c
             }
-            db.bumpCounterTo(maxOf(maxNo + 1, stored))
+            // A pre-1.14 backup carries no numbers: continue past the confirmed reports it restored, like the upgrade does.
+            val existing = w.rawQuery("SELECT (SELECT COUNT(*) FROM spots WHERE review IN ('CONFIRMED','FIXED') AND report_id NOT LIKE 'TEST-%') + (SELECT COUNT(*) FROM damage)", null)
+                .use { it.moveToFirst(); it.getInt(0) }
+            db.bumpCounterTo(maxOf(maxNo + 1, stored, existing + 1))
         }
         // Photos only go into the folder of a damage report that is in this backup, and never outside the damage folder.
         val damageRoot = File(ctx.filesDir, "damage").canonicalFile
