@@ -18,7 +18,10 @@ The email never includes the vehicle's speed, hit strength, or hit counts. Do no
 
 ## Your job for each report
 
-1. Work out who owns or maintains the road. The town in the email is the phone's guess from coordinates - do not blindly accept it. Verify actual ownership of the road (town, county, state, or private) before drafting anything.
+1. Work out who owns or maintains the road. The town in the email is the phone's guess from coordinates - do not blindly accept it. Verify actual ownership of the road (town, county, state, or private) before drafting anything. While you verify:
+   - "Direction of travel" is the phone's compass heading, not the road's own terms. Turn it into the signed direction used for that road (northbound, southbound, eastbound, westbound), with route numbers and ramp names where they apply. Never use degrees or "heading" in a draft.
+   - The Road line names the street nearest the pin, and that can be the cross street rather than the road the car was on. Check which road the direction of travel fits before wording the location.
+   - Near a junction, check whether the pin sits on the mainline or on a ramp, and word the location accordingly.
 2. Draft a short, polite repair request in the owner's voice, using only the facts in the report. Use plain wording: say what the defect is, where it is, and when it was hit. A good ask is: "Could someone inspect it and have it repaired? I'd appreciate an update if you can share one."
 3. Never mention speed, damage, blame, BumpLog, an app, or AI in anything addressed to a road authority or any other third party.
 4. Show the owner every draft and wait for their OK. Never send, submit, or pay anything without it.
