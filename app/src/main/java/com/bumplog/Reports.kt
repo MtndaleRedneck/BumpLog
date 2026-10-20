@@ -26,6 +26,8 @@ object Reports {
 
     private fun pretty(ts: Long): String = SimpleDateFormat("EEE MMM d, h:mm a", Locale.US).format(Date(ts))
 
+    private fun timeOnly(ts: Long): String = SimpleDateFormat("h:mm a", Locale.US).format(Date(ts))
+
     private fun mapLink(lat: Double, lon: Double) = "https://maps.google.com/?q=%.6f,%.6f".format(lat, lon)
 
     const val REPO = "https://github.com/MtndaleRedneck/BumpLog"
@@ -81,10 +83,10 @@ object Reports {
     }
 
     /** One report block of the trip email. No speed, no g-force, no hit counts: the letter only needs the facts below. */
-    fun spotBlock(s: Spot, label: String = s.ref()): String = buildString {
+    fun spotBlock(s: Spot, label: String = s.ref(), hitTs: Long = s.lastTs): String = buildString {
         appendLine(label)
         appendLine("Type: " + s.type.label + " (" + s.severity.lowercase() + ")" + if (s.typeUser) "" else ", type not confirmed")
-        appendLine("Hit: ${pretty(s.lastTs)}")
+        appendLine("Hit: ${pretty(hitTs)}")
         if (s.address.isNotBlank()) appendLine("Road: ${s.address}")
         if (s.town.isNotBlank() || s.county.isNotBlank())
             appendLine("Town (phone's guess): " + listOf(s.town, s.county).filter { it.isNotBlank() }.joinToString(", "))
@@ -95,7 +97,9 @@ object Reports {
 
     internal fun reportsBody(spots: List<Spot>): String {
         val test = spots.isNotEmpty() && spots.all { it.reportId.startsWith("TEST-") }
-        // The email numbers its reports 1..N, oldest first; the app's stored report number stays in the app.
+        // The email numbers its reports 1..N, oldest first by first hit; the label, the order, and the shown
+        // hit time all use that first hit, and the time in the label keeps same-day labels unique. The app's
+        // stored report number stays in the app.
         val ordered = spots.sortedBy { it.firstTs }
         return buildString {
             appendLine("BumpLog report")
@@ -103,7 +107,7 @@ object Reports {
             appendLine(if (ordered.size == 1) "1 road defect report." else "${ordered.size} road defect reports.")
             if (test) appendLine("This is a test - the reports below are simulated, not real road defects.")
             appendLine()
-            ordered.forEachIndexed { i, s -> appendLine("--- ${i + 1} of ${ordered.size} ---"); append(spotBlock(s, ReportNumbers.ref(i + 1, s.firstTs))); appendLine() }
+            ordered.forEachIndexed { i, s -> appendLine("--- ${i + 1} of ${ordered.size} ---"); append(spotBlock(s, ReportNumbers.ref(i + 1, s.firstTs) + " at " + timeOnly(s.firstTs), s.firstTs)); appendLine() }
             if (test) appendLine("This is a test. Tell the owner you received it, in your usual chat, and do nothing else.")
             appendLine()
             append(assistantNote())
@@ -124,7 +128,7 @@ object Reports {
     fun setupBody(ctx: Context): String = buildString {
         appendLine("You don't need to know BumpLog; everything you need is below.")
         appendLine()
-        appendLine("I just installed BumpLog, an Android app that logs potholes and other road defects while I drive. I chose you as my assistant for it. At the end of a drive it will email you my road reports from this address. This email asks nothing of you. Before you act on any BumpLog email, please check with me that I really sent this. Ask me the way you normally reach me - never by email: \"Did you just set up BumpLog?\" Once I say yes, keep the guide below and use it for my BumpLog report emails from this address. If I say no, or don't answer, do nothing with BumpLog emails.")
+        appendLine("I just installed BumpLog, an Android app that logs potholes and other road defects while I drive. I chose you as my assistant for it. At the end of a drive it will email you my road reports from this address. No BumpLog email ever needs a reply. Before you act on any BumpLog email, please check with me that I really sent this. Ask me the way you normally reach me - never by email: \"Did you just set up BumpLog?\" Once I say yes, keep the guide below and use it for my BumpLog report emails from this address. If I say no, or don't answer, do nothing with BumpLog emails.")
         appendLine()
         append(guideText(ctx).trim())
         appendLine()

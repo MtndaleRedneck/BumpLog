@@ -2,6 +2,7 @@ package com.bumplog
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
@@ -95,6 +96,23 @@ class ReportsTest {
         val two = body.indexOf("Report #2-10/20/2026")
         assertTrue(one > body.indexOf("--- 1 of 2 ---") && one < body.indexOf("--- 2 of 2 ---"))
         assertTrue(two > body.indexOf("--- 2 of 2 ---"))
+    }
+
+
+    @Test fun sameDayEmailLabelsAreUniqueAndShowTheFirstHit() {
+        val early = spot.copy(id = 2, reportId = "BL-20261019-B7MN", reportNo = 13, firstTs = ts, lastTs = ts + 3_600_000)
+        val late = spot.copy(id = 3, reportId = "BL-20261019-C8NP", reportNo = 14, firstTs = ts + 7_200_000, lastTs = ts + 7_200_000)
+        // Passed newest-first, the way the trip query returns them.
+        val body = Reports.reportsBody(listOf(late, early))
+        val one = body.indexOf("Report #1-10/19/2026 at ")
+        val two = body.indexOf("Report #2-10/19/2026 at ")
+        assertTrue(one >= 0 && two >= 0 && one < two)
+        val label1 = body.substring(one, body.indexOf('\n', one))
+        val label2 = body.substring(two, body.indexOf('\n', two))
+        assertNotEquals(label1, label2)
+        // The displayed hit is the first hit, matching the label and the order.
+        val fmt = SimpleDateFormat("EEE MMM d, h:mm a", Locale.US)
+        assertTrue(body.contains("Hit: " + fmt.format(java.util.Date(ts))))
     }
 
     @Test fun testReportsSaySoAtBothEnds() {
