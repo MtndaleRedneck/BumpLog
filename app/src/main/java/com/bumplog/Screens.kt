@@ -48,6 +48,13 @@ fun handOffMail(ctx: Context, i: Intent): Boolean {
     catch (e: Exception) { toast(ctx, "No mail app found."); false }
 }
 
+/** Hands the setup email to the mail app and remembers that it went out, so the setup screen picks up at the check-with-you step even if the app was killed in between. */
+fun sendSetupMail(ctx: android.content.Context): Boolean {
+    val ok = handOffMail(ctx, Reports.setupMail(ctx))
+    if (ok) Prefs.setupEmailSent = true
+    return ok
+}
+
 @Composable
 private fun LoadingSpots(tick: Int, load: (Db) -> Unit) {
     val ctx = LocalContext.current
@@ -523,10 +530,7 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
             Txt("${s.saves}", 56, FontWeight.Bold)
             Muted("Counts each time a warned spot's heads-up alert fired and you passed it again.", 13, align = TextAlign.Center)
         } }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Card(Modifier.weight(1f)) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Muted("REPORTS LOGGED", 12); Txt("${s.logged}", 34, FontWeight.Bold) } }
-            Card(Modifier.weight(1f)) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Muted("REPORTS SENT", 12); Txt("${s.sent}", 34, FontWeight.Bold) } }
-        }
+        Card { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Muted("REPORTS SENT", 12); Txt("${s.sent}", 34, FontWeight.Bold) } }
         Card(pad = 16.dp) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Muted("FIXED AFTER YOU REPORTED", 12)
             Txt("${s.fixedAfterReport}", 34, FontWeight.Bold)

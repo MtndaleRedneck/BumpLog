@@ -30,7 +30,7 @@ Also: running report numbers assigned at confirm, CSV export and import (1 MB li
 
 1. Download the APK from the [latest release](../../releases/latest) on your phone.
 2. Open it and allow installs from your browser when Android asks.
-3. Open BumpLog and follow the setup: add your assistant address, send the test email so the assistant knows what to do, allow location (choose **Allow all the time**), notifications, and Bluetooth only if you want the car prompts.
+3. Open BumpLog and follow the setup: add your assistant address, send the setup email so the assistant knows what to do, allow location (choose **Allow all the time**), notifications, and Bluetooth only if you want the car prompts.
 4. Tap **Battery setup** in Settings. On Samsung phones also add the app to Settings > Battery > Background usage limits > Never sleeping apps, or One UI can stop it mid-drive.
 
 Release APKs are built by GitHub Actions and signed with a private key held in encrypted repository secrets. The key is not in this repo. If you build the app yourself, your build is signed with your own key and will not install over a release APK. Needs Android 12 or newer.

@@ -53,6 +53,8 @@ object Prefs {
     var addrTab: String get() = s("addr_tab", ""); set(v) = sp.edit().putString("addr_tab", cleanEmail(v)).apply()
     var addrCustom: String get() = s("addr_custom", ""); set(v) = sp.edit().putString("addr_custom", cleanEmail(v)).apply()
     var setupDone: Boolean get() = b("setup_done", false); set(v) = sp.edit().putBoolean("setup_done", v).apply()
+    /** The setup email left for the mail app at least once. Survives a process kill mid-handoff, so the setup screen can continue at the check-with-you step. */
+    var setupEmailSent: Boolean get() = b("setup_email_sent", false); set(v) = sp.edit().putBoolean("setup_email_sent", v).apply()
 
     /** The address for whichever assistant is selected. Empty until the user sets it up. */
     private fun rawAddress() = cleanEmail(when (assistant) { "TAB" -> addrTab; "CUSTOM" -> addrCustom; else -> addrInstinct })
@@ -80,7 +82,7 @@ object Prefs {
     }
 
     private val SETTING_KEYS = setOf("detection", "cutoff", "severe", "minspeed", "theme", "accent_rgb", "accent", "assistant", "addr_instinct", "addr_tab", "addr_custom",
-        "setup_done", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons")
+        "setup_done", "setup_email_sent", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons")
 
     /** Checks one restored value against the type and range its setting expects. Returns the clean value or null to skip it. */
     private fun checked(k: String, t: String, x: org.json.JSONObject): Any? {
@@ -88,7 +90,7 @@ object Prefs {
         fun int(lo: Int, hi: Int): Int? = if (t == "i") x.getInt("v").takeIf { it in lo..hi } else null
         fun flt(lo: Float, hi: Float): Float? = if (t == "f") x.getDouble("v").toFloat().takeIf { it.isFinite() && it in lo..hi } else null
         return when (k) {
-            "detection", "setup_done", "autostart", "lock_buttons" -> if (t == "b") x.getBoolean("v") else null
+            "detection", "setup_done", "setup_email_sent", "autostart", "lock_buttons" -> if (t == "b") x.getBoolean("v") else null
             "guide_seen" -> int(0, 1000000)
             "cutoff" -> flt(0.1f, 5f); "severe" -> flt(0.1f, 10f)
             "minspeed" -> int(0, 100)

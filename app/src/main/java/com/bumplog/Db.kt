@@ -239,7 +239,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     fun markSent(id: Long, now: Long) = update(id, "report_status" to "SENT", "sent_ts" to now)
     /** Restores spots and hits from a BumpLog CSV export. Old codes (BL-/BD-/PS-, strictly checked) and the running
      * numbers are kept; IDs already here are skipped. Both the old 12-column layout and the current one with
-     * report_no, town and county load. The shared counter ends up past every number the file used. */
+     * report_no, town and county load. The shared counter ends up past every number the file used and past the
+     * reports already on the phone, like a backup restore (a CSV carries no stored counter). */
     class ImportResult(val imported: Int, val skipped: Int, val damages: Int = 0)
     @Synchronized fun importCsv(text: String): ImportResult? {
         val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US)
@@ -323,7 +324,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                 } catch (e: Exception) { bad++ }
             }
         }
-        if (maxNo > 0) bumpCounterTo(maxNo + 1)
+        val existing = db.rawQuery("SELECT (SELECT COUNT(*) FROM spots WHERE (review='CONFIRMED' OR (review='FIXED' AND report_status<>'NONE')) AND report_id NOT LIKE 'TEST-%') + (SELECT COUNT(*) FROM damage)", null)
+            .use { it.moveToFirst(); it.getInt(0) }
+        bumpCounterTo(ReportNumbers.restoreNext(maxNo, 0, existing))
         return ImportResult(n, skippedIds.size + bad, dn)
     }
 

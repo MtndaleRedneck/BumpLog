@@ -341,8 +341,8 @@ class MainActivity : ComponentActivity() {
         if (guideOffer) AlertDialog(
             onDismissRequest = { guideOffer = false },
             title = { Text("The report email changed") },
-            text = { Text("Reports now go out in a new format with new instructions for your assistant. Send it the new setup email? It is the assistant guide, with the current version on top.") },
-            confirmButton = { TextButton({ Prefs.guideSeen = Reports.GUIDE_VERSION; guideOffer = false; handOffMail(this@MainActivity, Reports.setupMail(this@MainActivity)) }) { Text("Send") } },
+            text = { Text("BumpLog has new instructions for your assistant. Send it the new setup email? It is the assistant guide.") },
+            confirmButton = { TextButton({ Prefs.guideSeen = Reports.GUIDE_VERSION; guideOffer = false; if (sendSetupMail(this@MainActivity)) stack = listOf(Screen.Setup) }) { Text("Send") } },
             dismissButton = { TextButton({ Prefs.guideSeen = Reports.GUIDE_VERSION; guideOffer = false }) { Text("Not now") } },
         )
         val settingsScroll = androidx.compose.foundation.rememberScrollState()
@@ -360,7 +360,7 @@ class MainActivity : ComponentActivity() {
                     null -> when (tab) {
                         "review" -> ReviewScreen(live, { stack = listOf(Screen.Spot(it)) }) { stack = listOf(Screen.Setup) }
                         "stats" -> StatsScreen(live.tick) { stack = listOf(Screen.Spot(it)) }
-                        "settings" -> SettingsScreen(live.tick, settingsScroll, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) })
+                        "settings" -> SettingsScreen(live.tick, settingsScroll, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) }, { stack = listOf(Screen.Setup) })
                         else -> HomeScreen(live, { stack = listOf(Screen.Spot(it)) }, { stack = listOf(Screen.Damage(0)) }, permsOk, { askPerms() },
                             {
                                 Prefs.passenger = !Prefs.passenger
