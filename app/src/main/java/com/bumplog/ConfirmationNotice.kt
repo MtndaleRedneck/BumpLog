@@ -14,16 +14,25 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 object ConfirmationNotice {
     val shown = MutableStateFlow(0L)
-    fun show() { shown.value = System.nanoTime() }
-    fun message(fileTrip: Boolean = true) = if (fileTrip)
-        "Confirmed. Nothing sends yet. It goes in one email with the rest of your drive, at the end of the trip."
-    else "Confirmed. Saved on this phone. Not included in the trip email."
+    val ref = MutableStateFlow("")
+    val fileTrip = MutableStateFlow(true)
+    fun show(reportRef: String = "", trip: Boolean = true) {
+        ref.value = reportRef
+        fileTrip.value = trip
+        shown.value = System.nanoTime()
+    }
+    /** One line for toasts where the overlay is not in view. */
+    fun flash(reportRef: String, trip: Boolean): String =
+        (if (reportRef.isNotEmpty()) "Confirmed. $reportRef." else "Confirmed.") +
+        if (trip) " It goes in one email with the rest of your drive, at the end of the trip." else " Saved on this phone. Not included in the trip email."
 }
 
 /** Visual only: no click target, modal window, or input blocker. */
 @Composable fun ConfirmationOverlay() {
     val shown by ConfirmationNotice.shown.collectAsState()
     if (shown == 0L) return
+    val ref by ConfirmationNotice.ref.collectAsState()
+    val fileTrip by ConfirmationNotice.fileTrip.collectAsState()
     LaunchedEffect(shown) { delay(2500); if (ConfirmationNotice.shown.value == shown) ConfirmationNotice.shown.value = 0L }
     val p = LocalPal.current
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -31,7 +40,9 @@ object ConfirmationNotice {
             horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Txt("✓", 28, FontWeight.Bold, p.accent)
             Txt("Confirmed", 20, FontWeight.Bold)
-            Txt("Nothing sends yet. It goes in one email with the rest of your drive, at the end of the trip.", 14,
+            if (ref.isNotEmpty()) Txt(ref, 15, FontWeight.Medium, align = androidx.compose.ui.text.style.TextAlign.Center)
+            Txt(if (fileTrip) "Nothing sends yet. It goes in one email with the rest of your drive, at the end of the trip."
+                else "Saved on this phone. Not included in the trip email.", 14,
                 color = p.muted, align = androidx.compose.ui.text.style.TextAlign.Center)
         }
     }

@@ -12,7 +12,8 @@ object Demo {
         fun add(road: String, minsAgo: Int, g: Float, mph: Float, t: DefectType, lat: Double, lon: Double, review: String = "PENDING"): Spot {
             val h = Hit(0, 0, drive, now - minsAgo * 60_000L, lat, lon, 90.0, mph, g, 120, 2, t)
             val s = db.recordHit(h, t)
-            db.setAddress(s.id, road); db.setReview(s.id, review)
+            db.setPlace(s.id, road, "Anytown", "Example County")
+            if (review == "CONFIRMED") db.confirmForTrip(s.id) else db.setReview(s.id, review)
             return s
         }
         drive = now - 30 * 3_600_000L

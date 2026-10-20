@@ -15,7 +15,7 @@ class ActionReceiver : BroadcastReceiver() {
         val id = i.getLongExtra("spot", 0)
         val db = Db.get(ctx)
         when (i.action) {
-            YES -> { db.confirmForTrip(id); android.widget.Toast.makeText(ctx, "Confirmed. Saved for the trip email.", android.widget.Toast.LENGTH_SHORT).show() }
+            YES -> { db.confirmForTrip(id); android.widget.Toast.makeText(ctx, ConfirmationNotice.flash(db.spot(id)?.ref() ?: "", true), android.widget.Toast.LENGTH_LONG).show() }
             NO -> { db.setReview(id, "DISMISSED"); db.setWarn(id, false) }
             WARN -> db.setWarn(id, true)
             STILL -> { db.resetCleanPasses(id); Notifier.cancel(ctx, 3000 + id.toInt()) }

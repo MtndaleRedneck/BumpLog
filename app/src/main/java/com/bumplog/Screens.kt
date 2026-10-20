@@ -54,8 +54,8 @@ private fun LoadingSpots(tick: Int, load: (Db) -> Unit) {
     LaunchedEffect(tick) { load(Db.get(ctx)) }
 }
 
-fun spotIcon(s: Spot) = if (s.review == "DISMISSED") Icons.Default.Close else if (s.reportStatus == "FILED") Icons.Default.CheckCircle else if (s.severe) Icons.Default.Warning else Icons.Default.Place
-@Composable fun spotColor(s: Spot): Color { val p = LocalPal.current; return if (s.reportStatus != "FILED" && s.severe) p.yellow else p.text }
+fun spotIcon(s: Spot) = if (s.review == "DISMISSED") Icons.Default.Close else if (s.reportStatus == "SENT") Icons.Default.CheckCircle else if (s.severe) Icons.Default.Warning else Icons.Default.Place
+@Composable fun spotColor(s: Spot): Color { val p = LocalPal.current; return if (s.reportStatus != "SENT" && s.severe) p.yellow else p.text }
 
 @Composable
 fun SpotRow(s: Spot, tag: String? = null, onClick: () -> Unit) {
@@ -184,7 +184,7 @@ val PowerOrange = Color(0xFFFF8A1F)
 // ---------------------------------------------------------------- Severe hit alert (opens from the notification)
 
 @Composable
-fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit) {
+fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit, onConfirmed: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
     var s by remember { mutableStateOf<Spot?>(null) }
@@ -205,7 +205,7 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit) {
         Spacer(Modifier.height(14.dp))
         Dropdown("Defect type", spot.type.name, DefectType.values().map { it.name to it.label }, Modifier.fillMaxWidth()) { Db.get(ctx).setType(spot.id, DefectType.parse(it)); Live.bump() }
         Spacer(Modifier.height(14.dp))
-        BigButton("Yes", Icons.Default.Check) { val d = Db.get(ctx); d.confirmForTrip(spot.id); ConfirmationNotice.show(); Live.bump(); onDone() }
+        BigButton("Yes", Icons.Default.Check) { val d = Db.get(ctx); d.confirmForTrip(spot.id); ConfirmationNotice.show(d.spot(spot.id)?.ref() ?: "", true); Live.bump(); onConfirmed() }
         Spacer(Modifier.height(12.dp))
         BigButton("No", Icons.Default.Close, filled = false) { val d = Db.get(ctx); d.setReview(spot.id, "DISMISSED"); d.setWarn(spot.id, false); Live.bump(); onDone() }
         Spacer(Modifier.height(12.dp))
@@ -241,14 +241,18 @@ fun HitRow(h: Hit, s: Spot, gray: Boolean = false, onClick: () -> Unit) {
         Column(Modifier.weight(1f)) {
             Txt(s.title, 17, FontWeight.Bold)
             Muted("${hitWhen(h.ts)}  -  ${h.speedMph.toInt()} mph  -  ${Reports.statusLabel(s)}")
+            // The public ref once the spot is confirmed (old reports show their old code). Wraps at big fonts, never ellipsizes.
+            if (s.review == "CONFIRMED" || s.reportStatus != "NONE") Txt(s.ref(), 12, FontWeight.Normal, p.muted, maxLines = 2)
         }
-        Txt("%.2fg".format(h.peakG), 17, FontWeight.Bold, if (h.peakG >= Prefs.severeG && s.reportStatus != "FILED") p.yellow else p.text)
+        Txt("%.2fg".format(h.peakG), 17, FontWeight.Bold, if (h.peakG >= Prefs.severeG && s.reportStatus != "SENT") p.yellow else p.text)
     }
 }
 
 @Composable
 fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Unit) {
     val p = LocalPal.current
+    val ctx = LocalContext.current
+    val snack = remember { SnackbarHostState() }
     var pendingCount by remember { mutableStateOf(0) }
     var saved by remember { mutableStateOf(0) }
     var allHits by remember { mutableStateOf(listOf<Pair<Hit, Spot>>()) }
@@ -263,6 +267,7 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
         pendingCount = db.pendingSpots().size
         saved = db.hitsSince(Db.startOfToday())
     }
+    Box(Modifier.fillMaxSize()) {
     Column(Modifier.fillMaxSize().pane("Review").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Card(pad = 20.dp) {
             Muted("Today", 15, Modifier.fillMaxWidth().asHeading(), TextAlign.Center)
@@ -279,9 +284,9 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
             Muted(if (live.running) "THIS DRIVE" else "LAST DRIVE", 14, Modifier.padding(start = 4.dp, top = 6.dp).asHeading())
             if (cur.isEmpty()) Muted(if (live.running) "No hits yet. Start a drive and they show up here." else "No hits in your last drive.", 14, Modifier.padding(start = 4.dp))
         }
-        cur.forEach { (h, sp) -> HitRow(h, sp, gray = hitReported(h, sp)) { openSpot(sp.id) } }
+        cur.forEach { (h, sp) -> ReviewHitRow(h, sp, snack) { openSpot(sp.id) } }
         if (older.isNotEmpty()) Muted("OLDER HITS", 14, Modifier.padding(start = 4.dp, top = 6.dp).asHeading())
-        older.forEach { (h, sp) -> HitRow(h, sp, gray = hitReported(h, sp)) { openSpot(sp.id) } }
+        older.forEach { (h, sp) -> ReviewHitRow(h, sp, snack) { openSpot(sp.id) } }
         Card(color = p.card, pad = 14.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Default.Email, null, tint = p.muted, modifier = Modifier.size(28.dp)); Spacer(Modifier.width(12.dp))
@@ -289,6 +294,40 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
                 Muted(if (a.isBlank()) "No assistant address set yet" else "Sends to $a", 15)
             }
         }
+    }
+    SnackbarHost(snack, Modifier.align(Alignment.BottomCenter))
+    }
+}
+
+/** One Review row. A "To review" card can be swiped away to dismiss it, with Undo; anything confirmed stays put. */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun ReviewHitRow(h: Hit, sp: Spot, snack: SnackbarHostState, openSpot: (Long) -> Unit) {
+    val p = LocalPal.current
+    val ctx = LocalContext.current
+    val canDismiss = sp.review == "PENDING"
+    androidx.compose.runtime.key(sp.id) {
+        val st = rememberSwipeToDismissBoxState(confirmValueChange = { it == SwipeToDismissBoxValue.EndToStart && canDismiss })
+        LaunchedEffect(st.currentValue) {
+            if (st.currentValue == SwipeToDismissBoxValue.EndToStart) {
+                val wasWarn = sp.warn
+                val db = Db.get(ctx)
+                db.setReview(sp.id, "DISMISSED"); db.setWarn(sp.id, false); Live.bump()
+                st.reset()
+                val r = snack.showSnackbar("Spot dismissed.", actionLabel = "Undo")
+                if (r == SnackbarResult.ActionPerformed) { db.setReview(sp.id, "PENDING"); db.setWarn(sp.id, wasWarn); Live.bump() }
+            }
+        }
+        SwipeToDismissBox(
+            state = st,
+            enableDismissFromStartToEnd = false,
+            enableDismissFromEndToStart = canDismiss,
+            backgroundContent = {
+                Box(Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)).background(p.card2).padding(end = 20.dp), contentAlignment = Alignment.CenterEnd) {
+                    Txt("Dismiss", 16, FontWeight.Bold, p.muted)
+                }
+            },
+        ) { HitRow(h, sp, gray = hitReported(h, sp)) { openSpot(sp.id) } }
     }
 }
 
@@ -302,40 +341,50 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
     LoadingSpots(tick) { db -> s = db.spot(spotId) }
     val spot = s ?: return
     val db = Db.get(ctx)
-    var confirmEnd by remember { mutableStateOf<String?>(null) }
+    var confirmFixed by remember { mutableStateOf(false) }
+    var menuOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().pane("Spot").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        BackRow(spot.title, back)
+        Box(Modifier.fillMaxWidth()) {
+            BackRow(spot.title, back)
+            // Mark fixed lives in this menu, and only for a confirmed spot.
+            if (spot.review == "CONFIRMED") Box(Modifier.align(Alignment.CenterEnd)) {
+                IconButton({ menuOpen = true }) { Icon(Icons.Default.MoreVert, "More actions", tint = p.muted) }
+                DropdownMenu(menuOpen, { menuOpen = false }, modifier = Modifier.background(p.card2)) {
+                    DropdownMenuItem(text = { Txt("Mark fixed", 16) }, onClick = { menuOpen = false; confirmFixed = true })
+                }
+            }
+        }
         Card {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("%.2fg".format(spot.maxG), 40, FontWeight.Bold, spotColor(spot)); Spacer(Modifier.weight(1f)); Chip(Reports.statusLabel(spot))
             }
             Muted("${spot.hitCount} hit(s)  -  last ${dayTime(spot.lastTs)}  -  ${spot.speedMph.toInt()} mph")
-            Muted("ID ${spot.reportId}  -  %.5f, %.5f".format(spot.lat, spot.lon))
+            // The public ref shows once the spot is confirmed: Report # for new reports, the old code for old ones. Raw coordinates stay either way.
+            Muted((if (spot.review == "CONFIRMED" || spot.reportStatus != "NONE") spot.ref() + "  -  " else "") + "%.5f, %.5f".format(spot.lat, spot.lon))
             if (spot.cleanPasses >= 2 && spot.review != "FIXED") { Spacer(Modifier.height(6.dp)); Txt("Drove past ${spot.cleanPasses} times without a hit. Fixed?", 14, color = p.muted) }
         }
         Dropdown(if (spot.typeUser) "Defect type" else "Defect type (guess - pick to confirm)", spot.type.name, DefectType.values().map { it.name to it.label }) { db.setType(spot.id, DefectType.parse(it)); Live.bump() }
         Toggle("Warn me here", spot.warn, "Heads-up before this spot on future drives") { db.setWarn(spot.id, it); Live.bump() }
-        BigButton("Confirm as real defect", Icons.Default.Check, enabled = spot.review != "CONFIRMED") { db.confirmForTrip(spot.id); ConfirmationNotice.show(); Live.bump() }
+        BigButton("Confirm as real defect", Icons.Default.Check, enabled = spot.review != "CONFIRMED") {
+            db.confirmForTrip(spot.id)
+            ConfirmationNotice.show(db.spot(spot.id)?.ref() ?: "", true)
+            Live.bump()
+            back()
+        }
         if (TripReportPolicy.canSendNow(spot, Live.state.value.running, Live.state.value.driveId))
             BigButton("Send this report", Icons.Default.Send, filled = false) {
                 if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(spot)))) { db.markSent(spot.id, System.currentTimeMillis()); Live.bump() }
             }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            SmallButton("Dismiss", Modifier.weight(1f)) { confirmEnd = "DISMISSED" }
-            SmallButton("Mark fixed", Modifier.weight(1f)) { confirmEnd = "FIXED" }
-        }
         if (spot.review == "DISMISSED" || spot.review == "FIXED")
             BigButton("Restore this spot", Icons.Default.Check, filled = false) { db.setReview(spot.id, "PENDING"); db.setWarn(spot.id, spot.severe); db.update(spot.id, "fixed_after_report" to false, "fixed_ts" to 0L); Live.bump() }
-        confirmEnd?.let { what ->
-            AlertDialog(onDismissRequest = { confirmEnd = null },
-                title = { Text(if (what == "FIXED") "Mark as fixed?" else "Dismiss this spot?") },
+        if (confirmFixed)
+            AlertDialog(onDismissRequest = { confirmFixed = false },
+                title = { Text("Mark as fixed?") },
                 text = { Text("It stops warning you. You can restore it any time from this screen.") },
-                confirmButton = { TextButton({ if (what == "FIXED") { db.markFixed(spot.id, System.currentTimeMillis()); Celebrate.trigger() } else { db.setReview(spot.id, what); db.setWarn(spot.id, false) }; confirmEnd = null; Live.bump(); back() }) { Text(if (what == "FIXED") "Mark fixed" else "Dismiss") } },
-                dismissButton = { TextButton({ confirmEnd = null }) { Text("Cancel") } })
-        }
+                confirmButton = { TextButton({ db.markFixed(spot.id, System.currentTimeMillis()); Celebrate.trigger(); confirmFixed = false; Live.bump(); back() }) { Text("Mark fixed") } },
+                dismissButton = { TextButton({ confirmFixed = false }) { Text("Cancel") } })
         SmallButton("This one got me: damage report", Modifier.fillMaxWidth()) { openDamage(spot.id) }
-        if (spot.reportStatus == "FILED") Muted("Filed" + Prefs.filedRef(spot.reportId).let { if (it.isNotEmpty()) ", reference $it" else "" } + ".", 12)
-        if (spot.reportStatus == "SENT") Muted("Sent ${dayTime(spot.sentTs)} means handed to your mail app. It becomes Filed when your assistant confirms.", 12)
+        if (spot.reportStatus == "SENT") Muted("Sent ${dayTime(spot.sentTs)} - handed to your mail app. Press send there.", 12)
     }
 }
 
@@ -404,12 +453,12 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
             val d = build() ?: return@BigButton
             val db = Db.get(ctx)
             val h = hits.firstOrNull { it.id == picked }
-            if (handOffMail(ctx, Reports.damageMail(ctx, d, h, db.spot(d.spotId)))) { db.markDamageSent(d.id); toast(ctx, "Handed to your mail app. Press send there."); back() }
+            if (handOffMail(ctx, Reports.damageMail(ctx, d, h, db.spot(d.spotId)))) { db.markDamageSent(d.id); toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() }
         }
         BigButton("Send at end of drive", Icons.Default.Check, filled = false, enabled = picked != 0L) {
             val d = build() ?: return@BigButton
             Db.get(ctx).setDamageStatus(d.id, "QUEUED"); Live.bump()
-            toast(ctx, "Saved. You'll get a reminder when the drive ends to add photos and send."); back()
+            toast(ctx, "Confirmed. ${d.ref(hits.firstOrNull { it.id == picked })}. You'll get a reminder when the drive ends to add photos and send."); back()
         }
         if (queued > 0) SmallButton("Waiting to send ($queued)", Modifier.fillMaxWidth(), onClick = openQueue)
         Muted("Damage reports go to your assistant, not to the road authority, and are kept separate from road defect reports. If you already reported this spot, that is included.", 12)
@@ -428,6 +477,7 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
         list.forEach { d ->
             Card {
                 Txt("${d.category} - ${dayTime(d.ts)}", 17, FontWeight.Bold)
+                Muted(d.ref(Db.get(ctx).hit(d.hitId)), 13)
                 if (d.note.isNotBlank()) Muted(d.note, 13)
                 Muted("${DamagePhotos.files(ctx, d.reportId).size} photo(s) attached", 13)
                 Spacer(Modifier.height(8.dp))
@@ -475,7 +525,7 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
         } }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Card(Modifier.weight(1f)) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Muted("REPORTS LOGGED", 12); Txt("${s.logged}", 34, FontWeight.Bold) } }
-            Card(Modifier.weight(1f)) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Muted("REPORTS FILED", 12); Txt("${s.filed}", 34, FontWeight.Bold) } }
+            Card(Modifier.weight(1f)) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) { Muted("REPORTS SENT", 12); Txt("${s.sent}", 34, FontWeight.Bold) } }
         }
         Card(pad = 16.dp) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Muted("FIXED AFTER YOU REPORTED", 12)

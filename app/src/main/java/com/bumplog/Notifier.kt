@@ -165,9 +165,9 @@ object Notifier {
             val i = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
                 .putExtra("sendtrip", driveId)
             val what = if (toFile == 1) "1 report" else "$toFile reports"
-            b.setContentText("$what marked to file. Tap to open one email with " + (if (toFile == 1) "it." else "all of them."))
+            b.setContentText("$what ready to send. Tap to open one email with " + (if (toFile == 1) "it." else "all of them."))
                 .setContentIntent(PendingIntent.getActivity(ctx, 6000 + driveId.toInt(), i, flags()))
-        } else b.setContentText("$hits saved. Nothing was marked to file.").setContentIntent(openApp(ctx, 0, "review"))
+        } else b.setContentText("$hits saved. Nothing to send.").setContentIntent(openApp(ctx, 0, "review"))
         nm.notify(ID_DRIVE_DONE, b.build())
     }
 
@@ -233,7 +233,8 @@ object Notifier {
     /** Shows the overlay pop-up with sample data so the user can see what it looks like. */
     fun previewOverlay(ctx: Context): Boolean {
         if (!Settings.canDrawOverlays(ctx)) return false
-        val s = Spot(-1, "BL-PREVIEW", 0.0, 0.0, -1.0, DefectType.values().first(), false, 1.34f, 1, 40f, 0, 0, 0, "PENDING", false, "NONE", 0, "Sample road", 0)
+        val now = System.currentTimeMillis()
+        val s = Spot(-1, "BL-PREVIEW", 0.0, 0.0, -1.0, DefectType.values().first(), false, 1.34f, 1, 40f, now, now, 0, "PENDING", false, "NONE", 0, "Sample road", 0, reportNo = 12, town = "Anytown", county = "Example County")
         overlay(ctx, s, preview = true)
         return true
     }

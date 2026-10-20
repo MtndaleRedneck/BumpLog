@@ -81,7 +81,7 @@ class LogItActivity : ComponentActivity() {
                     BigButton("Save", modifier = Modifier.weight(1f).heightIn(min = 56.dp), enabled = confirmed) {
                         Db.get(this@LogItActivity).logSpot(spot.id, type, severity, fileTrip); Prefs.setLogDraft(spot.id, "")
                         Live.bump()
-                        android.widget.Toast.makeText(this@LogItActivity, ConfirmationNotice.message(fileTrip), android.widget.Toast.LENGTH_LONG).show()
+                        android.widget.Toast.makeText(this@LogItActivity, ConfirmationNotice.flash(Db.get(this@LogItActivity).spot(spot.id)?.ref() ?: "", fileTrip), android.widget.Toast.LENGTH_LONG).show()
                         finish()
                     }
                 }

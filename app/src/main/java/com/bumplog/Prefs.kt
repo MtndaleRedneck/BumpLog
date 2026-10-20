@@ -46,8 +46,8 @@ object Prefs {
     /** Draft of the log form: "TYPE|confirmed|SEVERITY|fileTrip", kept so leaving the screen does not lose it. */
     fun logDraft(spotId: Long): String = s("logdraft_$spotId", "")
     fun setLogDraft(spotId: Long, v: String) = sp.edit().apply { if (v.isEmpty()) remove("logdraft_$spotId") else putString("logdraft_$spotId", v) }.apply()
-    fun setFiledRef(reportId: String, ref: String) = sp.edit().putString("filedref_$reportId", ref).apply()
-    fun filedRef(reportId: String): String = s("filedref_$reportId", "")
+    /** Guide version the owner last acknowledged; a newer guide or email format brings the one-time banner back. */
+    var guideSeen: Int get() = i("guide_seen", 0); set(v) = sp.edit().putInt("guide_seen", v).apply()
     var assistant: String get() = s("assistant", "INSTINCT"); set(v) = sp.edit().putString("assistant", v).apply()
     var addrInstinct: String get() = s("addr_instinct", ""); set(v) = sp.edit().putString("addr_instinct", cleanEmail(v)).apply()
     var addrTab: String get() = s("addr_tab", ""); set(v) = sp.edit().putString("addr_tab", cleanEmail(v)).apply()
@@ -60,10 +60,10 @@ object Prefs {
     val rawActiveAddress: String get() = rawAddress()
     /** Exactly one plain email address: no spaces, commas, semicolons, angle brackets or quotes. */
     fun isValidEmail(raw: String): Boolean { val s = cleanEmail(raw); return s.length in 5..254 && Regex("^[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$").matches(s) }
-    /** Clears local-only extras on "Delete all data": drafts, saved filed references and temp exports/photos. */
+    /** Clears local-only extras on "Delete all data": drafts and temp exports/photos. */
     fun wipeLocalExtras(ctx: Context) {
         val e = sp.edit()
-        sp.all.keys.filter { it.startsWith("logdraft_") || it.startsWith("filedref_") }.forEach { e.remove(it) }
+        sp.all.keys.filter { it.startsWith("logdraft_") }.forEach { e.remove(it) }
         e.apply()
         java.io.File(ctx.cacheDir, "exports").deleteRecursively()
         java.io.File(ctx.filesDir, "voice").deleteRecursively()
@@ -74,13 +74,13 @@ object Prefs {
         val o = org.json.JSONObject()
         for ((k, v) in sp.all) {
             val t = when (v) { is Boolean -> "b"; is Int -> "i"; is Long -> "l"; is Float -> "f"; is String -> "s"; else -> continue }
-            if (k in SETTING_KEYS || (k.startsWith("filedref_") && v is String)) o.put(k, org.json.JSONObject().put("t", t).put("v", if (v is Float) v.toDouble() else v))
+            if (k in SETTING_KEYS) o.put(k, org.json.JSONObject().put("t", t).put("v", if (v is Float) v.toDouble() else v))
         }
         return o
     }
 
     private val SETTING_KEYS = setOf("detection", "cutoff", "severe", "minspeed", "theme", "accent_rgb", "accent", "assistant", "addr_instinct", "addr_tab", "addr_custom",
-        "setup_done", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons")
+        "setup_done", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons")
 
     /** Checks one restored value against the type and range its setting expects. Returns the clean value or null to skip it. */
     private fun checked(k: String, t: String, x: org.json.JSONObject): Any? {
@@ -89,6 +89,7 @@ object Prefs {
         fun flt(lo: Float, hi: Float): Float? = if (t == "f") x.getDouble("v").toFloat().takeIf { it.isFinite() && it in lo..hi } else null
         return when (k) {
             "detection", "setup_done", "autostart", "lock_buttons" -> if (t == "b") x.getBoolean("v") else null
+            "guide_seen" -> int(0, 1000000)
             "cutoff" -> flt(0.1f, 5f); "severe" -> flt(0.1f, 10f)
             "minspeed" -> int(0, 100)
             "accent_rgb" -> if (t == "i") AccentStore.resolve(x.getInt("v"), null).takeIf { it == x.getInt("v") } else null
@@ -116,12 +117,6 @@ object Prefs {
         for (k in o.keys()) {
             try {
                 val x = o.getJSONObject(k); val t = x.getString("t")
-                if (k.startsWith("filedref_")) {
-                    val id = k.removePrefix("filedref_")
-                    val v = if (t == "s") x.getString("v") else continue
-                    if (id.length in 4..40 && id.all { it.isLetterOrDigit() || it == '-' } && v.length <= 64 && v.none { it.isISOControl() } && !sp.contains(k)) { e.putString(k, v); n++ }
-                    continue
-                }
                 if (k !in SETTING_KEYS) continue
                 if (k == "accent" && o.has("accent_rgb")) continue
                 // An old backup holds the accent as a position; it is converted to the colour and saved under the colour key.

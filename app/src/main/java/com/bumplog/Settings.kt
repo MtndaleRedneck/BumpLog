@@ -200,19 +200,21 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         }
         Card(pad = 16.dp) {
             Txt("Set up your assistant", 18, FontWeight.Bold)
-            Muted("Optional. Copy a short briefing and paste it into your own AI chat so it knows what BumpLog reports are and how to handle them. Every report email also explains itself at the top.", 12)
+            Muted("Copy the BumpLog guide to paste into your own AI chat, or send the setup email again. The guide and the setup email are the same text, with the current version on top.", 12)
             Spacer(Modifier.height(8.dp))
-            SmallButton("Copy setup prompt", Modifier.fillMaxWidth()) {
+            SmallButton("Copy assistant guide", Modifier.fillMaxWidth()) {
                 val cm = ctx.getSystemService(android.content.ClipboardManager::class.java)
-                cm.setPrimaryClip(android.content.ClipData.newPlainText("BumpLog setup prompt", Reports.setupPrompt()))
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("BumpLog assistant guide", Reports.guideText(ctx)))
                 toast(ctx, "Copied. Paste it into your assistant's chat.")
             }
+            Spacer(Modifier.height(6.dp))
+            SmallButton("Resend setup email", Modifier.fillMaxWidth()) { handOffMail(ctx, Reports.setupMail(ctx)) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             SmallButton("Test alert", Modifier.weight(1f)) { Notifier.channels(ctx); Notifier.testAlert(ctx) }
-            SmallButton("Test email", Modifier.weight(1f)) { handOffMail(ctx, Reports.testMail()) }
+            SmallButton("Test email", Modifier.weight(1f)) { handOffMail(ctx, Reports.setupMail(ctx)) }
         }
-        Muted("The test email is labeled TEST.", 12, Modifier.fillMaxWidth(), androidx.compose.ui.text.style.TextAlign.Center)
+        Muted("The test email is the setup email, labeled as a test.", 12, Modifier.fillMaxWidth(), androidx.compose.ui.text.style.TextAlign.Center)
 
         Toggle("Check for updates", updCheck, "Checks GitHub for a newer BumpLog when you open the app. No account or personal details are sent.") { updCheck = it; Prefs.updateCheck = it }
         Toggle("Car Bluetooth prompts", auto, "Offers to start logging when your car connects and to stop when it disconnects. Off by default.") { auto = it; Prefs.autoStart = it }
@@ -295,15 +297,38 @@ fun SetupScreen(done: () -> Unit) {
     val ctx = LocalContext.current
     var assistant by remember { mutableStateOf(Prefs.assistant) }
     var address by remember { mutableStateOf(Prefs.rawActiveAddress) }
-    Column(Modifier.fillMaxSize().pane("Set up your assistant").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        BackRow("Set up your assistant", done)
-        Muted("BumpLog emails confirmed reports to an AI assistant that works out who owns the road and prepares the repair request. Nothing is filed without your approval. The address stays on this phone.", 14)
-        Dropdown("Assistant", assistant, listOf("INSTINCT" to "Instinct", "TAB" to "Tab", "CUSTOM" to "Custom")) { assistant = it; Prefs.assistant = it; address = Prefs.rawActiveAddress }
-        AddressField("Its email address", address) { address = it; Prefs.activeAddress = it }
-        SmallButton("Send test report", Modifier.fillMaxWidth()) { if (Prefs.isValidEmail(address)) handOffMail(ctx, Reports.testMail()) else toast(ctx, "Enter one valid email address first.") }
-        Muted("The test report is labeled TEST so nothing is treated as a real defect.", 12)
-        BigButton("Done", Icons.Default.Check) { Prefs.setupDone = true; done() }
-        TextButton({ Prefs.setupDone = true; done() }) { Txt("Skip for now", 15, color = p.muted) }
+    var sent by remember { mutableStateOf(false) }
+    Column(Modifier.fillMaxSize().pane(if (sent) "Test email sent" else "Set up your assistant").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        BackRow(if (sent) "Test email sent" else "Set up your assistant", done)
+        if (!sent) {
+            Muted("BumpLog emails your road reports to an AI assistant. Add its address, then send a test email so it knows what to do with them.", 14)
+            Card(pad = 16.dp) {
+                Txt("Assistant", 18, FontWeight.Bold)
+                Spacer(Modifier.height(10.dp))
+                Dropdown("Assistant", assistant, listOf("INSTINCT" to "Instinct", "TAB" to "Tab", "CUSTOM" to "Custom")) { assistant = it; Prefs.assistant = it; address = Prefs.rawActiveAddress }
+                Spacer(Modifier.height(8.dp))
+                AddressField("Its email address", address) { address = it; Prefs.activeAddress = it }
+                Muted("Saved on this phone only. Reports are not sent until the test email goes out.", 12)
+            }
+            BigButton("Send test email", Icons.Default.Send, enabled = Prefs.isValidEmail(address)) {
+                if (handOffMail(ctx, Reports.setupMail(ctx))) sent = true
+            }
+            Muted("Required before your first report is sent.", 12, Modifier.fillMaxWidth(), androidx.compose.ui.text.style.TextAlign.Center)
+        } else {
+            Card(pad = 16.dp) {
+                Txt("Check your assistant", 18, FontWeight.Bold)
+                Spacer(Modifier.height(6.dp))
+                Muted("Open its chat. It should say: \"BumpLog is set up. I'll handle your road reports.\"", 14)
+                Spacer(Modifier.height(4.dp))
+                Muted("Once it does, tap Done.", 12)
+            }
+            BigButton("Done", Icons.Default.Check) {
+                Prefs.setupDone = true
+                Prefs.guideSeen = Reports.GUIDE_VERSION
+                done()
+            }
+            BigButton("Send the test email again", Icons.Default.Send, filled = false) { handOffMail(ctx, Reports.setupMail(ctx)) }
+        }
     }
 }
 

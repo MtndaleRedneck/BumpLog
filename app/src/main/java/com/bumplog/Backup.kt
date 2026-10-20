@@ -64,6 +64,7 @@ object Backup {
                 .put("spots", dump(h, "spots", realSpots()))
                 .put("hits", dump(h, "hits", "spot_id IN (SELECT id FROM spots WHERE ${realSpots()})"))
                 .put("damage", dump(h, "damage", null))
+                .put("meta", dump(h, "meta", null))
         }
         ZipOutputStream(out.buffered()).use { z ->
             z.putNextEntry(ZipEntry("backup.json")); z.write(json.toString().toByteArray()); z.closeEntry()
@@ -94,7 +95,7 @@ object Backup {
 
     class Restored(val spots: Int, val hits: Int, val damages: Int, val photos: Int, val settings: Int, val skipped: Int)
 
-    private fun okId(s: String?) = s != null && s.length in 4..40 && s.all { it.isLetterOrDigit() || it == '-' }
+    private fun okId(s: String?) = s != null && ReportNumbers.isOldId(s)
 
     private fun cv(o: JSONObject, cols: Set<String>, skip: Set<String>): ContentValues {
         val v = ContentValues()
@@ -153,6 +154,7 @@ object Backup {
             val have = HashSet<String>()
             w.rawQuery("SELECT report_id FROM spots UNION SELECT report_id FROM damage", null).use { while (it.moveToNext()) have.add(it.getString(0) ?: "") }
             val spotMap = HashMap<Long, Long>(); val newSpots = HashSet<Long>(); val hitMap = HashMap<Long, Long>()
+            var maxNo = 0
             w.beginTransaction()
             try {
                 val spots = j.optJSONArray("spots") ?: JSONArray()
@@ -165,6 +167,8 @@ object Backup {
                         w.rawQuery("SELECT id FROM spots WHERE report_id=?", arrayOf(rid)).use { if (it.moveToFirst()) spotMap[oldId] = it.getLong(0) }
                         skipped++; continue
                     }
+                    if (o.optString("report_status") == "FILED") o.put("report_status", "SENT") // pre-1.14 backup
+                    val no = o.optInt("report_no", 0); if (no > maxNo) maxNo = no
                     val id = w.insert("spots", null, cv(o, sc, setOf("id")))
                     if (id > 0) { spotMap[oldId] = id; newSpots.add(oldId); have.add(rid); nSpots++ } else skipped++
                 }
@@ -181,14 +185,22 @@ object Backup {
                 for (i in 0 until dmg.length()) {
                     val o = dmg.optJSONObject(i) ?: continue
                     val rid = o.optString("report_id")
-                    if (!okId(rid)) { skipped++; continue }
+                    if (!okId(rid) || !rid.startsWith("BD-")) { skipped++; continue }
                     if (rid in have) { skipped++; continue }
+                    if (o.optString("status") == "FILED") o.put("status", "SENT")
+                    val no = o.optInt("report_no", 0); if (no > maxNo) maxNo = no
                     val v = cv(o, dc, setOf("id", "spot_id", "hit_id"))
                     v.put("spot_id", spotMap[o.optLong("spot_id", -1)] ?: 0L); v.put("hit_id", hitMap[o.optLong("hit_id", -1)] ?: 0L)
                     if (w.insert("damage", null, v) > 0) { have.add(rid); nDmg++ }
                 }
                 w.setTransactionSuccessful()
             } finally { w.endTransaction() }
+            val stored = (j.optJSONArray("meta") ?: JSONArray()).let { arr ->
+                var c = 0
+                for (i in 0 until arr.length()) { val o = arr.optJSONObject(i) ?: continue; if (o.optString("k") == "report_counter") c = o.optString("v").toIntOrNull() ?: 0 }
+                c
+            }
+            db.bumpCounterTo(maxOf(maxNo + 1, stored))
         }
         // Photos only go into the folder of a damage report that is in this backup, and never outside the damage folder.
         val damageRoot = File(ctx.filesDir, "damage").canonicalFile
