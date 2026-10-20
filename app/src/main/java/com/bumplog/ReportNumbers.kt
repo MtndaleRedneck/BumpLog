@@ -16,8 +16,12 @@ object ReportNumbers {
     /** First number after an upgrade: one past the count of reports the owner already has. */
     fun initialNext(existing: Int): Int = existing + 1
 
-    /** After a restore: never count down, and never reissue a number the backup already used. */
-    fun afterRestore(current: Int, highestRestored: Int): Int = maxOf(current, highestRestored + 1)
+    /**
+     * After a restore: past every number the backup used, past the stored counter, and past the owner's
+     * existing confirmed reports (a pre-numbering backup carries no numbers but the reports still count).
+     * bumpCounterTo applies the never-down rule on top.
+     */
+    fun restoreNext(highestRestored: Int, stored: Int, existing: Int): Int = maxOf(highestRestored + 1, stored, existing + 1)
 
     fun ref(no: Int, hitTs: Long): String =
         "Report #" + no + "-" + SimpleDateFormat("MM/dd/yyyy", Locale.US).format(Date(hitTs))
