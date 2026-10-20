@@ -162,7 +162,8 @@ class DriveService : Service(), SensorEventListener, LocationListener {
             val a = Geocoder(this, Locale.getDefault()).getFromLocation(s.lat, s.lon, 1)?.firstOrNull() ?: return
             val road = a.thoroughfare ?: a.featureName ?: return
             val name = listOfNotNull(road, a.locality).joinToString(", ")
-            db.setAddress(s.id, name); Live.bump()
+            // Town and county are the phone's guess; the report email says so and the assistant verifies ownership.
+            db.setPlace(s.id, name, a.locality ?: "", a.subAdminArea ?: ""); Live.bump()
         } catch (e: Exception) { /* offline or no geocoder: coordinates are shown instead */ }
     }
 

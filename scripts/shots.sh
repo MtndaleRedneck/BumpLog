@@ -11,6 +11,7 @@ shot() { adb shell am force-stop com.bumplog; sleep 1; adb shell am start -n com
 shot home --ez demo true --es screen home
 shot alert --es screen alert --el spot 3
 shot review --es screen review
+shot setup --ez demo true --es screen setup
 shot settings --es screen settings
 adb shell input swipe 540 1800 540 400 300; sleep 1; adb exec-out screencap -p > $OUT/settings-2.png
 adb shell input swipe 540 1800 540 400 300; sleep 1; adb exec-out screencap -p > $OUT/settings-3.png

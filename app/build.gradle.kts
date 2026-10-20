@@ -15,6 +15,8 @@ android {
         targetSdk = 34
         versionCode = 15
         versionName = "1.13.0"
+        // Pins the assistant-guide link in report emails to the exact commit CI built from.
+        buildConfigField("String", "GUIDE_REF", "\"${System.getenv("GITHUB_SHA") ?: "v$versionName"}\"")
     }
 
     // Release signing key is private and never committed. CI passes it in through environment
@@ -47,6 +49,8 @@ android {
     }
     kotlinOptions { jvmTarget = "17" }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    // The assistant guide is bundled as an asset so the app, the setup email, and the repo doc share one source.
+    sourceSets { named("main") { assets.srcDir("build/generated/guide") } }
     testOptions { unitTests.isReturnDefaultValues = true }
 }
 
@@ -62,3 +66,9 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }
+
+val copyAssistantGuide = tasks.register<Copy>("copyAssistantGuide") {
+    from(rootProject.file("docs")) { include("assistant.md") }
+    into(layout.buildDirectory.dir("generated/guide"))
+}
+tasks.named("preBuild") { dependsOn(copyAssistantGuide) }

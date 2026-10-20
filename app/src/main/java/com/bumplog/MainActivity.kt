@@ -37,7 +37,6 @@ import kotlinx.coroutines.launch
 
 sealed class PendingLink {
     data class Setup(val assistant: String, val email: String) : PendingLink()
-    data class Filed(val reportId: String, val ref: String, val existingRef: String = "") : PendingLink()
 }
 
 sealed class UpdateUi {
@@ -61,6 +60,8 @@ class MainActivity : ComponentActivity() {
     private var tab by mutableStateOf("home")
     private var stack by mutableStateOf(listOf<Screen>())
     private var pendingLink by mutableStateOf<PendingLink?>(null)
+    private var pendingTrip by mutableStateOf(0L)
+    private var guideOffer by mutableStateOf(false)
     private var confirmFixed by mutableStateOf<Long?>(null)
     private var updateUi by mutableStateOf<UpdateUi?>(null)
     private var updateReady: java.io.File? = null
@@ -93,6 +94,8 @@ class MainActivity : ComponentActivity() {
         refreshPerms()
         if (!Prefs.setupDone) stack = listOf(Screen.Setup)
         handle(intent)
+        // One-time offer after an upgrade that changed the report email or the guide.
+        if (savedInstanceState == null && Prefs.setupDone && Prefs.guideSeen < Reports.GUIDE_VERSION) guideOffer = true
         if (savedInstanceState == null) checkForUpdate(if (BuildConfig.DEBUG) intent.getStringExtra("updatecheck") else null)
         setContent {
             val live by Live.state.collectAsState()
@@ -186,11 +189,11 @@ class MainActivity : ComponentActivity() {
             }
         }
         if (i.hasExtra("sendtrip")) {
-            val list = Db.get(this).tripSpots(i.getLongExtra("sendtrip", 0))
-            if (list.isEmpty()) toast(this, "No confirmed reports left to send.")
-            else if (handOffMail(this, Reports.reportsMail(this, list))) {
-                val now = System.currentTimeMillis(); list.forEach { Db.get(this).markSent(it.id, now) }; Live.bump()
-            }
+            val driveId = i.getLongExtra("sendtrip", 0)
+            if (!Prefs.setupDone) {
+                // The assistant setup has to happen once before the first report goes out. The trip waits for it.
+                pendingTrip = driveId; stack = listOf(Screen.Setup)
+            } else sendTrip(driveId)
             i.removeExtra("sendtrip")
         }
         if (spot != 0L && i.getStringExtra("screen") == null) {
@@ -223,7 +226,7 @@ class MainActivity : ComponentActivity() {
         if (BuildConfig.DEBUG && i.getBooleanExtra("lastdemo", false)) { Db.get(this).hits(1).firstOrNull()?.let { Prefs.lastDriveId = it.driveId }; Live.bump() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("emptylast", false)) { Prefs.lastDriveId = System.currentTimeMillis(); Live.bump() }
         if (BuildConfig.DEBUG && i.hasExtra("detoff")) { Prefs.detectionEnabled = !i.getBooleanExtra("detoff", false); Live.bump() }
-        // bumplog://setup?assistant=instinct&email=...  and  bumplog://filed?id=BL-...
+        // bumplog://setup?assistant=instinct&email=...
         // Links never change state on their own. They open a confirmation the user must accept.
         i.data?.let { u ->
             if (u.scheme == "bumplog") when (u.host) {
@@ -235,17 +238,6 @@ class MainActivity : ComponentActivity() {
                     if (email.isNotEmpty() && pendingLink == null) toast(this, "Setup link ignored: it needs exactly one valid email address.")
                     stack = listOf(Screen.Setup)
                 }
-                "filed" -> {
-                    val id = u.getQueryParameter("id")?.trim().orEmpty()
-                    val ref = u.getQueryParameter("ref")?.trim().orEmpty().filter { !it.isISOControl() }
-                    if (ref.length > 64) { toast(this, "Filed link ignored: the reference is too long (64 characters max)."); return@let }
-                    val sp = if (id.isEmpty() || id.length > 64) null else Db.get(this).spotByReportId(id)
-                    val old = if (sp == null) "" else Prefs.filedRef(sp.reportId)
-                    if (id.isEmpty()) toast(this, "Filed link ignored: it needs a report ID.")
-                    else if (sp == null) toast(this, "Filed link ignored: no report with ID ${id.take(40)} on this phone.")
-                    else if (sp.reportStatus == "FILED" && (ref.isEmpty() || ref == old)) toast(this, "Report ${sp.reportId} is already marked Filed.")
-                    else pendingLink = PendingLink.Filed(sp.reportId, ref, old)
-                }
             }
         }
     }
@@ -254,6 +246,23 @@ class MainActivity : ComponentActivity() {
         if (!Prefs.detectionEnabled) return
         if (!permsOk) { askPerms(); return }
         try { DriveService.start(this) } catch (e: Exception) { toast(this, "Could not start: ${e.message}") }
+    }
+
+    /** Hand one trip's confirmed spots to the mail app and mark them Sent. */
+    private fun sendTrip(driveId: Long) {
+        val list = Db.get(this).tripSpots(driveId)
+        if (list.isEmpty()) toast(this, "No confirmed reports left to send.")
+        else if (handOffMail(this, Reports.reportsMail(this, list))) {
+            val now = System.currentTimeMillis(); list.forEach { Db.get(this).markSent(it.id, now) }; Live.bump()
+        }
+    }
+
+    /** Setup finished: a trip that waited for it goes out now. */
+    private fun finishSetup() {
+        stack = emptyList()
+        val driveId = pendingTrip
+        pendingTrip = 0
+        if (driveId != 0L) sendTrip(driveId)
     }
 
     @Composable
@@ -325,28 +334,21 @@ class MainActivity : ComponentActivity() {
                     confirmButton = { TextButton({ Prefs.assistant = pl.assistant; Prefs.activeAddress = pl.email; pendingLink = null; Live.bump() }) { Text("Use address") } },
                     dismissButton = { TextButton({ pendingLink = null }) { Text("Cancel") } },
                 )
-                is PendingLink.Filed -> AlertDialog(
-                    onDismissRequest = { pendingLink = null },
-                    title = { Text(if (pl.existingRef.isNotEmpty() && pl.ref.isNotEmpty() && pl.existingRef != pl.ref) "Replace the reference?" else "Mark as Filed?") },
-                    text = { Text("A link says report ${pl.reportId} was filed" + (if (pl.ref.isNotEmpty()) " with reference ${pl.ref}" else "") + "." +
-                        (if (pl.existingRef.isNotEmpty() && pl.ref.isNotEmpty() && pl.existingRef != pl.ref) " It already has reference ${pl.existingRef}, which would be replaced." else "") +
-                        " Only accept if your assistant told you this.") },
-                    confirmButton = { TextButton({
-                        val ok = Db.get(ctx).markFiledByReportId(pl.reportId)
-                        if (ok && pl.ref.isNotEmpty()) Prefs.setFiledRef(pl.reportId, pl.ref)
-                        toast(ctx, if (ok) "Report ${pl.reportId} marked Filed" + (if (pl.ref.isNotEmpty()) " (ref ${pl.ref})." else ".") else "No report with ID ${pl.reportId} on this phone.")
-                        pendingLink = null; Live.bump()
-                    }) { Text("Mark Filed") } },
-                    dismissButton = { TextButton({ pendingLink = null }) { Text("Cancel") } },
-                )
             }
         }
+        if (guideOffer) AlertDialog(
+            onDismissRequest = { guideOffer = false },
+            title = { Text("The report email changed") },
+            text = { Text("Reports now go out in a new format with new instructions for your assistant. Send it the new setup email? It is the assistant guide, with the current version on top.") },
+            confirmButton = { TextButton({ Prefs.guideSeen = Reports.GUIDE_VERSION; guideOffer = false; handOffMail(this@MainActivity, Reports.setupMail(this@MainActivity)) }) { Text("Send") } },
+            dismissButton = { TextButton({ Prefs.guideSeen = Reports.GUIDE_VERSION; guideOffer = false }) { Text("Not now") } },
+        )
         val settingsScroll = androidx.compose.foundation.rememberScrollState()
         Column(Modifier.fillMaxSize().background(p.bg).statusBarsPadding()) {
             Box(Modifier.weight(1f)) {
                 when (top) {
-                    is Screen.Setup -> SetupScreen { stack = emptyList() }
-                    is Screen.Alert -> AlertScreen(top.id, live.tick) { stack = emptyList() }
+                    is Screen.Setup -> SetupScreen { finishSetup() }
+                    is Screen.Alert -> AlertScreen(top.id, live.tick, { stack = emptyList() }) { tab = "review"; stack = emptyList() }
                     is Screen.Spot -> SpotScreen(top.id, live.tick, { stack = stack.dropLast(1) }) { stack = stack + Screen.Damage(it) }
                     is Screen.Damage -> DamageScreen(top.spotId, live.tick, { stack = stack.dropLast(1) }) { stack = listOf(Screen.DamageQueue) }
                     is Screen.DamageQueue -> DamageQueueScreen(live.tick) { stack = emptyList() }

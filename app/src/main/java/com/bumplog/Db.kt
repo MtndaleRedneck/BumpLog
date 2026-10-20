@@ -10,7 +10,7 @@ import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 
-/** review: PENDING, CONFIRMED, DISMISSED, FIXED.  reportStatus: NONE, SENT (handed to mail), FILED (assistant confirmed). */
+/** review: PENDING, CONFIRMED, DISMISSED, FIXED.  reportStatus: NONE, SENT (handed to mail). FILED was retired in 1.14 and migrates to SENT. */
 data class Spot(
     val id: Long, val reportId: String, val lat: Double, val lon: Double, val heading: Double,
     val type: DefectType, val typeUser: Boolean, val maxG: Float, val hitCount: Int, val speedMph: Float,
@@ -18,10 +18,15 @@ data class Spot(
     val reportStatus: String, val sentTs: Long, val address: String, val cleanPasses: Int,
     val severity: String = "MAJOR", val fileTrip: Boolean = false, val saves: Int = 0,
     val fixedAfterReport: Boolean = false, val fixedTs: Long = 0,
+    val reportNo: Int = 0, val town: String = "", val county: String = "",
 ) {
     val severe: Boolean get() = maxG >= Prefs.severeG
     val title: String get() = address.ifBlank { "%.5f, %.5f".format(lat, lon) }
 }
+
+/** What the owner and the assistant see: the running number for reports confirmed since 1.14, the old code before that. */
+fun Spot.ref(): String = if (reportNo > 0) ReportNumbers.ref(reportNo, lastTs) else reportId
+fun Damage.ref(hit: Hit?): String = if (reportNo > 0) ReportNumbers.ref(reportNo, hit?.ts ?: ts) else reportId
 
 data class Hit(
     val id: Long, val spotId: Long, val driveId: Long, val ts: Long, val lat: Double, val lon: Double,
@@ -30,16 +35,16 @@ data class Hit(
 
 data class Damage(
     val id: Long, val reportId: String, val hitId: Long, val spotId: Long, val category: String,
-    val note: String, val ts: Long, val status: String,
+    val note: String, val ts: Long, val status: String, val reportNo: Int = 0,
 )
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 2) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 3) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE spots(id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT, lat REAL, lon REAL, heading REAL,
             type TEXT, type_user INTEGER, max_g REAL, hit_count INTEGER, speed REAL, first_ts INTEGER, last_ts INTEGER,
-            drive_id INTEGER, review TEXT, warn INTEGER, report_status TEXT, sent_ts INTEGER, address TEXT, clean_passes INTEGER, severity TEXT DEFAULT 'MAJOR', file_trip INTEGER DEFAULT 0, saves INTEGER DEFAULT 0, fixed_after_report INTEGER DEFAULT 0, fixed_ts INTEGER DEFAULT 0)"""
+            drive_id INTEGER, review TEXT, warn INTEGER, report_status TEXT, sent_ts INTEGER, address TEXT, clean_passes INTEGER, severity TEXT DEFAULT 'MAJOR', file_trip INTEGER DEFAULT 0, saves INTEGER DEFAULT 0, fixed_after_report INTEGER DEFAULT 0, fixed_ts INTEGER DEFAULT 0, report_no INTEGER DEFAULT 0, town TEXT DEFAULT '', county TEXT DEFAULT '')"""
         )
         db.execSQL(
             """CREATE TABLE hits(id INTEGER PRIMARY KEY AUTOINCREMENT, spot_id INTEGER, drive_id INTEGER, ts INTEGER,
@@ -47,8 +52,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         )
         db.execSQL(
             """CREATE TABLE damage(id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT, hit_id INTEGER, spot_id INTEGER,
-            category TEXT, note TEXT, ts INTEGER, status TEXT)"""
+            category TEXT, note TEXT, ts INTEGER, status TEXT, report_no INTEGER DEFAULT 0)"""
         )
+        db.execSQL("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
     }
 
     override fun onUpgrade(db: SQLiteDatabase, o: Int, n: Int) {
@@ -56,6 +62,38 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             db.execSQL("ALTER TABLE spots ADD COLUMN fixed_after_report INTEGER DEFAULT 0")
             db.execSQL("ALTER TABLE spots ADD COLUMN fixed_ts INTEGER DEFAULT 0")
         }
+        if (o < 3) {
+            db.execSQL("ALTER TABLE spots ADD COLUMN report_no INTEGER DEFAULT 0")
+            db.execSQL("ALTER TABLE spots ADD COLUMN town TEXT DEFAULT ''")
+            db.execSQL("ALTER TABLE spots ADD COLUMN county TEXT DEFAULT ''")
+            db.execSQL("ALTER TABLE damage ADD COLUMN report_no INTEGER DEFAULT 0")
+            db.execSQL("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
+            // Sent replaced Filed in 1.14.
+            db.execSQL("UPDATE spots SET report_status='SENT' WHERE report_status='FILED'")
+            db.execSQL("UPDATE damage SET status='SENT' WHERE status='FILED'")
+            // The counter continues after the reports the owner already has (confirmed spots plus damage records, test spots excluded).
+            val existing = db.rawQuery("SELECT (SELECT COUNT(*) FROM spots WHERE review IN ('CONFIRMED','FIXED') AND report_id NOT LIKE 'TEST-%') + (SELECT COUNT(*) FROM damage)", null)
+                .use { it.moveToFirst(); it.getInt(0) }
+            db.execSQL("INSERT OR REPLACE INTO meta(k, v) VALUES('report_counter', ?)", arrayOf(ReportNumbers.initialNext(existing).toString()))
+        }
+    }
+
+    // ---- the shared report counter ----
+
+    /** The number the next confirmed report gets. Never goes down. */
+    @Synchronized fun counterNext(): Int =
+        readableDatabase.rawQuery("SELECT v FROM meta WHERE k='report_counter'", null).use { if (it.moveToFirst()) it.getString(0).toIntOrNull() ?: 1 else 1 }
+
+    /** Hands out the next number and advances the counter. Only confirm paths and damage creation call this. */
+    @Synchronized private fun takeReportNo(): Int {
+        val n = counterNext()
+        writableDatabase.execSQL("INSERT OR REPLACE INTO meta(k, v) VALUES('report_counter', ?)", arrayOf((n + 1).toString()))
+        return n
+    }
+
+    /** After a restore the counter must sit past every number the backup used. */
+    @Synchronized fun bumpCounterTo(minNext: Int) {
+        if (minNext > counterNext()) writableDatabase.execSQL("INSERT OR REPLACE INTO meta(k, v) VALUES('report_counter', ?)", arrayOf(minNext.toString()))
     }
 
     // ---- spots ----
@@ -66,9 +104,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         c.getLong(10), c.getLong(11), c.getLong(12), c.getString(13) ?: "PENDING", c.getInt(14) == 1,
         c.getString(15) ?: "NONE", c.getLong(16), c.getString(17) ?: "", c.getInt(18),
         c.getString(19) ?: "MAJOR", c.getInt(20) == 1, c.getInt(21), c.getInt(22) == 1, c.getLong(23),
+        c.getInt(24), c.getString(25) ?: "", c.getString(26) ?: "",
     )
 
-    private val spotCols = "id,report_id,lat,lon,heading,type,type_user,max_g,hit_count,speed,first_ts,last_ts,drive_id,review,warn,report_status,sent_ts,address,clean_passes,severity,file_trip,saves,fixed_after_report,fixed_ts"
+    private val spotCols = "id,report_id,lat,lon,heading,type,type_user,max_g,hit_count,speed,first_ts,last_ts,drive_id,review,warn,report_status,sent_ts,address,clean_passes,severity,file_trip,saves,fixed_after_report,fixed_ts,report_no,town,county"
 
     /** Test-mode spots have report IDs starting with TEST-. They stay out of every list, count and export unless asked for. */
     private fun spots(where: String?, args: Array<String>?, order: String = "last_ts DESC", limit: String? = null, test: Boolean = false): List<Spot> {
@@ -142,6 +181,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     fun setWarn(id: Long, warn: Boolean) = update(id, "warn" to warn)
     fun setType(id: Long, t: DefectType) = update(id, "type" to t.name, "type_user" to true)
     fun setAddress(id: Long, a: String) = update(id, "address" to a)
+    fun setPlace(id: Long, address: String, town: String, county: String) = update(id, "address" to address, "town" to town, "county" to county)
     /** The user confirmed what this is during the drive. [fileTrip] = include it in the end-of-trip email. */
     fun logSpot(id: Long, t: DefectType, severity: String, fileTrip: Boolean) {
         confirmForTrip(id, fileTrip, t, severity)
@@ -151,6 +191,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         val values = mutableListOf<Pair<String, Any>>("review" to "CONFIRMED", "warn" to true, "file_trip" to fileTrip)
         if (type != null) values += listOf("type" to type.name, "type_user" to true)
         if (severity != null) values += "severity" to severity
+        // The running number is born here, once. A spot confirmed before keeps its number; a pre-1.14
+        // spot confirmed now gets the next one. TEST spots never get one.
+        val s = spot(id)
+        if (s != null && s.reportNo == 0 && !s.reportId.startsWith("TEST-")) values += "report_no" to takeReportNo()
         update(id, *values.toTypedArray())
     }
     /** Carry unsent confirmations across drives. Re-hits may change drive_id, but never remove a queued spot. */
@@ -159,16 +203,15 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     /** A warned spot's heads-up fired and the driver passed it again (hit or no hit). */
     @Synchronized fun addSave(id: Long) { writableDatabase.execSQL("UPDATE spots SET saves=saves+1 WHERE id=?", arrayOf(id)) }
     /** Lifetime counters, all derived from the logged spots (so they go when the data is deleted). */
-    class Score(val logged: Int, val sent: Int, val filed: Int, val saves: Int, val warned: Int, val fixedAfterReport: Int = 0)
+    class Score(val logged: Int, val sent: Int, val saves: Int, val warned: Int, val fixedAfterReport: Int = 0)
     @Synchronized fun score(): Score {
         val c = readableDatabase.rawQuery("SELECT " +
             "COALESCE(SUM(CASE WHEN review IN ('CONFIRMED','FIXED') THEN 1 ELSE 0 END),0)," +
-            "COALESCE(SUM(CASE WHEN report_status IN ('SENT','FILED') THEN 1 ELSE 0 END),0)," +
-            "COALESCE(SUM(CASE WHEN report_status='FILED' THEN 1 ELSE 0 END),0)," +
+            "COALESCE(SUM(CASE WHEN report_status='SENT' THEN 1 ELSE 0 END),0)," +
             "COALESCE(SUM(saves),0)," +
             "COALESCE(SUM(CASE WHEN warn=1 AND review NOT IN ('DISMISSED','FIXED') THEN 1 ELSE 0 END),0)," +
             "COALESCE(SUM(CASE WHEN review='FIXED' AND fixed_after_report=1 THEN 1 ELSE 0 END),0) FROM spots WHERE report_id NOT LIKE 'TEST-%'", null)
-        c.use { it.moveToFirst(); return Score(it.getInt(0), it.getInt(1), it.getInt(2), it.getInt(3), it.getInt(4), it.getInt(5)) }
+        c.use { it.moveToFirst(); return Score(it.getInt(0), it.getInt(1), it.getInt(2), it.getInt(3), it.getInt(4)) }
     }
     /** Saves per defect type. Spots whose type the user never confirmed are reported under null. */
     @Synchronized fun savesByType(): List<Pair<DefectType?, Int>> {
@@ -188,7 +231,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     }
     @Synchronized fun topSaves(n: Int = 5): List<Spot> = spots("saves>0", null, order = "saves DESC", limit = n.toString())
     fun markSent(id: Long, now: Long) = update(id, "report_status" to "SENT", "sent_ts" to now)
-    /** Restores spots and hits from a BumpLog CSV export. Report IDs (BL- or legacy PS-) are kept; IDs already here are skipped. */
+    /** Restores spots and hits from a BumpLog CSV export. Old codes (BL-/BD-/PS-, strictly checked) and the running
+     * numbers are kept; IDs already here are skipped. Both the old 12-column layout and the current one with
+     * report_no, town and county load. The shared counter ends up past every number the file used. */
     class ImportResult(val imported: Int, val skipped: Int, val damages: Int = 0)
     @Synchronized fun importCsv(text: String): ImportResult? {
         val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US)
@@ -196,23 +241,31 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         val db = writableDatabase
         val made = HashMap<String, Long>()
         var n = 0
+        var maxNo = 0
         val sections = text.trimStart('\uFEFF', '\n', '\r', ' ').split(Regex("\r?\n[ \t]*\r?\n"), limit = 2)
         val damageText = sections.getOrNull(1)?.trim()
         val lines = sections[0].lines().map { it.trimEnd('\r') }.filter { it.isNotBlank() }
         if (lines.isEmpty() || !lines[0].startsWith("report_id,")) return null
+        val header = splitCsv(lines[0])
+        val withNo = header.size >= 15 && header[1].trim() == "report_no"
         val skippedIds = HashSet<String>(); var bad = 0
         for (line in lines.drop(1)) {
-            val c = line.split(",", limit = 12)
+            val c = splitCsv(line)
             if (c.size < 12 || c[0].isBlank()) { bad++; continue }
             if (c[0] in have) { skippedIds.add(c[0]); continue }
-            if (c[0].length > 40 || !(c[0].startsWith("BL-") || c[0].startsWith("PS-")) || !c[0].all { it.isLetterOrDigit() || it == '-' }) { bad++; continue }
+            if (!ReportNumbers.isOldId(c[0]) || c[0].startsWith("BD-")) { bad++; continue }
+            val b = if (withNo) 1 else 0
             try {
-                val ts = fmt.parse(c[4])!!.time
-                val lat = num(c[5]); val lon = num(c[6])
-                val hd = num(c[7]); val spd = num(c[8])
+                val no = if (withNo) c[1].trim().toIntOrNull()?.takeIf { ReportNumbers.validNo(it.toLong()) } ?: 0 else 0
+                val ts = fmt.parse(c[b + 4].trim())!!.time
+                val lat = num(c[b + 5]); val lon = num(c[b + 6])
+                val hd = num(c[b + 7]); val spd = num(c[b + 8])
                 if (lat !in -90.0..90.0 || lon !in -180.0..180.0 || hd !in 0.0..360.0 || spd !in 0.0..300.0) { bad++; continue }
-                val type = DefectType.parse(c[3]) // old JOINT rows read as Rough stretch
-                val g = num(c[9]).toFloat(); if (g !in 0f..50f) { bad++; continue };  val rv = if (c[1] in listOf("PENDING", "CONFIRMED", "DISMISSED", "FIXED")) c[1] else "PENDING"
+                val type = DefectType.parse(c[b + 3].trim()) // old JOINT rows read as Rough stretch
+                val g = num(c[b + 9]).toFloat(); if (g !in 0f..50f) { bad++; continue }
+                val rv = c[b + 1].trim().let { if (it in listOf("PENDING", "CONFIRMED", "DISMISSED", "FIXED")) it else "PENDING" }
+                val rs = ReportNumbers.mapStatus(c[b + 2].trim())
+                val road = c[b + 11].trim(); val town = if (withNo && c.size > 13) c[13].trim() else ""; val county = if (withNo && c.size > 14) c[14].trim() else ""
                 var sid = made[c[0]]
                 if (sid == null) {
                     sid = db.insert("spots", null, ContentValues().apply {
@@ -220,10 +273,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                         put("type", type.name); put("type_user", 0); put("max_g", g); put("hit_count", 0)
                         put("speed", spd); put("first_ts", ts); put("last_ts", ts); put("drive_id", 0)
                         put("review", rv); put("warn", if (g >= Prefs.severeG && rv !in listOf("DISMISSED", "FIXED")) 1 else 0)
-                        put("report_status", if (c[2] in listOf("NONE", "SENT", "FILED")) c[2] else "NONE"); put("sent_ts", 0)
-                        put("address", c[11].trim().trim('"').trim()); put("clean_passes", 0)
+                        put("report_status", rs); put("sent_ts", 0)
+                        put("address", road); put("clean_passes", 0)
+                        put("report_no", no); put("town", town); put("county", county)
                     })
                     made[c[0]] = sid; n++
+                    if (no > maxNo) maxNo = no
                 }
                 db.insert("hits", null, ContentValues().apply {
                     put("spot_id", sid); put("drive_id", 0); put("ts", ts); put("lat", lat); put("lon", lon)
@@ -235,6 +290,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         }
         var dn = 0
         if (damageText != null && damageText.startsWith("damage_report_id,")) {
+            val dheader = splitCsv(damageText.lines().first())
+            val dNo = dheader.size >= 8 && dheader[1].trim() == "report_no"
             val dhave = damages().map { it.reportId }.toMutableSet()
             for (line in damageText.lines().drop(1).map { it.trimEnd('\r') }.filter { it.isNotBlank() }) {
                 try {
@@ -242,17 +299,22 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                     if (f.size < 6) { bad++; continue }
                     val rid = f[0]
                     if (rid in dhave) { skippedIds.add(rid); continue }
-                    if (rid.length > 40 || !rid.startsWith("BD-") || !rid.all { it.isLetterOrDigit() || it == '-' }) { bad++; continue }
-                    val sid = db.rawQuery("SELECT id FROM spots WHERE report_id=?", arrayOf(f[1])).use { if (it.moveToFirst()) it.getLong(0) else 0L }
-                    val st = if (f[4] in listOf("NONE", "SENT", "QUEUED", "FILED")) f[4] else "NONE"
+                    if (!ReportNumbers.isOldId(rid) || !rid.startsWith("BD-")) { bad++; continue }
+                    val db2 = if (dNo) 1 else 0
+                    val no = if (dNo) f[1].trim().toIntOrNull()?.takeIf { ReportNumbers.validNo(it.toLong()) } ?: 0 else 0
+                    // damage columns: report_id,[report_no,]spot_report_id,category,created,status,note,...
+                    val sid = db.rawQuery("SELECT id FROM spots WHERE report_id=?", arrayOf(f[db2 + 1])).use { if (it.moveToFirst()) it.getLong(0) else 0L }
+                    val st = ReportNumbers.mapDamageStatus(f[db2 + 4].trim())
                     db.insert("damage", null, ContentValues().apply {
-                        put("report_id", rid); put("hit_id", 0); put("spot_id", sid); put("category", f[2]); put("note", f[5])
-                        put("ts", fmt.parse(f[3])!!.time); put("status", st)
+                        put("report_id", rid); put("hit_id", 0); put("spot_id", sid); put("category", f[db2 + 2]); put("note", f.getOrElse(db2 + 5) { "" })
+                        put("ts", fmt.parse(f[db2 + 3].trim())!!.time); put("status", st); put("report_no", no)
                     })
                     dhave.add(rid); dn++
+                    if (no > maxNo) maxNo = no
                 } catch (e: Exception) { bad++ }
             }
         }
+        if (maxNo > 0) bumpCounterTo(maxNo + 1)
         return ImportResult(n, skippedIds.size + bad, dn)
     }
 
@@ -272,10 +334,6 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         out.add(cur.toString()); return out
     }
 
-    fun markFiledByReportId(reportId: String): Boolean {
-        val n = writableDatabase.update("spots", ContentValues().apply { put("report_status", "FILED") }, "report_id=?", arrayOf(reportId))
-        return n > 0
-    }
     /** Marks a spot fixed. If it had been reported (sent to mail or filed), it also counts as fixed after reporting. */
     @Synchronized fun markFixed(id: Long, now: Long) {
         val s = spot(id) ?: return
@@ -326,12 +384,13 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
 
     @Synchronized fun addDamage(hitId: Long, spotId: Long, category: String, note: String, now: Long): Damage {
         val rid = newReportId("BD", now)
+        val no = takeReportNo()
         val v = ContentValues().apply {
             put("report_id", rid); put("hit_id", hitId); put("spot_id", spotId); put("category", category)
-            put("note", note); put("ts", now); put("status", "NONE")
+            put("note", note); put("ts", now); put("status", "NONE"); put("report_no", no)
         }
         val id = writableDatabase.insert("damage", null, v)
-        return Damage(id, rid, hitId, spotId, category, note, now, "NONE")
+        return Damage(id, rid, hitId, spotId, category, note, now, "NONE", no)
     }
 
     @Synchronized fun markDamageSent(id: Long) {
@@ -344,9 +403,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     @Synchronized fun queuedDamages(): List<Damage> = damages().filter { it.status == "QUEUED" }
     @Synchronized fun damages(): List<Damage> {
         val out = ArrayList<Damage>()
-        readableDatabase.query("damage", arrayOf("id", "report_id", "hit_id", "spot_id", "category", "note", "ts", "status"),
+        readableDatabase.query("damage", arrayOf("id", "report_id", "hit_id", "spot_id", "category", "note", "ts", "status", "report_no"),
             null, null, null, null, "ts DESC").use { c ->
-            while (c.moveToNext()) out.add(Damage(c.getLong(0), c.getString(1), c.getLong(2), c.getLong(3), c.getString(4), c.getString(5), c.getLong(6), c.getString(7)))
+            while (c.moveToNext()) out.add(Damage(c.getLong(0), c.getString(1), c.getLong(2), c.getLong(3), c.getString(4), c.getString(5), c.getLong(6), c.getString(7), c.getInt(8)))
         }
         return out
     }

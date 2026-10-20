@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -44,12 +45,12 @@ fun Card(modifier: Modifier = Modifier, color: Color = LocalPal.current.card, pa
 
 @Composable
 fun Txt(s: String, size: Int = 16, weight: FontWeight = FontWeight.Normal, color: Color = LocalPal.current.text,
-        modifier: Modifier = Modifier, align: TextAlign? = null) =
-    Text(s, fontSize = size.sp, fontWeight = weight, color = color, modifier = modifier, textAlign = align)
+        modifier: Modifier = Modifier, align: TextAlign? = null, maxLines: Int = Int.MAX_VALUE) =
+    Text(s, fontSize = size.sp, fontWeight = weight, color = color, modifier = modifier, textAlign = align, maxLines = maxLines, overflow = TextOverflow.Visible)
 
 @Composable
-fun Muted(s: String, size: Int = 13, modifier: Modifier = Modifier, align: TextAlign? = null) =
-    Txt(s, size, color = LocalPal.current.muted, modifier = modifier, align = align)
+fun Muted(s: String, size: Int = 13, modifier: Modifier = Modifier, align: TextAlign? = null, maxLines: Int = Int.MAX_VALUE) =
+    Txt(s, size, color = LocalPal.current.muted, modifier = modifier, align = align, maxLines = maxLines)
 
 @Composable
 fun BigButton(label: String, icon: ImageVector? = null, filled: Boolean = true, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
