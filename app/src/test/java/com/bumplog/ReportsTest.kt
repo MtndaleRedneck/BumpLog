@@ -18,7 +18,7 @@ class ReportsTest {
 
     @Test fun everyHeaderStartsWithTheSelfDescribingBlockAndNoHeaderGivesASpeed() {
         for (h in listOf(Reports.ABOUT_TEST, Reports.ABOUT_REAL, Reports.ABOUT_DAMAGE)) {
-            assertTrue(h.startsWith("=== ABOUT THIS EMAIL (read first) ==="))
+            assertTrue(h.startsWith("=== ABOUT THIS EMAIL (read before acting) ==="))
             assertTrue(h.contains("BumpLog report v1") || h.contains("BumpLog damage report v1") || h.contains("Format: BumpLog"))
             assertFalse(Regex("\\d+\\s*mph", RegexOption.IGNORE_CASE).containsMatchIn(h.replace("\"at 40\"", "")))
         }
@@ -38,7 +38,7 @@ class ReportsTest {
         val h = Reports.ABOUT_TEST
         assertTrue(h.contains("THIS IS A TEST"))
         assertTrue(h.contains("Do nothing else"))
-        assertFalse(h.contains("github.com"))
+        assertTrue(h.contains("https://github.com/MtndaleRedneck/BumpLog"))
     }
 
     @Test fun setupPromptCoversTheRules() {
@@ -55,5 +55,22 @@ class ReportsTest {
         org.junit.Assert.assertEquals(p.trimEnd(), p)
         org.junit.Assert.assertTrue(p.endsWith("Do nothing else."))
         org.junit.Assert.assertFalse(p.contains("7."))
+    }
+    @Test fun reportsComeBeforeInstructionsAndQueueHasNoDriveClaim() {
+        val body = Reports.reportsBody(listOf(spot, spot.copy(id = 2, reportId = "BL-0002", driveId = 2)))
+        assertTrue(body.startsWith("BumpLog report v1"))
+        assertTrue(body.indexOf("--- 2 of 2 ---") < body.indexOf("=== ABOUT THIS EMAIL"))
+        assertTrue(body.contains("https://github.com/MtndaleRedneck/BumpLog"))
+        assertFalse(body.contains("from one drive"))
+        assertFalse(body.contains("47 mph"))
+        assertTrue(body.contains(Reports.SPEED_RULE))
+        assertTrue(body.contains("FILED"))
+    }
+
+    @Test fun testReportsKeepTheirTestInstructionsAtTheBottom() {
+        val body = Reports.reportsBody(listOf(spot.copy(reportId = "TEST-1")))
+        assertTrue(body.indexOf("Report ID: TEST-1") < body.indexOf("=== ABOUT THIS EMAIL"))
+        assertTrue(body.contains("THIS IS A TEST"))
+        assertFalse(body.contains("THEN draft a repair request"))
     }
 }

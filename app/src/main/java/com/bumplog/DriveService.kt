@@ -256,7 +256,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     private fun rollTrip() {
         val hits = db.hitsInDrive(driveId)
         val toFile = db.tripSpots(driveId).size
-        if (hits > 0) Notifier.driveDone(this, hits, toFile, driveId)
+        if (hits > 0 || toFile > 0) Notifier.driveDone(this, hits, toFile, driveId)
         val dq = db.queuedDamages().size
         if (dq > 0) Notifier.damageWaiting(this, dq)
         // Passenger mode is left alone here: only its own timer (or the user) switches it back to Driver.
@@ -284,7 +284,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         Live.update { it.copy(running = false, paused = false, speedMph = 0f, gps = false, driveId = driveId, tick = it.tick + 1) }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         Notifier.removeOverlay(this)
-        if (hits > 0) Notifier.driveDone(this, hits, toFile, driveId)
+        if (hits > 0 || toFile > 0) Notifier.driveDone(this, hits, toFile, driveId)
         val dq = db.queuedDamages().size
         if (dq > 0) Notifier.damageWaiting(this, dq)
         stopSelf()

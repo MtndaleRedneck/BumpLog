@@ -100,7 +100,7 @@ class MainActivity : ComponentActivity() {
             // theme/accent changes bump the tick, which re-reads prefs here
             val theme = remember(live.tick) { Prefs.theme }
             val accent = remember(live.tick) { Prefs.accent }
-            BumpLogTheme(theme, accent) { Box(Modifier.fillMaxSize()) { Root(live); CelebrationOverlay() } }
+            BumpLogTheme(theme, accent) { Box(Modifier.fillMaxSize()) { Root(live); CelebrationOverlay(); ConfirmationOverlay() } }
         }
     }
 
@@ -187,7 +187,7 @@ class MainActivity : ComponentActivity() {
         }
         if (i.hasExtra("sendtrip")) {
             val list = Db.get(this).tripSpots(i.getLongExtra("sendtrip", 0))
-            if (list.isEmpty()) toast(this, "Nothing left to send for that drive.")
+            if (list.isEmpty()) toast(this, "No confirmed reports left to send.")
             else if (handOffMail(this, Reports.reportsMail(this, list))) {
                 val now = System.currentTimeMillis(); list.forEach { Db.get(this).markSent(it.id, now) }; Live.bump()
             }
@@ -202,6 +202,7 @@ class MainActivity : ComponentActivity() {
         // Debug builds only, for the CI screenshot run: pick the voice source and trigger the celebration.
         if (BuildConfig.DEBUG && i.hasExtra("setvoice")) { Prefs.voice = i.getStringExtra("setvoice").orEmpty(); Live.bump() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("celebrate", false)) Celebrate.trigger()
+        if (BuildConfig.DEBUG && i.getBooleanExtra("confirmnotice", false)) ConfirmationNotice.show()
         // Debug builds only, for the CI screenshot run: open the voice screens directly and put a few clips in place so every button shows.
         if (BuildConfig.DEBUG) {
             when (i.getStringExtra("screen")) {

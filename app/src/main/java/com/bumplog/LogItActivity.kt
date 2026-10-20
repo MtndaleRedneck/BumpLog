@@ -80,7 +80,9 @@ class LogItActivity : ComponentActivity() {
                     SmallButton("Cancel", Modifier.weight(1f).heightIn(min = 56.dp)) { Prefs.setLogDraft(spot.id, ""); finish() }
                     BigButton("Save", modifier = Modifier.weight(1f).heightIn(min = 56.dp), enabled = confirmed) {
                         Db.get(this@LogItActivity).logSpot(spot.id, type, severity, fileTrip); Prefs.setLogDraft(spot.id, "")
-                        Live.bump(); finish()
+                        Live.bump()
+                        android.widget.Toast.makeText(this@LogItActivity, ConfirmationNotice.message(fileTrip), android.widget.Toast.LENGTH_LONG).show()
+                        finish()
                     }
                 }
                 if (!confirmed) Muted("Confirm the type to save.", 12)

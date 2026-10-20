@@ -17,7 +17,7 @@ The app has no server and no accounts. It cannot send email by itself. **Send** 
 
 - **Sent** means the report was handed to your mail app. It does not mean it arrived.
 - **Filed** appears only after your assistant confirms a request was actually accepted. Nothing is ever marked Filed automatically. The assistant can reply with a link of the form `bumplog://filed?id=BL-20261011-ABCD&ref=<reference number>`. Tapping it opens a confirmation showing the ID and reference. The report is marked Filed only after you tap Mark Filed. The reference number is optional. A link for an unknown report ID is rejected, and a different reference never replaces an existing one without asking.
-- Each report email has a plain-text block: report ID, defect type and category, severity, hit count, coordinates, a map link, direction, and timestamps. Speed is never included. Every email opens with a short "About this email" block that explains what it is and what the assistant should do. One assistant address per report.
+- Each report email has a plain-text block: report ID, defect type and category, severity, hit count, coordinates, a map link, direction, and timestamps. Speed is never included. Every email includes a short "About this email" block that explains what it is and what the assistant should do. One assistant address per report.
 - Damage reports are separate emails, marked as damage claims, with the impact details and any photos you added. A damage report stands on its own and does not need a road defect report to be sent first.
 - Nothing is submitted to a city or agency without your approval. The email says so to the assistant.
 

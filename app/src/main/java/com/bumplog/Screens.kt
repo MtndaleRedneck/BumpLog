@@ -205,7 +205,7 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit) {
         Spacer(Modifier.height(14.dp))
         Dropdown("Defect type", spot.type.name, DefectType.values().map { it.name to it.label }, Modifier.fillMaxWidth()) { Db.get(ctx).setType(spot.id, DefectType.parse(it)); Live.bump() }
         Spacer(Modifier.height(14.dp))
-        BigButton("Yes", Icons.Default.Check) { val d = Db.get(ctx); d.setReview(spot.id, "CONFIRMED"); d.setWarn(spot.id, true); Live.bump(); onDone() }
+        BigButton("Yes", Icons.Default.Check) { val d = Db.get(ctx); d.confirmForTrip(spot.id); ConfirmationNotice.show(); Live.bump(); onDone() }
         Spacer(Modifier.height(12.dp))
         BigButton("No", Icons.Default.Close, filled = false) { val d = Db.get(ctx); d.setReview(spot.id, "DISMISSED"); d.setWarn(spot.id, false); Live.bump(); onDone() }
         Spacer(Modifier.height(12.dp))
@@ -315,8 +315,8 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
         }
         Dropdown(if (spot.typeUser) "Defect type" else "Defect type (guess - pick to confirm)", spot.type.name, DefectType.values().map { it.name to it.label }) { db.setType(spot.id, DefectType.parse(it)); Live.bump() }
         Toggle("Warn me here", spot.warn, "Heads-up before this spot on future drives") { db.setWarn(spot.id, it); Live.bump() }
-        BigButton("Confirm as real defect", Icons.Default.Check, enabled = spot.review != "CONFIRMED" || spot.reportStatus == "NONE") { db.setReview(spot.id, "CONFIRMED"); Live.bump() }
-        if (spot.review == "CONFIRMED" && spot.reportStatus == "NONE")
+        BigButton("Confirm as real defect", Icons.Default.Check, enabled = spot.review != "CONFIRMED") { db.confirmForTrip(spot.id); ConfirmationNotice.show(); Live.bump() }
+        if (TripReportPolicy.canSendNow(spot, Live.state.value.running, Live.state.value.driveId))
             BigButton("Send this report", Icons.Default.Send, filled = false) {
                 if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(spot)))) { db.markSent(spot.id, System.currentTimeMillis()); Live.bump() }
             }
