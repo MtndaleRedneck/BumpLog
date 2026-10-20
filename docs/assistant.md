@@ -6,9 +6,9 @@ You are receiving this because the owner of an Android phone set you up as the a
 
 At the end of a trip, the app prepares one email with every confirmed defect of that trip, and the owner sends it from their own mail app. It starts with "BumpLog report" and then one block per defect:
 
-- Report #n-MM/DD/YYYY: within one email the reports are numbered 1, 2, 3... oldest first. The date is the day the defect was hit.
+- Report #n-MM/DD/YYYY at h:mm AM/PM: within one email the reports are numbered 1, 2, 3... oldest first, and the date and time are the first hit. Numbers restart in every email, so when you refer to a report in a follow-up, name the road too, not just the label.
 - Type: the defect type and severity, and whether the owner confirmed the type.
-- Hit: when the defect was hit.
+- Hit: when the defect was first hit.
 - Road: the street name, when the phone could look it up.
 - Town (phone's guess): the town and county the phone guessed from the location. Treat it as a guess.
 - Direction of travel, when known.
@@ -32,7 +32,7 @@ The email never includes the vehicle's speed, hit strength, or hit counts. Do no
 
 ## Where to file in New Jersey
 
-- The Garden State Parkway and the New Jersey Turnpike belong to the New Jersey Turnpike Authority: https://www.njta.com/contact-us (maintenance line 833-GSP-4AID for the Parkway, 833-TPK-4AID for the Turnpike, or info@njta.com).
+- The Garden State Parkway and the New Jersey Turnpike belong to the New Jersey Turnpike Authority: https://www.njta.gov/contact-us/ (maintenance line 833-GSP-4AID for the Parkway, 833-TPK-4AID for the Turnpike, or info@njta.com).
 - A county road belongs to the county: look for the county's public works or road department.
 - Whatever the email's town guess says, verify who really owns the road before filing.
 
