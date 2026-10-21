@@ -268,7 +268,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Spacer(Modifier.height(10.dp))
             SmallButton("Check for updates", Modifier.fillMaxWidth(), outline = false) { onCheckUpdates() }
             Spacer(Modifier.height(8.dp))
-            Muted("Version ${BuildConfig.VERSION_NAME}", 12)
+            Txt("Version ${BuildConfig.VERSION_NAME}", 12, color = p.text)
         }
         if (confirmWipe) AlertDialog(onDismissRequest = { confirmWipe = false },
             confirmButton = { TextButton({ Db.get(ctx).wipeAll(); DamagePhotos.wipeAll(ctx); Prefs.wipeLocalExtras(ctx); Live.bump(); confirmWipe = false }) { Text("Delete") } },
