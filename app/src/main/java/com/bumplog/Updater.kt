@@ -84,6 +84,17 @@ object Updater {
     } catch (e: Exception) { false }
 
     /** Asks GitHub for the latest release. Null on any failure, offline, rate limit or odd response. Call off the main thread. */
+    /** Same as [check] but throws on a connection/HTTP failure instead of returning null,
+     * so a manual check can tell "no network" apart from "you're up to date". */
+    fun checkOrThrow(current: String): UpdateInfo? {
+        val c = URL(API).openConnection() as HttpURLConnection
+        c.connectTimeout = 6000; c.readTimeout = 8000; c.instanceFollowRedirects = false
+        c.setRequestProperty("Accept", "application/vnd.github+json"); c.setRequestProperty("User-Agent", "BumpLog")
+        if (c.responseCode != 200) throw java.io.IOException("HTTP " + c.responseCode)
+        val body = c.inputStream.use { it.readBytes(512 * 1024) }
+        return parseRelease(String(body, Charsets.UTF_8), current)
+    }
+
     fun check(current: String): UpdateInfo? = try {
         val c = URL(API).openConnection() as HttpURLConnection
         c.connectTimeout = 6000; c.readTimeout = 8000; c.instanceFollowRedirects = false

@@ -122,14 +122,22 @@ class MainActivity : ComponentActivity() {
     }
     override fun onDestroy() { updateJob?.cancel(); super.onDestroy() }
 
-    /** Once per cold open, only when the user has the Settings toggle on. Silent on any failure, and never shown during a drive. */
-    private fun checkForUpdate(fakeCurrent: String?) {
-        if (!Prefs.updateCheck) return
+    /** Always on: once per cold open, plus any manual tap of Check for updates in Settings.
+     * Never shown during a drive. A skipped version stays skipped on the automatic check,
+     * but a manual check always shows what is out there. */
+    private fun checkForUpdate(fakeCurrent: String?, manual: Boolean = false) {
         val current = fakeCurrent ?: BuildConfig.VERSION_NAME
         Updater.clean(this)
         ioScope.launch {
-            val info = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Updater.check(current) } ?: return@launch
-            if (info.versionName == Prefs.skippedUpdate || Live.state.value.running) return@launch
+            val info = try {
+                kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Updater.checkOrThrow(current) }
+            } catch (e: Exception) {
+                if (manual) toast(this@MainActivity, "Couldn't check for updates right now.")
+                return@launch
+            }
+            if (Live.state.value.running) return@launch
+            if (info == null) { if (manual) toast(this@MainActivity, "You're up to date."); return@launch }
+            if (!manual && info.versionName == Prefs.skippedUpdate) return@launch
             updateUi = UpdateUi.Offer(info)
         }
     }
@@ -362,7 +370,7 @@ class MainActivity : ComponentActivity() {
                         "review" -> ReviewScreen(live, { stack = listOf(Screen.Spot(it)) }) { stack = listOf(Screen.Setup) }
                         "reported" -> ReportedScreen(live.tick) { stack = listOf(Screen.Spot(it)) }
                         "stats" -> StatsScreen(live.tick) { stack = listOf(Screen.Spot(it)) }
-                        "settings" -> SettingsScreen(live.tick, settingsScroll, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) }, { stack = listOf(Screen.Setup) })
+                        "settings" -> SettingsScreen(live.tick, settingsScroll, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) }, { stack = listOf(Screen.Setup) }, { checkForUpdate(null, manual = true) })
                         else -> HomeScreen(live, { stack = listOf(Screen.Spot(it)) }, { stack = listOf(Screen.Damage(0)) }, permsOk, { askPerms() },
                             {
                                 Prefs.passenger = !Prefs.passenger

@@ -1,3 +1,9 @@
+BumpLog 1.15.1
+
+- Marking how a report turned out gets a fourth button: Waiting on the city. Fixed is green, and Unclear is now Unclear response - the Reported tab uses the same words.
+- Settings: Feedback & bugs and Updates cards match the other apps. Updates sits at the bottom, with a Check for updates button and the version inside the card.
+- The update check is always on - the old switch is gone.
+
 BumpLog 1.15.0
 
 - New Reported tab: every bump you reported, with what happened - waiting on the city, fixed, unclear, or won't fix. Tap one to mark how it turned out.
