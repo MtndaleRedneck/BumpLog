@@ -62,7 +62,6 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     var severe by remember { mutableStateOf(Prefs.severeG) }
     var minSpeed by remember { mutableStateOf(Prefs.minSpeedMph) }
     var autoOff by remember { mutableStateOf(Prefs.autoOffMin) }
-    var theme by remember { mutableStateOf(Prefs.theme) }
     var accent by remember { mutableStateOf(Prefs.accent) }
     var assistant by remember { mutableStateOf(Prefs.assistant) }
     var address by remember { mutableStateOf(Prefs.rawActiveAddress) }
@@ -94,15 +93,6 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         SettingsCard {
             Txt("Appearance", 18, FontWeight.Bold, modifier = Modifier.asHeading())
             Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(30.dp)).background(p.bg).padding(4.dp)) {
-                listOf("DARK" to "Dark", "LIGHT" to "Light", "SYSTEM" to "System").forEach { (k, v) ->
-                    Box(Modifier.weight(1f).height(44.dp).clip(RoundedCornerShape(26.dp)).background(if (theme == k) p.accent else p.bg)
-                        .clickable { theme = k; Prefs.theme = k; Live.bump() }, contentAlignment = Alignment.Center) {
-                        Txt(v, 16, FontWeight.Bold, if (theme == k) p.onAccent else p.muted)
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
             Txt("Accent", 16, color = p.muted)
             Spacer(Modifier.height(8.dp))
             val rows = Swatches.chunked(5)
