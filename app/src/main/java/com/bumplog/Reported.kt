@@ -47,7 +47,8 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
                     val fixedGreen = androidx.compose.ui.graphics.Color(0xFF3CC878)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
-                            onClick = { markFor = null },
+                            // Back to waiting: clears an earlier Fixed / Unclear response / Won't fix mark.
+                            onClick = { Db.get(ctx).markOutcome(s.id, "NONE", 0); Live.bump(); markFor = null },
                             modifier = Modifier.weight(1f),
                             border = BorderStroke(1.dp, p.text),
                         ) { M3Text("Waiting on the city", color = p.text) }

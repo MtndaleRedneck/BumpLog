@@ -1,9 +1,7 @@
 package com.bumplog
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
@@ -68,11 +66,9 @@ val LocalPal = staticCompositionLocalOf { palette(true, 0) }
 
 @Composable
 fun BumpLogTheme(theme: String, accent: Int, content: @Composable () -> Unit) {
-    val dark = when (theme) { "LIGHT" -> false; "SYSTEM" -> isSystemInDarkTheme(); else -> true }
-    val p = palette(dark, accent)
-    val scheme = if (dark) darkColorScheme(primary = p.accent, onPrimary = p.onAccent, background = p.bg, surface = p.card,
-        onBackground = p.text, onSurface = p.text, surfaceVariant = p.card2)
-    else lightColorScheme(primary = p.accent, onPrimary = p.onAccent, background = p.bg, surface = p.card,
+    // Dark only (Ezzy, Oct 2026): the Light/System choices are gone, the app always uses the dark palette.
+    val p = palette(true, accent)
+    val scheme = darkColorScheme(primary = p.accent, onPrimary = p.onAccent, background = p.bg, surface = p.card,
         onBackground = p.text, onSurface = p.text, surfaceVariant = p.card2)
     CompositionLocalProvider(LocalPal provides p) { MaterialTheme(colorScheme = scheme, content = content) }
 }

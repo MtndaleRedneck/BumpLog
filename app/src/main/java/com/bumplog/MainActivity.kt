@@ -123,8 +123,9 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() { updateJob?.cancel(); super.onDestroy() }
 
     /** Always on: once per cold open, plus any manual tap of Check for updates in Settings.
-     * Never shown during a drive. A skipped version stays skipped on the automatic check,
-     * but a manual check always shows what is out there. */
+     * A manual tap always runs and always says what happened, even during a drive -
+     * the offer stays cancelable. Only the automatic check stays quiet during a drive.
+     * A skipped version stays skipped on the automatic check. */
     private fun checkForUpdate(fakeCurrent: String?, manual: Boolean = false) {
         val current = fakeCurrent ?: BuildConfig.VERSION_NAME
         Updater.clean(this)
@@ -135,7 +136,7 @@ class MainActivity : ComponentActivity() {
                 if (manual) toast(this@MainActivity, "Couldn't check for updates right now.")
                 return@launch
             }
-            if (Live.state.value.running) return@launch
+            if (Live.state.value.running && !manual) return@launch
             if (info == null) { if (manual) toast(this@MainActivity, "You're up to date."); return@launch }
             if (!manual && info.versionName == Prefs.skippedUpdate) return@launch
             updateUi = UpdateUi.Offer(info)
