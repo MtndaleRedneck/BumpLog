@@ -173,6 +173,7 @@ class MainActivity : ComponentActivity() {
         val spot = i.getLongExtra("spot", 0)
         when (i.getStringExtra("screen")) {
             "review" -> { tab = "review"; stack = emptyList() }
+            "reported" -> { tab = "reported"; stack = emptyList() }
             "settings" -> { tab = "settings"; stack = emptyList() }
             "home" -> { tab = "home"; stack = emptyList() }
             "setup" -> stack = listOf(Screen.Setup)
@@ -359,6 +360,7 @@ class MainActivity : ComponentActivity() {
                     is Screen.BugReport -> BugReportScreen { tab = "settings"; stack = emptyList() }
                     null -> when (tab) {
                         "review" -> ReviewScreen(live, { stack = listOf(Screen.Spot(it)) }) { stack = listOf(Screen.Setup) }
+                        "reported" -> ReportedScreen(live.tick) { stack = listOf(Screen.Spot(it)) }
                         "stats" -> StatsScreen(live.tick) { stack = listOf(Screen.Spot(it)) }
                         "settings" -> SettingsScreen(live.tick, settingsScroll, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) }, { stack = listOf(Screen.Setup) })
                         else -> HomeScreen(live, { stack = listOf(Screen.Spot(it)) }, { stack = listOf(Screen.Damage(0)) }, permsOk, { askPerms() },
@@ -372,6 +374,7 @@ class MainActivity : ComponentActivity() {
             if (top == null || top is Screen.Spot) Row(Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp)) {
                 NavItem("Home", Icons.Default.Home, tab == "home" && top == null, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
                 NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
+                NavItem("Reported", StatsIcons.plane, tab == "reported" && top == null, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }
                 NavItem("Stats", StatsIcons.bar, tab == "stats" && top == null, Modifier.weight(1f)) { tab = "stats"; stack = emptyList() }
                 NavItem("Settings", Icons.Default.Settings, tab == "settings" && top == null, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }
             }

@@ -253,6 +253,17 @@ object StatsIcons {
         androidx.compose.ui.graphics.vector.ImageVector.Builder(name, 24.dp, 24.dp, 24f, 24f).addPath(
             androidx.compose.ui.graphics.vector.PathParser().parsePathString(d).toNodes(), fill = androidx.compose.ui.graphics.SolidColor(Color.Black)).build()
     val bar = build("bar", "M5 9.2h3V19H5zM10.6 5h2.8v14h-2.8zm5.6 8H19v6h-2.8z")
+    // The report plane: the Material send shape tipped up 45 degrees (locked with the owner).
+    val plane = build("plane", "M11.42 23.02L18.42 5.66L0.99 12.57L5.04 16.68L14.9 9.1L7.36 18.96z")
+    // Straight up, for the floating back-to-top pill (material-icons-core has no ArrowUpward).
+    val up = build("up", "M12 4l-7 7h4v9h6v-9h4z")
+}
+
+/** Scroll positions survive tab switches: each screen keeps its own ScrollState by name. */
+object ScrollMemory {
+    private val states = HashMap<String, androidx.compose.foundation.ScrollState>()
+    fun get(key: String): androidx.compose.foundation.ScrollState =
+        states.getOrPut(key) { androidx.compose.foundation.ScrollState(0) }
 }
 
 
