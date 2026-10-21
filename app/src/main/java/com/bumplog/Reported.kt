@@ -44,17 +44,26 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
                     Spacer(Modifier.height(10.dp))
                     M3Text("How did it turn out?")
                     Spacer(Modifier.height(14.dp))
+                    val fixedGreen = androidx.compose.ui.graphics.Color(0xFF3CC878)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(
+                            onClick = { markFor = null },
+                            modifier = Modifier.weight(1f),
+                            border = BorderStroke(1.dp, p.text),
+                        ) { M3Text("Waiting on the city", color = p.text) }
                         OutlinedButton(
                             onClick = { Db.get(ctx).markOutcome(s.id, "FIXED", System.currentTimeMillis()); Live.bump(); markFor = null },
                             modifier = Modifier.weight(1f),
-                            border = BorderStroke(1.dp, p.muted),
-                        ) { M3Text("Fixed", color = p.text) }
+                            border = BorderStroke(1.dp, fixedGreen),
+                        ) { M3Text("Fixed", color = fixedGreen) }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             onClick = { Db.get(ctx).markOutcome(s.id, "UNCLEAR", System.currentTimeMillis()); Live.bump(); markFor = null },
                             modifier = Modifier.weight(1f),
                             border = BorderStroke(1.dp, p.yellow),
-                        ) { M3Text("Unclear", color = p.yellow) }
+                        ) { M3Text("Unclear response", color = p.yellow) }
                         OutlinedButton(
                             onClick = { Db.get(ctx).markOutcome(s.id, "WONTFIX", System.currentTimeMillis()); Live.bump(); markFor = null },
                             modifier = Modifier.weight(1f),
@@ -62,8 +71,6 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
                         ) { M3Text("Won't fix", color = p.danger) }
                     }
                     Spacer(Modifier.height(12.dp))
-                    Muted("Unclear: the city answered, but it's not clear if they're actually fixing it.", 14)
-                    Spacer(Modifier.height(8.dp))
                     Muted("Still broken? You can report it again the next time you hit it.", 14)
                 }
             },
@@ -88,8 +95,8 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
     val ctx = LocalContext.current
     val hitAgain = s.outcomeTs > 0 && s.lastTs > s.outcomeTs
     val (status, color) = when (s.reportOutcome) {
-        "FIXED" -> "Marked fixed ${shortDay(s.outcomeTs)}" to p.muted
-        "UNCLEAR" -> "City answered - marked unclear" to p.yellow
+        "FIXED" -> "Marked fixed ${shortDay(s.outcomeTs)}" to androidx.compose.ui.graphics.Color(0xFF3CC878)
+        "UNCLEAR" -> "Marked unclear response ${shortDay(s.outcomeTs)}" to p.yellow
         "WONTFIX" -> ("Marked won't fix ${shortDay(s.outcomeTs)}" + if (hitAgain) " - hit again" else "") to p.danger
         else -> "Waiting on the city" to p.accentText(p.card)
     }

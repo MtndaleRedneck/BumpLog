@@ -77,16 +77,19 @@ jobs:
             echo "Release $TAG already exists. Bump versionName to publish a new release."
             exit 0
           fi
-          if [ -f release-notes.md ]; then
+          # Release pages show ONLY their own version's notes (Ezzy's rule, Oct 2026):
+          # extract the "BumpLog $V" section from the running notes file.
+          awk -v v="BumpLog $VERSION" 'BEGIN{f=0} $0 ~ /^BumpLog / { if($0==v){f=1}else if(f){exit} } f' release-notes.md > /tmp/notes.md
+          if [ -s /tmp/notes.md ]; then
             gh release create "$TAG" "BumpLog-v$VERSION.apk" \
               --target "$(git rev-parse HEAD)" \
               --title "BumpLog $TAG" \
-              --notes-file release-notes.md
+              --notes-file /tmp/notes.md
           else
             gh release create "$TAG" "BumpLog-v$VERSION.apk" \
               --target "$(git rev-parse HEAD)" \
               --title "BumpLog $TAG" \
-              --notes "BumpLog $TAG. Android 12+. See the README for setup."
+              --notes "BumpLog $TAG. See the README for setup."
           fi
 
   screenshots:

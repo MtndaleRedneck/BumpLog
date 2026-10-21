@@ -54,7 +54,7 @@ fun pairedDevices(ctx: Context): List<Pair<String, String>> {
 }
 
 @Composable
-fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, askPerms: () -> Unit, openVoice: () -> Unit, openBug: () -> Unit, openSetup: () -> Unit) {
+fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, askPerms: () -> Unit, openVoice: () -> Unit, openBug: () -> Unit, openSetup: () -> Unit, onCheckUpdates: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
     // Local copies so the screen redraws as values change.
@@ -67,7 +67,6 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     var assistant by remember { mutableStateOf(Prefs.assistant) }
     var address by remember { mutableStateOf(Prefs.rawActiveAddress) }
     var auto by remember { mutableStateOf(Prefs.autoStart) }
-    var updCheck by remember { mutableStateOf(Prefs.updateCheck) }
     var far by remember { mutableStateOf(Prefs.warnFarFt) }
     var near by remember { mutableStateOf(Prefs.warnNearFt) }
     var audio by remember { mutableStateOf(Prefs.audioMode) }
@@ -210,7 +209,6 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Spacer(Modifier.height(6.dp))
             SmallButton("Resend setup email", Modifier.fillMaxWidth()) { if (sendSetupMail(ctx)) openSetup() }
         }
-        Toggle("Check for updates", updCheck, "Checks GitHub for a newer BumpLog when you open the app. No account or personal details are sent.") { updCheck = it; Prefs.updateCheck = it }
         Toggle("Car Bluetooth prompts", auto, "Offers to start logging when your car connects and to stop when it disconnects. Off by default.") { auto = it; Prefs.autoStart = it }
         if (auto && cars.isNotEmpty()) Card {
             Dropdown("Car Bluetooth", car, listOf("" to "Choose your car") + cars) { car = it; Prefs.carAddress = it; Prefs.carName = cars.firstOrNull { c -> c.first == it }?.second ?: "" }
@@ -239,14 +237,6 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         }
         BackupCards()
         Card(pad = 16.dp) {
-            Txt("Feedback", 18, FontWeight.Bold)
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).clickable { openBug() }, verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Txt("General feedback, bugs, and feature suggestions", 16, FontWeight.Medium); Muted("You see exactly what is sent before you send it.", 12) }
-                Icon(Icons.Default.PlayArrow, null, tint = p.muted)
-            }
-        }
-        Card(pad = 16.dp) {
             Txt("Testing", 18, FontWeight.Bold)
             Muted("Fires the real alerts and screens without driving. Test spots are flagged TEST and never count toward your Stats.", 12)
             Spacer(Modifier.height(8.dp))
@@ -263,7 +253,23 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             }
         }
         Card(Modifier.clickable { confirmWipe = true }, pad = 16.dp) { Txt("Delete all logged data", 16, color = p.muted) }
-        Muted("BumpLog ${BuildConfig.VERSION_NAME}  -  everything stays on this phone", 12, Modifier.fillMaxWidth(), androidx.compose.ui.text.style.TextAlign.Center)
+        // Same locked card design as the other apps: Feedback & bugs, then Updates last.
+        Card(Modifier.clickable { openBug() }, pad = 16.dp) {
+            Txt("Feedback & bugs", 18, FontWeight.Bold)
+            Spacer(Modifier.height(6.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Txt("General feedback, bugs, and feature suggestions", 16, FontWeight.Medium, modifier = Modifier.weight(1f))
+                Icon(Icons.Default.PlayArrow, null, tint = p.muted)
+            }
+            Muted("You see exactly what is sent before you send it.", 12)
+        }
+        Card(pad = 16.dp) {
+            Txt("Updates", 18, FontWeight.Bold)
+            Spacer(Modifier.height(10.dp))
+            SmallButton("Check for updates", Modifier.fillMaxWidth(), outline = false) { onCheckUpdates() }
+            Spacer(Modifier.height(8.dp))
+            Muted("Version ${BuildConfig.VERSION_NAME}", 12)
+        }
         if (confirmWipe) AlertDialog(onDismissRequest = { confirmWipe = false },
             confirmButton = { TextButton({ Db.get(ctx).wipeAll(); DamagePhotos.wipeAll(ctx); Prefs.wipeLocalExtras(ctx); Live.bump(); confirmWipe = false }) { Text("Delete") } },
             dismissButton = { TextButton({ confirmWipe = false }) { Text("Cancel") } },
