@@ -19,6 +19,8 @@ data class Spot(
     val severity: String = "MAJOR", val fileTrip: Boolean = false, val saves: Int = 0,
     val fixedAfterReport: Boolean = false, val fixedTs: Long = 0,
     val reportNo: Int = 0, val town: String = "", val county: String = "", val reportTs: Long = 0,
+    /** How a sent report turned out: NONE (waiting on the city), FIXED, UNCLEAR (city answered, meaning unclear), WONTFIX. */
+    val reportOutcome: String = "NONE", val outcomeTs: Long = 0,
 ) {
     val severe: Boolean get() = maxG >= Prefs.severeG
     val title: String get() = address.ifBlank { "%.5f, %.5f".format(lat, lon) }
@@ -39,13 +41,13 @@ data class Damage(
     val note: String, val ts: Long, val status: String, val reportNo: Int = 0, val reportTs: Long = 0,
 )
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 4) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 5) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
             """CREATE TABLE spots(id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT, lat REAL, lon REAL, heading REAL,
             type TEXT, type_user INTEGER, max_g REAL, hit_count INTEGER, speed REAL, first_ts INTEGER, last_ts INTEGER,
-            drive_id INTEGER, review TEXT, warn INTEGER, report_status TEXT, sent_ts INTEGER, address TEXT, clean_passes INTEGER, severity TEXT DEFAULT 'MAJOR', file_trip INTEGER DEFAULT 0, saves INTEGER DEFAULT 0, fixed_after_report INTEGER DEFAULT 0, fixed_ts INTEGER DEFAULT 0, report_no INTEGER DEFAULT 0, town TEXT DEFAULT '', county TEXT DEFAULT '', report_ts INTEGER DEFAULT 0)"""
+            drive_id INTEGER, review TEXT, warn INTEGER, report_status TEXT, sent_ts INTEGER, address TEXT, clean_passes INTEGER, severity TEXT DEFAULT 'MAJOR', file_trip INTEGER DEFAULT 0, saves INTEGER DEFAULT 0, fixed_after_report INTEGER DEFAULT 0, fixed_ts INTEGER DEFAULT 0, report_no INTEGER DEFAULT 0, town TEXT DEFAULT '', county TEXT DEFAULT '', report_ts INTEGER DEFAULT 0, report_outcome TEXT DEFAULT 'NONE', outcome_ts INTEGER DEFAULT 0)"""
         )
         db.execSQL(
             """CREATE TABLE hits(id INTEGER PRIMARY KEY AUTOINCREMENT, spot_id INTEGER, drive_id INTEGER, ts INTEGER,
@@ -82,6 +84,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             db.execSQL("ALTER TABLE spots ADD COLUMN report_ts INTEGER DEFAULT 0")
             db.execSQL("ALTER TABLE damage ADD COLUMN report_ts INTEGER DEFAULT 0")
         }
+        if (o < 5) {
+            // The Reported tab: what happened after a report went to the city.
+            db.execSQL("ALTER TABLE spots ADD COLUMN report_outcome TEXT DEFAULT 'NONE'")
+            db.execSQL("ALTER TABLE spots ADD COLUMN outcome_ts INTEGER DEFAULT 0")
+        }
     }
 
     // ---- the shared report counter ----
@@ -111,9 +118,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         c.getString(15) ?: "NONE", c.getLong(16), c.getString(17) ?: "", c.getInt(18),
         c.getString(19) ?: "MAJOR", c.getInt(20) == 1, c.getInt(21), c.getInt(22) == 1, c.getLong(23),
         c.getInt(24), c.getString(25) ?: "", c.getString(26) ?: "", c.getLong(27),
+        c.getString(28) ?: "NONE", c.getLong(29),
     )
 
-    private val spotCols = "id,report_id,lat,lon,heading,type,type_user,max_g,hit_count,speed,first_ts,last_ts,drive_id,review,warn,report_status,sent_ts,address,clean_passes,severity,file_trip,saves,fixed_after_report,fixed_ts,report_no,town,county,report_ts"
+    private val spotCols = "id,report_id,lat,lon,heading,type,type_user,max_g,hit_count,speed,first_ts,last_ts,drive_id,review,warn,report_status,sent_ts,address,clean_passes,severity,file_trip,saves,fixed_after_report,fixed_ts,report_no,town,county,report_ts,report_outcome,outcome_ts"
 
     /** Test-mode spots have report IDs starting with TEST-. They stay out of every list, count and export unless asked for. */
     private fun spots(where: String?, args: Array<String>?, order: String = "last_ts DESC", limit: String? = null, test: Boolean = false): List<Spot> {
@@ -237,6 +245,17 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     }
     @Synchronized fun topSaves(n: Int = 5): List<Spot> = spots("saves>0", null, order = "saves DESC", limit = n.toString())
     fun markSent(id: Long, now: Long) = update(id, "report_status" to "SENT", "sent_ts" to now)
+
+    /** Every spot whose report went to the mail app, newest send first - the Reported tab. */
+    @Synchronized fun reportedSpots(): List<Spot> = spots("report_status='SENT'", null, order = "sent_ts DESC")
+
+    /** The owner says how a sent report turned out (Fixed / Unclear / Won't fix). */
+    fun markOutcome(id: Long, outcome: String, now: Long) = update(id, "report_outcome" to outcome, "outcome_ts" to now)
+
+    /** Report the same spot again: a fresh report number and send date, back to waiting on the city. */
+    fun reportAgain(id: Long, now: Long) = update(id,
+        "report_no" to takeReportNo(), "report_ts" to now, "sent_ts" to now,
+        "report_outcome" to "NONE", "outcome_ts" to 0)
     /** Restores spots and hits from a BumpLog CSV export. Old codes (BL-/BD-/PS-, strictly checked) and the running
      * numbers are kept; IDs already here are skipped. Both the old 12-column layout and the current one with
      * report_no, town and county load. The shared counter ends up past every number the file used and past the
