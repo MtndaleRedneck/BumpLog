@@ -461,7 +461,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
         if (photos.isNotEmpty()) DamagePhotos.add(ctx, d.reportId, photos)
         return d
     }
-    Column(Modifier.fillMaxSize().pane("File damage report").verticalScroll(ScrollMemory.get("Damage:$spotId")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().pane("File damage report").verticalScroll(ScrollMemory.get("Damage:$preSpot")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Muted("Pick the impact that hurt your car. Your assistant works out where the claim should go.", 14, Modifier.asHeading())
         if (hits.isEmpty()) Muted("No impacts logged yet.")
         if (recent.isNotEmpty()) { Txt("Last 20 minutes", 16, FontWeight.Bold); recent.forEach { hitRow(it) } }
