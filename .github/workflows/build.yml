@@ -5,6 +5,11 @@ on:
     branches: [main]
     paths-ignore: ['docs/screenshots/**']
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish the GitHub release (only after review sign-off)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -62,6 +67,7 @@ jobs:
           path: BumpLog-v*.apk
 
       - name: Publish release
+        if: github.event_name == 'workflow_dispatch' && inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
