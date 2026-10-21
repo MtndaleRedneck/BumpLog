@@ -1,8 +1,10 @@
-BumpLog 1.14.2
+BumpLog 1.15.0
 
-- Reports in the email are numbered 1, 2, 3... oldest first, each labeled with the date and time of the first hit, so they read in order down the page and no two labels repeat. The numbering is per email.
-- The guide learns from real filings: letters use the road's own direction terms (northbound, route numbers, ramps) instead of compass degrees, double-check the Road line against the direction of travel, and check mainline vs ramp at junctions. Letters write the time as "around" plus the nearest half hour, may say the car was jolted hard, and never guess facts an agency asks about - the owner confirms every reply.
-- The setup email opens with a plainer intro, and the check-with-you rule tightens: the assistant's yes counts only through its normal channel to you, never by email.
-- The guide adds a short cheat sheet on who maintains which roads.
+- New Reported tab: every bump you reported, with what happened - waiting on the city, fixed, unclear, or won't fix. Tap one to mark how it turned out.
+- Report a bump again from the same place when the city doesn't act; each new report carries a fresh number, so the city sees the count.
+- The Reported tab gets a paper plane icon, tipped up at an angle.
+- Long Review lists get a floating Top button that jumps back to the start.
+- Every screen now remembers where you scrolled to when you leave and come back.
+- A reported (greyed) Review row no longer lets the swipe "Dismiss" hint show through it.
 
-Android 12+. Installs over 1.14.1; all data and the update check carry over.
+Android 12+. Installs over 1.14.2; all data and the update check carry over.

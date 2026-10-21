@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 fun clock(ts: Long): String = SimpleDateFormat("h:mm a", Locale.US).format(Date(ts))
 fun dayTime(ts: Long): String = SimpleDateFormat("MMM d, h:mm a", Locale.US).format(Date(ts))
@@ -106,7 +107,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     var extraAct by remember { mutableStateOf(0.dp) }   // extra space above the action buttons
     var extraTop by remember { mutableStateOf(0.dp) }   // extra space above everything
     val nGaps = if (permsOk) 3 else 4
-    Column(Modifier.fillMaxSize().pane("Home").verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = 24.dp + extraTop, bottom = 6.dp)) {
+    Column(Modifier.fillMaxSize().pane("Home").verticalScroll(ScrollMemory.get("Home")).padding(start = 16.dp, end = 16.dp, top = 24.dp + extraTop, bottom = 6.dp)) {
       Column(Modifier.onSizeChanged {
           val h = with(dens) { it.height.toDp() }
           val fixed = h - gap * nGaps - extraAct
@@ -197,7 +198,7 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit, onConfirmed: () -> 
     var s by remember { mutableStateOf<Spot?>(null) }
     LoadingSpots(tick) { db -> s = db.spot(spotId) }
     val spot = s ?: return
-    Column(Modifier.fillMaxSize().pane("Heads-up").verticalScroll(rememberScrollState()).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+    Column(Modifier.fillMaxSize().pane("Heads-up").verticalScroll(ScrollMemory.get("Heads-up")).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(24.dp))
         val alertColor = if (spot.severe) p.yellow else p.accent
         Txt("BUMP DETECTED", 22, FontWeight.Bold, alertColor)
@@ -243,15 +244,17 @@ fun hitReported(h: Hit, s: Spot) = s.reportStatus != "NONE" && (s.sentTs == 0L |
 @Composable
 fun HitRow(h: Hit, s: Spot, gray: Boolean = false, onClick: () -> Unit) {
     val p = LocalPal.current
-    Row(Modifier.fillMaxWidth().alpha(if (gray) 0.45f else 1f).clip(RoundedCornerShape(18.dp)).background(p.card).clickable(onClick = onClick).padding(14.dp),
+    // The card background stays opaque: greying the whole row let the swipe "Dismiss" background bleed through.
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.card).clickable(onClick = onClick).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) {
+        val fade = Modifier.alpha(if (gray) 0.45f else 1f)
+        Column(fade.weight(1f)) {
             Txt(s.title, 17, FontWeight.Bold)
             Muted("${hitWhen(h.ts)}  -  ${h.speedMph.toInt()} mph  -  ${Reports.statusLabel(s)}")
             // The public ref once the spot is confirmed (old reports show their old code). Wraps at big fonts, never ellipsizes.
             if (s.review == "CONFIRMED" || s.reportStatus != "NONE") Txt(s.ref(), 12, FontWeight.Normal, p.muted, maxLines = 2)
         }
-        Txt("%.2fg".format(h.peakG), 17, FontWeight.Bold, if (h.peakG >= Prefs.severeG && s.reportStatus != "SENT") p.yellow else p.text)
+        Box(fade) { Txt("%.2fg".format(h.peakG), 17, FontWeight.Bold, if (h.peakG >= Prefs.severeG && s.reportStatus != "SENT") p.yellow else p.text) }
     }
 }
 
@@ -274,8 +277,10 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
         pendingCount = db.pendingSpots().size
         saved = db.hitsSince(Db.startOfToday())
     }
+    val scroll = ScrollMemory.get("Review")
+    val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {
-    Column(Modifier.fillMaxSize().pane("Review").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().pane("Review").verticalScroll(scroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Card(pad = 20.dp) {
             Muted("Today", 15, Modifier.fillMaxWidth().asHeading(), TextAlign.Center)
             Spacer(Modifier.height(10.dp))
@@ -300,6 +305,18 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
                 val a = Prefs.activeAddress
                 Muted(if (a.isBlank()) "No assistant address set yet" else "Sends to $a", 15)
             }
+        }
+    }
+    // Long lists: a floating pill jumps back to the top (verified shape in the locked render).
+    if (scroll.value > 600) {
+        Row(Modifier.align(Alignment.BottomCenter).padding(bottom = 20.dp)
+            .clip(RoundedCornerShape(24.dp)).background(p.card2)
+            .clickable { scope.launch { scroll.animateScrollTo(0) } }
+            .padding(horizontal = 16.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically) {
+            Icon(StatsIcons.up, null, tint = p.text, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Txt("Top", 15, FontWeight.Bold)
         }
     }
     SnackbarHost(snack, Modifier.align(Alignment.BottomCenter))
@@ -350,7 +367,7 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
     val db = Db.get(ctx)
     var confirmFixed by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
-    Column(Modifier.fillMaxSize().pane("Spot").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().pane("Spot").verticalScroll(ScrollMemory.get("Spot:$spotId")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.fillMaxWidth()) {
             BackRow(spot.title, back)
             // Mark fixed lives in this menu, and only for a confirmed spot.
@@ -444,7 +461,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
         if (photos.isNotEmpty()) DamagePhotos.add(ctx, d.reportId, photos)
         return d
     }
-    Column(Modifier.fillMaxSize().pane("File damage report").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().pane("File damage report").verticalScroll(ScrollMemory.get("Damage:$spotId")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Muted("Pick the impact that hurt your car. Your assistant works out where the claim should go.", 14, Modifier.asHeading())
         if (hits.isEmpty()) Muted("No impacts logged yet.")
         if (recent.isNotEmpty()) { Txt("Last 20 minutes", 16, FontWeight.Bold); recent.forEach { hitRow(it) } }
@@ -478,7 +495,7 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
     var list by remember { mutableStateOf(listOf<Damage>()) }
     var n by remember { mutableStateOf(0) }
     LoadingSpots(tick + n) { db -> list = db.queuedDamages() }
-    Column(Modifier.fillMaxSize().pane("Damage reports waiting").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    Column(Modifier.fillMaxSize().pane("Damage reports waiting").verticalScroll(ScrollMemory.get("DamageQueue")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         BackRow("Damage reports waiting", back)
         if (list.isEmpty()) Muted("Nothing waiting.")
         list.forEach { d ->
@@ -517,7 +534,7 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     val dens = androidx.compose.ui.platform.LocalDensity.current
     // Slight fixed padding top and bottom; the gaps between the summary cards flex with the screen height (cards and text never change size).
     var gap by remember { mutableStateOf(10.dp) }
-    Column(Modifier.fillMaxSize().pane("Stats").verticalScroll(rememberScrollState()).padding(start = 16.dp, end = 16.dp, top = gap, bottom = gap), verticalArrangement = Arrangement.spacedBy(gap)) {
+    Column(Modifier.fillMaxSize().pane("Stats").verticalScroll(ScrollMemory.get("Stats")).padding(start = 16.dp, end = 16.dp, top = gap, bottom = gap), verticalArrangement = Arrangement.spacedBy(gap)) {
       Column(Modifier.onSizeChanged {
           val h = with(dens) { it.height.toDp() }
           val cards = h - gap * 3

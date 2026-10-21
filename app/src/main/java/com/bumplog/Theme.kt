@@ -12,7 +12,7 @@ import androidx.compose.ui.graphics.toArgb
 
 data class Pal(
     val bg: Color, val card: Color, val card2: Color, val nav: Color, val text: Color, val muted: Color,
-    val accent: Color, val onAccent: Color, val yellow: Color, val dark: Boolean,
+    val accent: Color, val onAccent: Color, val yellow: Color, val danger: Color, val dark: Boolean,
 )
 
 /** Muted sage, the default accent. It leads the last row of the picker. */
@@ -56,11 +56,11 @@ fun palette(dark: Boolean, accentIdx: Int): Pal {
     return if (dark) Pal(
         bg = Color(0xFF0E0E10), card = Color(0xFF1C1C20), card2 = Color(0xFF26262C), nav = Color(0xFF141418),
         text = Color(0xFFF5F5F7), muted = Color(0xFF9696A0), accent = ac, onAccent = onAc,
-        yellow = Color(0xFFFFBE3C), dark = true,
+        yellow = Color(0xFFFFBE3C), danger = Color(0xFFE57373), dark = true,
     ) else Pal(
         bg = Color(0xFFF4F4F6), card = Color.White, card2 = Color(0xFFE9E9EE), nav = Color.White,
         text = Color(0xFF111114), muted = Color(0xFF6A6A74), accent = ac, onAccent = onAc,
-        yellow = Color(0xFF946400), dark = false,
+        yellow = Color(0xFF946400), danger = Color(0xFFC62828), dark = false,
     )
 }
 
