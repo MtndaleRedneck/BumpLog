@@ -221,6 +221,8 @@ class MainActivity : ComponentActivity() {
         // Debug builds only, for the CI screenshot run: pick the voice source and trigger the celebration.
         if (BuildConfig.DEBUG && i.hasExtra("setvoice")) { Prefs.voice = i.getStringExtra("setvoice").orEmpty(); Live.bump() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("celebrate", false)) Celebrate.trigger()
+        if (BuildConfig.DEBUG && i.getBooleanExtra("askmail", false)) { Prefs.askSentFor = "5"; Prefs.askSentKind = "trip" }
+        if (BuildConfig.DEBUG && i.getBooleanExtra("logstop", false)) Notifier.loggingStopped(this)
         if (BuildConfig.DEBUG && i.getBooleanExtra("confirmnotice", false)) ConfirmationNotice.show()
         // Debug builds only, for the CI screenshot run: open the voice screens directly and put a few clips in place so every button shows.
         if (BuildConfig.DEBUG) {
