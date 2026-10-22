@@ -19,7 +19,7 @@ data class UpdateInfo(
 )
 
 /**
- * Update check against this app's public GitHub releases. It only runs when the user has it switched on,
+ * Update check against this app's public GitHub releases. It is always on,
  * only talks to github.com and githubusercontent.com over HTTPS, and every failure ends quietly or with a plain message.
  */
 object Updater {

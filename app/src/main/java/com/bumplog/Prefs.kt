@@ -81,8 +81,8 @@ object Prefs {
         return o
     }
 
-    private val SETTING_KEYS = setOf("detection", "cutoff", "severe", "minspeed", "theme", "accent_rgb", "accent", "assistant", "addr_instinct", "addr_tab", "addr_custom",
-        "setup_done", "setup_email_sent", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons")
+    private val SETTING_KEYS = setOf("detection", "cutoff", "severe", "minspeed", "accent_rgb", "accent", "assistant", "addr_instinct", "addr_tab", "addr_custom",
+        "setup_done", "setup_email_sent", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons", "autooff")
 
     /** Checks one restored value against the type and range its setting expects. Returns the clean value or null to skip it. */
     private fun checked(k: String, t: String, x: org.json.JSONObject): Any? {
@@ -98,7 +98,7 @@ object Prefs {
             "accent" -> int(0, LegacySwatchArgb.lastIndex)?.let { AccentStore.resolve(null, it) }
             "warn_far" -> int(100, 10560); "warn_near" -> int(50, 5280)
             "hit_timeout" -> int(0, 30)?.takeIf { it in listOf(0, 10, 20, 30) }
-            "theme" -> str(10)?.takeIf { it in listOf("DARK", "LIGHT", "SYSTEM") }
+            "autooff" -> int(10, 120)
             "assistant" -> str(10)?.takeIf { it in listOf("INSTINCT", "TAB", "CUSTOM") }
             "audio_mode" -> str(10)?.takeIf { it in listOf("BOTH", "TONE", "VOICE", "OFF") }
             "tone" -> str(10)?.takeIf { it in listOf("CHIME", "ALARM", "BEEP", "DOUBLE") }
@@ -140,6 +140,16 @@ object Prefs {
     var updateCheck: Boolean get() = b("update_check", true); set(v) = sp.edit().putBoolean("update_check", v).apply()
     /** Version name the user chose to skip in the update dialog. */
     var skippedUpdate: String get() = s("skipped_update", ""); set(v) = sp.edit().putString("skipped_update", v).apply()
+    /** Spots handed to the mail app but not confirmed sent: comma-joined ids, or "" when none. Survives the app being killed. */
+    var askSentFor: String get() = s("ask_sent_for", ""); set(v) = sp.edit().putString("ask_sent_for", v).apply()
+    /** Which handoff waits on the "did the email go out?" answer: "trip", "single", "again", or "". */
+    var askSentKind: String get() = s("ask_sent_kind", ""); set(v) = sp.edit().putString("ask_sent_kind", v).apply()
+    /** A re-reported spot's pre-send snapshot: id|reportNo|reportTs|sentTs|outcome|outcomeTs, or "" when none. */
+    var askAgain: String get() = s("ask_again", ""); set(v) = sp.edit().putString("ask_again", v).apply()
+    /** Folder the owner picked for automatic backups (persistable tree URI); "" when auto backup is off. */
+    var backupFolder: String get() = s("backup_folder", ""); set(v) = sp.edit().putString("backup_folder", v).apply()
+    /** Time of the last automatic backup that wrote, 0 when none. */
+    var lastBackupTs: Long get() = l("last_backup", 0L); set(v) = sp.edit().putLong("last_backup", v).apply()
     var autoStart: Boolean get() = b("autostart", false); set(v) = sp.edit().putBoolean("autostart", v).apply()
     var carAddress: String get() = s("car_addr", ""); set(v) = sp.edit().putString("car_addr", v).apply()
     var carName: String get() = s("car_name", ""); set(v) = sp.edit().putString("car_name", v).apply()

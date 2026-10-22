@@ -34,7 +34,14 @@ The email never includes the vehicle's speed, hit strength, or hit counts. Do no
 
 - The Garden State Parkway and the New Jersey Turnpike belong to the New Jersey Turnpike Authority: https://www.njta.gov/contact-us/ (maintenance line 833-GSP-4AID for the Parkway, 833-TPK-4AID for the Turnpike, or info@njta.com).
 - A county road belongs to the county: look for the county's public works or road department.
+- A state road, highway, or interstate belongs to NJDOT. File through the NJDOT online portal: keep the report under 200 characters, draft it first and paste it in because the session times out after about 8 minutes, and expect no reference number - save a copy of what you submitted.
+- If NJDOT answers that the road is not theirs, re-file with the township or county their answer names.
 - Whatever the email's town guess says, verify who really owns the road before filing.
+
+## Where to file in New York City
+
+- A street defect goes to NYC DOT through their online contact form.
+- A pothole on a highway goes through 311, under the highway pothole category.
 
 ## Before you act
 

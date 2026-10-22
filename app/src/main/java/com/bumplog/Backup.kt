@@ -83,6 +83,20 @@ object Backup {
         }
     }
 
+    /** Writes the full backup zip into the auto-backup folder the owner picked. False when no folder is set or the write fails. */
+    fun autoSave(ctx: Context): Boolean {
+        val tree = Prefs.backupFolder
+        if (tree.isBlank()) return false
+        return try {
+            val treeUri = android.net.Uri.parse(tree)
+            val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri))
+            val created = android.provider.DocumentsContract.createDocument(ctx.contentResolver, docUri, "application/zip", fileName("zip")) ?: return false
+            val ok = ctx.contentResolver.openOutputStream(created, "wt")?.use { writeZip(ctx, it); true } ?: false
+            if (ok) Prefs.lastBackupTs = System.currentTimeMillis()
+            ok
+        } catch (e: Exception) { false }
+    }
+
     /** Builds the zip in the cache and returns a share sheet for it. */
     fun shareIntent(ctx: Context): Intent {
         val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }

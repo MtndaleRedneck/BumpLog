@@ -63,6 +63,7 @@ class MainActivity : ComponentActivity() {
     private var pendingTrip by mutableStateOf(0L)
     private var guideOffer by mutableStateOf(false)
     private var confirmFixed by mutableStateOf<Long?>(null)
+    private var askSent by mutableStateOf<List<Long>?>(null)
     private var updateUi by mutableStateOf<UpdateUi?>(null)
     private var updateReady: java.io.File? = null
     private var updateJob: kotlinx.coroutines.Job? = null
@@ -119,6 +120,9 @@ class MainActivity : ComponentActivity() {
         if (permsOk && Prefs.detectionEnabled && !Live.state.value.running) try { DriveService.start(this) } catch (e: Exception) { }
         // Back from the "Install unknown apps" screen with the file already downloaded and checked: carry on to the installer.
         updateReady?.let { f -> if (packageManager.canRequestPackageInstalls()) { updateReady = null; launchInstaller(f) } }
+        // Back from the mail app: ask once whether the handed-off email really went.
+        if (askSent == null && Prefs.askSentFor.isNotBlank())
+            askSent = Prefs.askSentFor.split(",").mapNotNull { it.toLongOrNull() }.takeIf { it.isNotEmpty() }
     }
     override fun onDestroy() { updateJob?.cancel(); super.onDestroy() }
 
@@ -136,7 +140,8 @@ class MainActivity : ComponentActivity() {
                 if (manual) toast(this@MainActivity, "Couldn't check for updates right now.")
                 return@launch
             }
-            if (Live.state.value.running && !manual) return@launch
+            val st = Live.state.value
+            if (st.running && st.gps && st.speedMph >= Prefs.minSpeedMph && !manual) return@launch
             if (info == null) { if (manual) toast(this@MainActivity, "You're up to date."); return@launch }
             if (!manual && info.versionName == Prefs.skippedUpdate) return@launch
             updateUi = UpdateUi.Offer(info)
@@ -263,7 +268,7 @@ class MainActivity : ComponentActivity() {
         val list = Db.get(this).tripSpots(driveId)
         if (list.isEmpty()) toast(this, "No confirmed reports left to send.")
         else if (handOffMail(this, Reports.reportsMail(this, list))) {
-            val now = System.currentTimeMillis(); list.forEach { Db.get(this).markSent(it.id, now) }; Live.bump()
+            Prefs.askSentFor = list.joinToString(",") { it.id.toString() }; Prefs.askSentKind = "trip"
         }
     }
 
@@ -291,6 +296,24 @@ class MainActivity : ComponentActivity() {
                 text = { Text("${sp.title}. No impact was detected there on recent passes. Marking it fixed stops warnings for it. You can restore it any time from its screen.") },
                 confirmButton = { TextButton({ Db.get(this@MainActivity).markFixed(id, System.currentTimeMillis()); Notifier.cancel(this@MainActivity, "fixed", id.toInt()); confirmFixed = null; Celebrate.trigger(); Live.bump() }) { Text("Mark fixed") } },
                 dismissButton = { TextButton({ confirmFixed = null }) { Text("Not yet") } },
+            )
+        }
+        askSent?.let { ids ->
+            AlertDialog(
+                onDismissRequest = { askSent = null },
+                title = { Text("Did the email go out?") },
+                text = { Text(if (ids.size == 1) "The report went to your mail app. If it wasn't sent, it stays in the queue for the next try." else "The ${ids.size} reports went to your mail app. If they weren't sent, they stay in the queue for the next try.") },
+                confirmButton = { TextButton({
+                    val now = System.currentTimeMillis(); val db = Db.get(this@MainActivity); ids.forEach { db.markSent(it, now) }
+                    if (Prefs.askSentKind == "trip") ioScope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Backup.autoSave(this@MainActivity) } }
+                    Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; askSent = null; Live.bump()
+                }) { Text("Yes, sent") } },
+                dismissButton = { TextButton({
+                    if (Prefs.askSentKind == "again") Prefs.askAgain.split("|").let { p ->
+                        if (p.size == 6) Db.get(this@MainActivity).unReportAgain(p[0].toLong(), p[1].toInt(), p[2].toLong(), p[3].toLong(), p[4], p[5].toLong())
+                    }
+                    Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; askSent = null; Live.bump()
+                }) { Text("Not yet") } },
             )
         }
         updateUi?.let { u ->

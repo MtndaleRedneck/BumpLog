@@ -114,7 +114,11 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
                 val db = Db.get(ctx)
                 val next = db.counterNext()
                 val draft = s.copy(reportNo = next, reportTs = now)
-                if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(draft)))) { db.reportAgain(s.id, now); Live.bump() }
+                if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(draft)))) {
+                    Prefs.askAgain = listOf(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs).joinToString("|")
+                    Prefs.askSentFor = s.id.toString(); Prefs.askSentKind = "again"
+                    db.reportAgain(s.id, now); Live.bump()
+                }
             }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                 Txt("Report again", 16, FontWeight.Bold, p.onAccent)
             }
