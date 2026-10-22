@@ -32,6 +32,7 @@ object Notifier {
     const val ID_CAR = 3
     const val ID_DAMAGE = 5
     const val ID_AUTO_OFF = 6
+    const val ID_LOGGING_STOPPED = 8
     const val ID_PASSENGER = 7
     private val main = Handler(Looper.getMainLooper())
     private var overlayView: View? = null
@@ -206,6 +207,13 @@ object Notifier {
             .setSmallIcon(R.drawable.ic_stat).setContentTitle("Car disconnected")
             .setContentText("Stop logging? It keeps running until you stop it.")
             .addAction(0, "Stop logging", action(ctx, ActionReceiver.STOP))
+            .setAutoCancel(true).setContentIntent(openApp(ctx)).build())
+    }
+
+    fun loggingStopped(ctx: Context) {
+        ctx.getSystemService(NotificationManager::class.java).notify(ID_LOGGING_STOPPED, NotificationCompat.Builder(ctx, CH_ALERT)
+            .setSmallIcon(R.drawable.ic_stat).setContentTitle("Logging stopped")
+            .setContentText("Logging stopped. Tap to turn it back on.")
             .setAutoCancel(true).setContentIntent(openApp(ctx)).build())
     }
 
