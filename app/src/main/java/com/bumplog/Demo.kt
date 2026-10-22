@@ -6,6 +6,8 @@ import android.content.Context
 object Demo {
     fun seed(ctx: Context) {
         val db = Db.get(ctx)
+        // Screenshots always start clean: no leftover "did the email go out?" ask from an earlier capture.
+        Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""
         if (db.allSpots().isNotEmpty()) return
         val now = System.currentTimeMillis()
         var drive = now - 3_600_000
@@ -25,8 +27,8 @@ object Demo {
         drive = now - 3_600_000
         add("Example Ave", 26, 0.94f, 38f, DefectType.POTHOLE, 39.5000, -98.3500, "CONFIRMED")
         add("Sample Rd", 31, 0.71f, 41f, DefectType.POTHOLE, 39.5100, -98.3300)
-        add("Demo Hwy 1", 48, 1.34f, 55f, DefectType.FAULTING, 39.5300, -98.3700).also { s -> db.setWarn(s.id, true); repeat(4) { db.addSave(s.id) } }
-        add("Test Blvd", 70, 0.83f, 29f, DefectType.RUMBLE, 39.4900, -98.3400).also { s -> db.setWarn(s.id, true); repeat(2) { db.addSave(s.id) } }
+        add("Demo Hwy 1", 48, 1.34f, 55f, DefectType.FAULTING, 39.5300, -98.3700).also { s -> db.setWarn(s.id, true); db.setType(s.id, DefectType.FAULTING); repeat(4) { db.addSave(s.id) } }
+        add("Test Blvd", 70, 0.83f, 29f, DefectType.RUMBLE, 39.4900, -98.3400).also { s -> db.setWarn(s.id, true); db.setType(s.id, DefectType.RUMBLE); repeat(2) { db.addSave(s.id) } }
         Prefs.lastDriveId = drive
         db.addDamage(db.hits(1).first().id, 0, "Tire", "Demo", now)
     }
