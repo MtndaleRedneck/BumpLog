@@ -181,7 +181,9 @@ class DriveService : Service(), SensorEventListener, LocationListener {
      * before the hit, or a walk that lands too far away all fall back to the fix as-is, marked low-confidence. */
     private fun settleHit(ev: HitEvent, l0: Location) {
         // Take the entry out under the lock: a fix that arrives after the fallback fired must not record the hit twice.
-        val prev = synchronized(pendingHits) { pendingHits.firstOrNull { it.ev === ev }?.also { pendingHits.remove(it) }?.prev } ?: return
+        // The entry's prev fix is null at a drive's first fix - that must not drop the hit.
+        val pending = synchronized(pendingHits) { pendingHits.firstOrNull { it.ev === ev }?.also { pendingHits.remove(it) } } ?: return
+        val prev = pending.prev
         val ageS = ((ev.startMs - l0.elapsedRealtimeNanos / 1_000_000) / 1000.0).coerceIn(0.0, 4.0)
         val speed = mph(l0)
         var lat = l0.latitude; var lon = l0.longitude; var lowConf = false
