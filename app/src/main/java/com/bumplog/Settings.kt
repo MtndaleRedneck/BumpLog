@@ -380,6 +380,19 @@ private fun BackupCards() {
         }
         Spacer(Modifier.height(8.dp))
         SmallButton("Restore from backup", Modifier.fillMaxWidth()) { restore.launch(arrayOf("application/zip", "application/x-zip-compressed", "text/*", "application/octet-stream")) }
+        Spacer(Modifier.height(10.dp))
+        var folderSet by remember { mutableStateOf(Prefs.backupFolder.isNotBlank()) }
+        val pickFolder = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (uri != null) {
+                ctx.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+                Prefs.backupFolder = uri.toString(); folderSet = true
+            }
+        }
+        if (!folderSet) SmallButton("Turn on auto backup", Modifier.fillMaxWidth()) { pickFolder.launch(null) }
+        else {
+            Muted("Auto backup is on: the full backup saves to your folder weekly and after each trip email.", 12)
+            if (Prefs.lastBackupTs > 0) Muted("Last backup: " + java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(Prefs.lastBackupTs)), 12)
+        }
     }
     Card(pad = 16.dp) {
         Txt("Spreadsheet CSV", 18, FontWeight.Bold)
