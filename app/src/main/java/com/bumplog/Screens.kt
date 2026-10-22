@@ -524,10 +524,9 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
 fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     val p = LocalPal.current
     var sc by remember { mutableStateOf<Db.Score?>(null) }
-    var top by remember { mutableStateOf(listOf<Spot>()) }
     var big by remember { mutableStateOf<Pair<Hit, Spot>?>(null) }
     var byType by remember { mutableStateOf(listOf<Pair<DefectType?, Int>>()) }
-    LoadingSpots(tick) { db -> sc = db.score(); top = db.topSaves(); byType = db.savesByType(); big = db.largestImpact() }
+    LoadingSpots(tick) { db -> sc = db.score(); byType = db.savesByType(); big = db.largestImpact() }
     val s = sc ?: return
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val viewH = maxHeight
@@ -568,16 +567,6 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
             byType.sortedByDescending { it.second }.forEach { (t, n) ->
                 val name = t?.avoidedName ?: "Other (type not confirmed)"
                 Row(Modifier.fillMaxWidth().padding(top = 6.dp)) { Txt(name, 16, modifier = Modifier.weight(1f)); Txt("$n", 16, FontWeight.Bold) }
-            }
-        }
-        if (top.isNotEmpty()) {
-            Txt("Most avoided", 20, FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
-            top.forEach { sp ->
-                val what = if (!sp.typeUser) "road defect" else sp.type.spoken
-                Card(Modifier.clickable { openSpot(sp.id) }, pad = 14.dp) { Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) { Txt("Most avoided $what", 16); Muted(sp.title, 13) }
-                    Txt(if (sp.saves == 1) "1 time" else "${sp.saves} times", 16, FontWeight.Bold)
-                } }
             }
         }
     }    }
