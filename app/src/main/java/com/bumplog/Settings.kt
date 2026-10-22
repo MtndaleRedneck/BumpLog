@@ -324,8 +324,8 @@ fun SetupScreen(done: () -> Unit) {
 internal fun runIo(ctx: Context, after: () -> Unit = {}, work: () -> String) {
     val h = android.os.Handler(android.os.Looper.getMainLooper())
     Thread {
-        val msg = try { work() } catch (e: Exception) { "That did not work: ${e.message ?: "unknown error"}" }
-        h.post { android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show(); after(); Live.bump() }
+        val msg = try { work() } catch (e: Exception) { "That didn't work. Try again." }
+        h.post { if (msg.isNotBlank()) android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show(); after(); Live.bump() }
     }.start()
 }
 
@@ -356,7 +356,7 @@ private fun BackupCards() {
                     val r = Backup.restoreZip(ctx, i)
                     if (r == null) "That file is not a BumpLog backup."
                     else "Restored ${r.spots} spot(s), ${r.hits} hit(s), ${r.damages} damage report(s), ${r.photos} photo(s) and ${r.settings} setting(s)." +
-                        (if (r.skipped > 0) " Skipped ${r.skipped} already here or unreadable." else "") + " Reopen BumpLog if the look or sound settings seem unchanged."
+                        (if (r.skipped > 0) " Skipped ${r.skipped} already here or unreadable." else "")
                 } else {
                     val b = i.readNBytes(1_000_001)
                     if (b.size > 1_000_000) "That file is over 1 MB, so it was not imported."

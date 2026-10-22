@@ -56,7 +56,7 @@ fun Muted(s: String, size: Int = 13, modifier: Modifier = Modifier, align: TextA
 fun BigButton(label: String, icon: ImageVector? = null, filled: Boolean = true, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
     val p = LocalPal.current
     val shape = RoundedCornerShape(32.dp)
-    val m = modifier.fillMaxWidth().height(60.dp).clip(shape)
+    val m = modifier.fillMaxWidth().heightIn(min = 60.dp).clip(shape)
         .let { if (filled) it.background(if (enabled) p.accent else p.card2) else it.background(p.card2).border(BorderStroke(2.dp, p.accent), shape) }
         .clickable(enabled = enabled, onClick = onClick)
     Row(m, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
@@ -69,7 +69,7 @@ fun BigButton(label: String, icon: ImageVector? = null, filled: Boolean = true, 
 fun SmallButton(label: String, modifier: Modifier = Modifier, outline: Boolean = true, onClick: () -> Unit) {
     val p = LocalPal.current
     val shape = RoundedCornerShape(26.dp)
-    Box(modifier.height(52.dp).clip(shape).background(if (outline) p.card2 else p.accent)
+    Box(modifier.heightIn(min = 52.dp).clip(shape).background(if (outline) p.card2 else p.accent)
         .let { if (outline) it.border(BorderStroke(2.dp, p.accent), shape) else it }.clickable(onClick = onClick),
         contentAlignment = Alignment.Center) {
         Txt(label, 16, FontWeight.Bold, if (outline) p.text else p.onAccent)

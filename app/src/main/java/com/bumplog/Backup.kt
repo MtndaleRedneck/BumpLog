@@ -85,7 +85,9 @@ object Backup {
 
     /** Builds the zip in the cache and returns a share sheet for it. */
     fun shareIntent(ctx: Context): Intent {
-        val f = File(File(ctx.cacheDir, "exports").apply { mkdirs() }, fileName("zip"))
+        val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }
+        dir.listFiles()?.forEach { it.delete() }
+        val f = File(dir, fileName("zip"))
         f.outputStream().use { writeZip(ctx, it) }
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
         return Intent.createChooser(Intent(Intent.ACTION_SEND).apply {

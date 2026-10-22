@@ -180,7 +180,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
             Tile(homeHardestHitLabel(live.running), "%.2f".format(live.hardestHitG), "g", Modifier.weight(1f))
         }
         Box(Modifier.padding(top = extraAct)) { ActionButtonPair("Report last hit", Icons.Default.Warning, {
-            val s = recent.firstOrNull(); if (s == null) toast(ctx, "No hits logged yet.") else openSpot(s.id)
+            val s = Db.get(ctx).reportableSpots(1).firstOrNull(); if (s == null) toast(ctx, "No hits logged yet.") else openSpot(s.id)
         }, "File a damage report", openDamage) }
       }
     }
@@ -207,7 +207,7 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit, onConfirmed: () -> 
         Txt("%.2fg".format(spot.maxG), 76, FontWeight.Bold)
         Muted("${spot.title}  -  ${spot.speedMph.toInt()} mph", 17)
         Spacer(Modifier.height(14.dp))
-        Chip("Audio alert played", p.muted)
+        if (Prefs.audioMode != "OFF") Chip("Audio alert played", p.muted)
         Spacer(Modifier.height(20.dp))
         Txt("Real road defect?", 20, FontWeight.Bold, p.muted)
         Spacer(Modifier.height(14.dp))
@@ -294,7 +294,7 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
         val (cur, older) = allHits.partition { it.first.driveId == lastDrive }
         if (live.running || lastDrive > 0) {
             Muted(if (live.running) "THIS DRIVE" else "LAST DRIVE", 14, Modifier.padding(start = 4.dp, top = 6.dp).asHeading())
-            if (cur.isEmpty()) Muted(if (live.running) "No hits yet. Start a drive and they show up here." else "No hits in your last drive.", 14, Modifier.padding(start = 4.dp))
+            if (cur.isEmpty()) Muted(if (live.running) "No hits yet this drive." else "No hits in your last drive.", 14, Modifier.padding(start = 4.dp))
         }
         cur.forEach { (h, sp) -> ReviewHitRow(h, sp, snack) { openSpot(sp.id) } }
         if (older.isNotEmpty()) Muted("OLDER HITS", 14, Modifier.padding(start = 4.dp, top = 6.dp).asHeading())
@@ -462,11 +462,11 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
         return d
     }
     Column(Modifier.fillMaxSize().pane("File damage report").verticalScroll(ScrollMemory.get("Damage:$preSpot")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Muted("Pick the impact that hurt your car. Your assistant works out where the claim should go.", 14, Modifier.asHeading())
-        if (hits.isEmpty()) Muted("No impacts logged yet.")
+        Muted("Pick the hit that hurt your car. Your assistant works out where the claim should go.", 14, Modifier.asHeading())
+        if (hits.isEmpty()) Muted("No hits logged yet")
         if (recent.isNotEmpty()) { Txt("Last 20 minutes", 16, FontWeight.Bold); recent.forEach { hitRow(it) } }
-        else if (hits.isNotEmpty()) Muted("Nothing in the last 20 minutes. Earlier impacts:", 13)
-        if (earlier.isNotEmpty() && (recent.isEmpty() || true)) { if (recent.isNotEmpty()) Txt("Earlier", 16, FontWeight.Bold); earlier.forEach { hitRow(it) } }
+        else if (hits.isNotEmpty()) Muted("Nothing in the last 20 minutes. Earlier hits:", 13)
+        if (earlier.isNotEmpty()) { if (recent.isNotEmpty()) Txt("Earlier", 16, FontWeight.Bold); earlier.forEach { hitRow(it) } }
         Dropdown("What was damaged", cat, listOf("Tire", "Wheel or rim", "Suspension", "Alignment", "Body or undercarriage", "Other").map { it to it }) { cat = it }
         OutlinedTextField(note, { note = it }, label = { Text("Notes (optional)") }, modifier = Modifier.fillMaxWidth(),
             colors = OutlinedTextFieldDefaults.colors(focusedBorderColor = p.accent, unfocusedBorderColor = p.card2, focusedTextColor = p.text, unfocusedTextColor = p.text, cursorColor = p.accent))
@@ -574,8 +574,8 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
             Txt("Most avoided", 20, FontWeight.Bold, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
             top.forEach { sp ->
                 val what = if (!sp.typeUser) "road defect" else sp.type.spoken
-                Card(pad = 14.dp) { Row(verticalAlignment = Alignment.CenterVertically) {
-                    Txt("Most avoided $what", 16, modifier = Modifier.weight(1f))
+                Card(Modifier.clickable { openSpot(sp.id) }, pad = 14.dp) { Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) { Txt("Most avoided $what", 16); Muted(sp.title, 13) }
                     Txt(if (sp.saves == 1) "1 time" else "${sp.saves} times", 16, FontWeight.Bold)
                 } }
             }
