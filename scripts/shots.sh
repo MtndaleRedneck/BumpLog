@@ -48,10 +48,12 @@ shot v12-scorecard --es screen score
 shot v12-settings --es screen settings
 shot v16-reported --ez demo true --es screen reported
 shot v16-stats --es screen stats
-shot v16-askmail --ez demo true --es screen home --ez askmail true
-shot v16-logstop-base --es screen home --ez logstop true
-adb shell cmd statusbar expand-notifications; sleep 2; adb exec-out screencap -p > $OUT/v16-logstop.png
-adb shell cmd statusbar collapse
+adb shell input swipe 540 1800 540 600 400; sleep 1; adb exec-out screencap -p > $OUT/v16-stats-most.png
+shot v16-logstop-base --ez demo true --es screen home --ez logstop true
+sleep 1
+adb shell input swipe 540 0 540 900 300; sleep 2; adb exec-out screencap -p > $OUT/v16-logstop.png
+adb shell input swipe 540 1400 540 400 300
 rm -f $OUT/v16-logstop-base.png
 scroll_to "auto backup" v16-backup
+shot v16-askmail --ez demo true --es screen home --ez askmail true
 ls -la $OUT
