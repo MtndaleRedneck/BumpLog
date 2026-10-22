@@ -13,8 +13,8 @@ android {
         applicationId = "com.bumplog"
         minSdk = 31
         targetSdk = 34
-        versionCode = 21
-        versionName = "1.16.0"
+        versionCode = 22
+        versionName = "1.16.1"
         // Pins the assistant-guide link in report emails to the exact commit CI built from.
         buildConfigField("String", "GUIDE_REF", "\"${System.getenv("GITHUB_SHA") ?: "v$versionName"}\"")
     }

@@ -1,3 +1,7 @@
+BumpLog 1.16.1
+
+- Fix the setup email (and damage reports without photos) opening in the mail app with an empty subject and message
+
 BumpLog 1.16.0
 
 - A report now counts as sent only after you say the email went out. After the mail app opens, BumpLog asks "Did the email go out?" - "Not yet" keeps the report in the queue.
