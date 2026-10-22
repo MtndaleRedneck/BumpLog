@@ -5,6 +5,9 @@ APK=app/build/outputs/apk/debug/app-debug.apk
 OUT=docs/screenshots
 mkdir -p $OUT
 adb shell settings put global hide_error_dialogs 1
+# Match the primary tester's phone (1440x3088 @ ~649dpi, Galaxy S22 Ultra class)
+adb shell wm size 1440x3088
+adb shell wm density 649
 adb install -r $APK
 for p in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION POST_NOTIFICATIONS BLUETOOTH_CONNECT; do adb shell pm grant com.bumplog android.permission.$p; done
 shot() { adb shell am force-stop com.bumplog; sleep 1; adb shell am start -n com.bumplog/.MainActivity "${@:2}"; sleep 5; adb exec-out screencap -p > $OUT/$1.png; }
@@ -56,3 +59,5 @@ adb shell am start -n com.bumplog/.MainActivity --es screen settings; sleep 3
 scroll_to "auto backup" v16-backup
 shot v16-askmail --ez demo true --es screen home --ez askmail true
 ls -la $OUT
+adb shell wm size reset
+adb shell wm density reset
