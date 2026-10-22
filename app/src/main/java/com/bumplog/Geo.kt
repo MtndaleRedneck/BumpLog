@@ -29,6 +29,16 @@ object Geo {
         return if (d > 180) 360 - d else d
     }
 
+    /** Moves a point [d] metres along [brg] degrees. */
+    fun offset(lat: Double, lon: Double, brg: Double, d: Double): Pair<Double, Double> {
+        val r = 6371000.0
+        val dr = d / r; val b = Math.toRadians(brg)
+        val p1 = Math.toRadians(lat); val l1 = Math.toRadians(lon)
+        val p2 = asin(sin(p1) * cos(dr) + cos(p1) * sin(dr) * cos(b))
+        val l2 = l1 + atan2(sin(b) * sin(dr) * cos(p1), cos(dr) - sin(p1) * sin(p2))
+        return Math.toDegrees(p2) to Math.toDegrees(l2)
+    }
+
     /** Lateral (sideways) offset in meters of point P from the line through A heading `heading`. */
     fun lateralOffset(aLat: Double, aLon: Double, heading: Double, pLat: Double, pLon: Double): Double {
         val d = distance(aLat, aLon, pLat, pLon)
