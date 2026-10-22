@@ -181,9 +181,17 @@ object Reports {
         }
     }
 
+    /** RFC 6068 mailto: subject and body ride in the query, because Gmail ignores the
+     *  intent extras once the URI carries an address (the 1.16.0 empty-subject bug). */
+    internal fun mailtoUri(to: String, subject: String, body: String): String =
+        "mailto:" + encMail(to) + "?subject=" + encMail(subject) + "&body=" + encMail(body)
+
+    /** %20, not +: RFC 6068 hfields are not HTML form fields. */
+    internal fun encMail(s: String): String = java.net.URLEncoder.encode(s, "UTF-8").replace("+", "%20")
+
     private fun mail(to: String, subject: String, body: String): Intent =
         Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:" + Uri.encode(to))
+            data = Uri.parse(mailtoUri(to, subject, body))
             putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
             putExtra(Intent.EXTRA_SUBJECT, subject)
             putExtra(Intent.EXTRA_TEXT, body)

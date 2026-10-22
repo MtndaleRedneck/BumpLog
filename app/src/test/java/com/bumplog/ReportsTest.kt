@@ -10,6 +10,17 @@ import java.text.SimpleDateFormat
 import java.util.Locale
 
 class ReportsTest {
+    @Test fun mailtoUriCarriesToSubjectAndBody() {
+        val uri = Reports.mailtoUri("a.b@example.com", "BumpLog setup: please check with me", "line one\nline two & more")
+        assertTrue(uri.startsWith("mailto:a.b%40example.com?subject="))
+        assertTrue(uri.contains("subject=BumpLog%20setup%3A%20please%20check%20with%20me"))
+        assertTrue(uri.contains("&body=line%20one%0Aline%20two%20%26%20more"))
+        // Decodes back to exactly the subject and body handed over.
+        val q = uri.substringAfter('?').split('&').associate { it.substringBefore('=') to java.net.URLDecoder.decode(it.substringAfter('='), "UTF-8") }
+        assertEquals("BumpLog setup: please check with me", q["subject"])
+        assertEquals("line one\nline two & more", q["body"])
+    }
+
     private val ts = SimpleDateFormat("yyyy-MM-dd", Locale.US).parse("2026-10-19")!!.time
     private val spot = Spot(1, "BL-20261019-A3KQ", 40.7128, -74.006, 90.0, DefectType.POTHOLE, false, 1.85f, 3, 47f,
         ts, ts, 1, "CONFIRMED", true, "NONE", 0, "Main Street", 0,
