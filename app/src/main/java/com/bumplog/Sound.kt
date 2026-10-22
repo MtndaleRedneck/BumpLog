@@ -2,13 +2,17 @@ package com.bumplog
 
 import android.content.Context
 import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioFormat
 import android.media.AudioManager
+import android.media.AudioTrack
 import android.media.RingtoneManager
-import android.media.ToneGenerator
 import android.os.Handler
 import android.os.Looper
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.speech.tts.Voice
+import kotlin.math.sin
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -26,6 +30,11 @@ object Sound {
     private val attrs = AudioAttributes.Builder()
         .setUsage(AudioAttributes.USAGE_ASSISTANCE_NAVIGATION_GUIDANCE)
         .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION).build()
+
+    // A short duck asks music to dip while an alert plays, like navigation guidance.
+    private val focus by lazy { AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs).build() }
+    private fun duck(ctx: Context) = ctx.getSystemService(AudioManager::class.java).requestAudioFocus(focus)
+    private fun unduck(ctx: Context) = ctx.getSystemService(AudioManager::class.java).abandonAudioFocusRequest(focus)
 
     val tones = listOf("CHIME" to "Chime", "ALARM" to "Alarm", "BEEP" to "Beep", "DOUBLE" to "Double beep")
     val modes = listOf("BOTH" to "Tone and voice", "TONE" to "Tone only", "VOICE" to "Voice only", "OFF" to "Off")
@@ -86,7 +95,7 @@ object Sound {
     fun isNatural(voice: String) = naturalVoices.any { it.first == voice }
 
     /** Plays the built-in clip for [key] in a natural voice. Returns false when it can't, so the caller falls back to speech. */
-    fun playNatural(ctx: Context, voice: String, key: String): Boolean {
+    fun playNatural(ctx: Context, voice: String, key: String, onDone: () -> Unit = {}): Boolean {
         if (!isNatural(voice)) return false
         var mp: android.media.MediaPlayer? = null
         return try {
@@ -97,7 +106,7 @@ object Sound {
             afd.use { p.setDataSource(it.fileDescriptor, it.startOffset, it.length) }
             p.prepare()
             stopClip()
-            p.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null }
+            p.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null; onDone() }
             p.start(); clipPlayer = p
             android.util.Log.d("BumpLog", "natural clip played: $voice $key ${p.duration}ms")
             true
@@ -142,7 +151,7 @@ object Sound {
     private var clipPlayer: android.media.MediaPlayer? = null
 
     /** Plays the user's own recording for [key]. Returns false when there is none, so the caller can fall back to speech. */
-    fun playClip(ctx: Context, key: String): Boolean {
+    fun playClip(ctx: Context, key: String, onDone: () -> Unit = {}): Boolean {
         if (!hasClip(ctx, key)) return false
         var mp: android.media.MediaPlayer? = null
         return try {
@@ -152,7 +161,7 @@ object Sound {
             p.setDataSource(clipFile(ctx, key).absolutePath)
             p.prepare()
             stopClip()
-            p.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null }
+            p.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null; onDone() }
             p.start(); clipPlayer = p; true
         } catch (e: Exception) { try { mp?.release() } catch (x: Exception) { }; false }
     }
@@ -212,34 +221,65 @@ object Sound {
     private fun playPhrase(ctx: Context, phrase: String, urgent: Boolean, key: String) {
         val mode = Prefs.audioMode
         if (mode == "OFF") return
+        duck(ctx)
+        var done = false
+        val finish = { if (!done) { done = true; unduck(ctx) } }
         if (mode == "BOTH" || mode == "TONE") tone(ctx, urgent)
         if (mode == "BOTH" || mode == "VOICE") {
             init(ctx)
-            main.postDelayed({ if (!((Prefs.voice == CUSTOM && playClip(ctx, key)) || playNatural(ctx, Prefs.voice, key))) speak(phrase) }, if (mode == "BOTH") 700 else 0)
-        }
+            // The voice starts once the tone has had its moment: Chime and Alarm ring 2.5 s, the beeps are short.
+            val delay = if (mode != "BOTH") 0L else if (Prefs.tone == "CHIME" || Prefs.tone == "ALARM") 1500L else 700L
+            main.postDelayed({
+                val played = (Prefs.voice == CUSTOM && playClip(ctx, key, finish)) || playNatural(ctx, Prefs.voice, key, finish)
+                if (!played && !speak(phrase, finish)) finish()
+            }, delay)
+        } else main.postDelayed({ finish() }, 3000) // tone only: hold the duck until it has played out
     }
 
-    private fun speak(phrase: String) {
-        val t = tts ?: return
-        if (!ttsReady) return
+    private fun speak(phrase: String, onDone: () -> Unit = {}): Boolean {
+        val t = tts ?: return false
+        if (!ttsReady) return false
         applyVoice(t, Prefs.voice)
+        t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+            override fun onStart(id: String?) {}
+            override fun onDone(id: String?) { onDone() }
+            @Deprecated("Deprecated in Java") override fun onError(id: String?) { onDone() }
+        })
         t.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "bumplog")
+        return true
     }
 
     private fun tone(ctx: Context, urgent: Boolean) {
         when (Prefs.tone) {
-            "BEEP" -> beep(ToneGenerator.TONE_PROP_BEEP2, 400)
-            "DOUBLE" -> beep(ToneGenerator.TONE_PROP_PROMPT, 500)
+            "BEEP" -> beep(400)
+            "DOUBLE" -> beep(200, second = true)
             "ALARM" -> ring(ctx, RingtoneManager.TYPE_ALARM)
             else -> ring(ctx, RingtoneManager.TYPE_NOTIFICATION)
         }
     }
 
-    private fun beep(tone: Int, ms: Int) {
+    /** One or two short sine beeps through the same navigation-guidance channel as the other alerts. */
+    private fun beep(ms: Int, second: Boolean = false) {
         try {
-            val g = ToneGenerator(AudioManager.STREAM_MUSIC, 100)
-            g.startTone(tone, ms)
-            main.postDelayed({ g.release() }, ms + 300L)
+            val rate = 22050
+            val gapMs = if (second) 100 else 0
+            val total = ms + gapMs + (if (second) ms else 0)
+            val n = rate * total / 1000
+            val buf = ShortArray(n)
+            for (i in 0 until n) {
+                val tMs = i * 1000L / rate
+                val on = tMs < ms || (second && tMs >= ms + gapMs)
+                buf[i] = if (on) (sin(2 * Math.PI * 880.0 * i / rate) * Short.MAX_VALUE * 0.6).toInt().toShort() else 0
+            }
+            val track = AudioTrack.Builder()
+                .setAudioAttributes(attrs)
+                .setAudioFormat(AudioFormat.Builder().setSampleRate(rate).setEncoding(AudioFormat.ENCODING_PCM_16BIT).setChannelMask(AudioFormat.CHANNEL_OUT_MONO).build())
+                .setBufferSizeInBytes(n * 2)
+                .setTransferMode(AudioTrack.MODE_STATIC)
+                .build()
+            track.write(buf, 0, n)
+            track.play()
+            main.postDelayed({ try { track.stop(); track.release() } catch (e: Exception) { } }, total + 300L)
         } catch (e: Exception) { }
     }
 
