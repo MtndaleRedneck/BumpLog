@@ -397,7 +397,7 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
         }
         if (TripReportPolicy.canSendNow(spot, Live.state.value.running, Live.state.value.driveId))
             BigButton("Send this report", Icons.Default.Send, filled = false) {
-                if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(spot)))) { db.markSent(spot.id, System.currentTimeMillis()); Live.bump() }
+                if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(spot)))) { Prefs.askSentFor = spot.id.toString(); Prefs.askSentKind = "single"; Live.bump() }
             }
         if (spot.review == "DISMISSED" || spot.review == "FIXED")
             BigButton("Restore this spot", Icons.Default.Check, filled = false) { db.setReview(spot.id, "PENDING"); db.setWarn(spot.id, spot.severe); db.update(spot.id, "fixed_after_report" to false, "fixed_ts" to 0L); Live.bump() }

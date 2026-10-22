@@ -280,6 +280,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     fun reportAgain(id: Long, now: Long) = update(id,
         "report_no" to takeReportNo(), "report_ts" to now, "sent_ts" to now,
         "report_outcome" to "NONE", "outcome_ts" to 0)
+    /** Undoes a report-again whose email never went out: the old number, times and outcome come back. */
+    fun unReportAgain(id: Long, reportNo: Int, reportTs: Long, sentTs: Long, outcome: String, outcomeTs: Long) =
+        update(id, "report_no" to reportNo, "report_ts" to reportTs, "sent_ts" to sentTs, "report_outcome" to outcome, "outcome_ts" to outcomeTs)
     /** Restores spots and hits from a BumpLog CSV export. Old codes (BL-/BD-/PS-, strictly checked) and the running
      * numbers are kept; IDs already here are skipped. Both the old 12-column layout and the current one with
      * report_no, town and county load. The shared counter ends up past every number the file used and past the

@@ -33,6 +33,6 @@ Also: running report numbers assigned at confirm, CSV export and import (1 MB li
 3. Open BumpLog and follow the setup: add your assistant address, send the setup email so the assistant knows what to do, allow location (choose **Allow all the time**), notifications, and Bluetooth only if you want the car prompts.
 4. Tap **Battery setup** in Settings. On Samsung phones also add the app to Settings > Battery > Background usage limits > Never sleeping apps, or One UI can stop it mid-drive.
 
-Release APKs are built by GitHub Actions and signed with a private key held in encrypted repository secrets. The key is not in this repo. If you build the app yourself, your build is signed with your own key and will not install over a release APK. Needs Android 12 or newer.
+Release APKs are built by GitHub Actions and signed with a private key held in encrypted repository secrets. The key is not in this repo. If you build the app yourself, your build is signed with your own key and will not install over a release APK.
 
 More detail on screens, filing, privacy, known limits, and building is in [docs/details.md](docs/details.md).

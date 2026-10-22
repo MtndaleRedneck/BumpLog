@@ -13,5 +13,3 @@ BumpLog 1.15.0
 - Long Review lists get a floating Top button that jumps back to the start.
 - Every screen now remembers where you scrolled to when you leave and come back.
 - A reported (greyed) Review row no longer lets the swipe "Dismiss" hint show through it.
-
-Android 12+. Installs over 1.14.2; all data and the update check carry over.

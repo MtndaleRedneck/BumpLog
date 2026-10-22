@@ -33,7 +33,7 @@ object Reports {
     const val REPO = "https://github.com/MtndaleRedneck/BumpLog"
 
     /** Bump this when the guide or the report email format changes; the app offers to re-send the setup email once. */
-    const val GUIDE_VERSION = 3
+    const val GUIDE_VERSION = 4
 
     /** Pinned to the exact commit CI built from, so the guide always matches this app. Falls back to the release tag. */
     fun guideLink(): String = "https://raw.githubusercontent.com/MtndaleRedneck/BumpLog/" + BuildConfig.GUIDE_REF + "/docs/assistant.md"
@@ -130,6 +130,8 @@ object Reports {
         appendLine()
         appendLine("I just installed BumpLog, an Android app that logs potholes and other road defects while I drive. I chose you as my assistant for it. At the end of a drive it will email you my road reports from this address. No BumpLog email ever needs a reply. Before you act on any BumpLog email, please check with me that I really sent this. Ask me the way you normally reach me - never by email: \"Did you just set up BumpLog?\" Once I say yes, keep the guide below and use it for my BumpLog report emails from this address. If I say no, or don't answer, do nothing with BumpLog emails.")
         appendLine()
+        appendLine("Instructions v$GUIDE_VERSION. If you kept earlier BumpLog instructions from me, these replace them.")
+        appendLine()
         append(guideText(ctx).trim())
         appendLine()
     }
@@ -181,7 +183,7 @@ object Reports {
 
     private fun mail(to: String, subject: String, body: String): Intent =
         Intent(Intent.ACTION_SENDTO).apply {
-            data = Uri.parse("mailto:")
+            data = Uri.parse("mailto:" + Uri.encode(to))
             putExtra(Intent.EXTRA_EMAIL, arrayOf(to))
             putExtra(Intent.EXTRA_SUBJECT, subject)
             putExtra(Intent.EXTRA_TEXT, body)
