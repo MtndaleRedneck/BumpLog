@@ -92,9 +92,29 @@ object Backup {
             val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri))
             val created = android.provider.DocumentsContract.createDocument(ctx.contentResolver, docUri, "application/zip", fileName("zip")) ?: return false
             val ok = ctx.contentResolver.openOutputStream(created, "wt")?.use { writeZip(ctx, it); true } ?: false
-            if (ok) Prefs.lastBackupTs = System.currentTimeMillis()
+            if (ok) { Prefs.lastBackupTs = System.currentTimeMillis(); prune(ctx, treeUri) }
             ok
         } catch (e: Exception) { false }
+    }
+
+    /** Keeps the newest 8 auto-backup zips in the picked folder; older ones are deleted. */
+    private fun prune(ctx: Context, treeUri: android.net.Uri) {
+        try {
+            val kids = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri))
+            val zips = mutableListOf<Pair<android.net.Uri, Long>>()
+            ctx.contentResolver.query(kids, arrayOf(
+                android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                android.provider.DocumentsContract.Document.COLUMN_LAST_MODIFIED), null, null, null)?.use { c ->
+                while (c.moveToNext()) {
+                    val name = c.getString(1) ?: continue
+                    if (!name.startsWith("BumpLog-backup-") || !name.endsWith(".zip")) continue
+                    zips.add(android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(0)) to c.getLong(2))
+                }
+            }
+            zips.sortBy { it.second }
+            while (zips.size > 8) android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, zips.removeAt(0).first)
+        } catch (e: Exception) { /* a folder that can't be listed keeps its zips */ }
     }
 
     /** Builds the zip in the cache and returns a share sheet for it. */

@@ -155,6 +155,7 @@ object Prefs {
     var carName: String get() = s("car_name", ""); set(v) = sp.edit().putString("car_name", v).apply()
     /** Start time (also the id) of the most recent drive, so Home can show its hit count while parked. */
     var lastDriveId: Long get() = sp.getLong("last_drive_id", 0L); set(v) = sp.edit().putLong("last_drive_id", v).apply()
+    var lastAliveMs: Long get() = sp.getLong("last_alive_ms", 0L); set(v) = sp.edit().putLong("last_alive_ms", v).apply()
     var passenger: Boolean get() = b("passenger", false)
         set(v) = sp.edit().putBoolean("passenger", v).putLong("pass_until", if (v) System.currentTimeMillis() + PASSENGER_MS else 0L).putBoolean("pass_warned", false).apply()
     /** Passenger mode runs for three hours, then returns to Driver (never while moving, see DriveService). */

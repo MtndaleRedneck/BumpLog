@@ -169,9 +169,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             val v = ContentValues().apply {
                 put("hit_count", near.hitCount + 1); put("max_g", maxG); put("last_ts", h.ts)
                 put("drive_id", h.driveId); put("clean_passes", 0)
-                if (near.reportStatus == "NONE") {
-                    // A spot re-centres on the average of its hits only until its report is handed to the mail app;
-                    // a reported spot keeps the position the city already has. Later hits still count.
+                // A spot re-centres on the average of its hits only until its report is handed to the mail app
+                // (the "did the email go out?" ask), not only after "Yes, sent": the handed-off position is what
+                // the city gets. Later hits still count.
+                if (near.reportStatus == "NONE" && near.id.toString() !in Prefs.askSentFor.split(",")) {
                     val n = near.hitCount
                     put("lat", (near.lat * n + h.lat) / (n + 1)); put("lon", (near.lon * n + h.lon) / (n + 1))
                 }

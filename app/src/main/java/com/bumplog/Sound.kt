@@ -244,9 +244,10 @@ object Sound {
             override fun onStart(id: String?) {}
             override fun onDone(id: String?) { onDone() }
             @Deprecated("Deprecated in Java") override fun onError(id: String?) { onDone() }
+            // A settings preview flushes an alert mid-sentence: that fires onStop, not onDone, and the duck would stick.
+            override fun onStop(id: String?, interrupted: Boolean) { onDone() }
         })
-        t.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "bumplog")
-        return true
+        return t.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "bumplog") == TextToSpeech.SUCCESS
     }
 
     private fun tone(ctx: Context, urgent: Boolean) {

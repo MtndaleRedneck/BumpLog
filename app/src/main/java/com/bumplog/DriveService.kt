@@ -50,6 +50,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         override fun run() {
             // Wall-clock tick so the timers still advance when GPS has no fix (indoors, tunnels).
             val now = System.currentTimeMillis()
+            if (Live.state.value.running) Prefs.lastAliveMs = now
             val fresh = now - lastFixMs < 30_000L
             passengerTick(if (fresh) lastSpeedMph else 99f) // without a fresh fix we cannot confirm a stop, so Passenger waits
             if (Live.state.value.running && autoOffDue(lastDrivingMs, now, Prefs.autoOffMin)) { autoOff(); return }
@@ -94,8 +95,9 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         }
         autoStarted = i?.getBooleanExtra("auto", false) == true
         val now = System.currentTimeMillis()
-        // Android restarted the service after a kill: keep the same drive if that was moments ago, so the trip and its summary stay whole.
-        driveId = if (i == null && now - Prefs.lastDriveId < 15 * 60_000L) Prefs.lastDriveId else now
+        // Android restarted the service after a kill: keep the same drive if the phone was still
+        // alive in it moments ago, so a long drive is not split in two and its summary stays whole.
+        driveId = if (i == null && Prefs.lastAliveMs > 0 && now - Prefs.lastAliveMs < 15 * 60_000L) Prefs.lastDriveId else now
         Prefs.lastDriveId = driveId
         lastMoveMs = now
         lastDrivingMs = now
@@ -178,7 +180,8 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     /** No next fix within 2 s: walk the last fix forward along its course. A fix older than 2 s, a hard turn just
      * before the hit, or a walk that lands too far away all fall back to the fix as-is, marked low-confidence. */
     private fun settleHit(ev: HitEvent, l0: Location) {
-        val prev = synchronized(pendingHits) { pendingHits.firstOrNull { it.ev === ev }?.prev }
+        // Take the entry out under the lock: a fix that arrives after the fallback fired must not record the hit twice.
+        val prev = synchronized(pendingHits) { pendingHits.firstOrNull { it.ev === ev }?.also { pendingHits.remove(it) }?.prev } ?: return
         val ageS = ((ev.startMs - l0.elapsedRealtimeNanos / 1_000_000) / 1000.0).coerceIn(0.0, 4.0)
         val speed = mph(l0)
         var lat = l0.latitude; var lon = l0.longitude; var lowConf = false
@@ -197,6 +200,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
 
     private fun recordHitNow(ev: HitEvent, lat: Double, lon: Double, heading: Double, speed: Float, lowConf: Boolean) {
         val now = System.currentTimeMillis()
+        Prefs.lastAliveMs = now
         val guess = Classifier.guess(ev, speed, recentStarts)
         recentStarts.add(ev.startMs); if (recentStarts.size > 12) recentStarts.removeAt(0)
         val hit = Hit(0, 0, driveId, now, lat, lon, heading, speed, ev.peakG, ev.durationMs, ev.peaks, guess, lowConf)
