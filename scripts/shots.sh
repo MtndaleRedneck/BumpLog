@@ -46,4 +46,12 @@ shot v12-home-off --ez demo true --es screen home --ez detoff true
 shot v12-home-on --es screen home --ez detoff false
 shot v12-scorecard --es screen score
 shot v12-settings --es screen settings
+shot v16-reported --ez demo true --es screen reported
+shot v16-stats --es screen stats
+shot v16-askmail --ez demo true --es screen home --ez askmail true
+shot v16-logstop-base --es screen home --ez logstop true
+adb shell cmd statusbar expand-notifications; sleep 2; adb exec-out screencap -p > $OUT/v16-logstop.png
+adb shell cmd statusbar collapse
+rm -f $OUT/v16-logstop-base.png
+scroll_to "auto backup" v16-backup
 ls -la $OUT
