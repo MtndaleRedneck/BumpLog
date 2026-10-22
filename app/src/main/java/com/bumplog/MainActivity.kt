@@ -255,7 +255,7 @@ class MainActivity : ComponentActivity() {
     private fun startDetection() {
         if (!Prefs.detectionEnabled) return
         if (!permsOk) { askPerms(); return }
-        try { DriveService.start(this) } catch (e: Exception) { toast(this, "Could not start: ${e.message}") }
+        try { DriveService.start(this) } catch (e: Exception) { toast(this, "That didn't work. Try again.") }
     }
 
     /** Hand one trip's confirmed spots to the mail app and mark them Sent. */

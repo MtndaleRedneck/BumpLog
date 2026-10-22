@@ -102,7 +102,7 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
         else -> "Waiting on the city" to p.accentText(p.card)
     }
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.card).clickable(onClick = onMark).padding(14.dp)) {
-        Txt(s.title, 17, FontWeight.Bold)
+        Txt(s.title, 17, FontWeight.Bold, modifier = Modifier.clickable(onClick = onOpen))
         Muted("Report #${s.reportNo} - sent ${sentDay(s.sentTs)}")
         Spacer(Modifier.height(4.dp))
         Txt(status, 15, FontWeight.Medium, color)
