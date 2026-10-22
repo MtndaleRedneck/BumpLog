@@ -89,6 +89,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Prefs.init(this)
+        BackupWorker.schedule(this)
         Notifier.channels(this)
         Sound.init(this)
         Live.update { it.copy(paused = Prefs.passenger) }
