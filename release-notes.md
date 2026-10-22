@@ -5,7 +5,7 @@ BumpLog 1.16.0
 - Hit pins land where the car was, not where it is by the time you look. If logging stops, a notification tells you and one tap turns it back on.
 - Alerts duck your music instead of fighting it, the voice waits for the tone to finish, and the beeps play on the same volume as the other tones.
 - A drive now ends on its own after a while indoors.
-- Stats: Reported rows open their spot from the title. Report last hit skips spots you already dealt with.
+- Reported: rows open their spot from the title. Report last hit skips spots you already dealt with.
 - Buttons and widgets no longer clip at large text.
 - The update offer only waits while you are actually driving.
 - Small wording fixes: real distances like "1,200 ft", "No hits yet this drive.", and clearer error messages.

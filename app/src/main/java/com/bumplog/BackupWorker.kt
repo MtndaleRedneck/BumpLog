@@ -10,7 +10,11 @@ import java.util.concurrent.TimeUnit
 
 /** Weekly automatic backup into the folder the owner picked. A save also runs after each trip email. */
 class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
-    override suspend fun doWork(): Result = if (Backup.autoSave(applicationContext)) Result.success() else Result.retry()
+    override suspend fun doWork(): Result {
+        // No folder picked yet is not a failure: succeed quietly instead of retrying forever.
+        if (com.bumplog.Prefs.backupFolder.isBlank()) return Result.success()
+        return if (Backup.autoSave(applicationContext)) Result.success() else Result.retry()
+    }
 
     companion object {
         private const val JOB = "auto_backup"
