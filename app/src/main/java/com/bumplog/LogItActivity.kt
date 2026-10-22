@@ -27,7 +27,7 @@ class LogItActivity : ComponentActivity() {
         Prefs.init(this)
         val id = intent.getLongExtra("spot", 0)
         val spot = Db.get(this).spot(id)
-        Notifier.cancel(this, 1000 + id.toInt())
+        Notifier.cancel(this, "hit", id.toInt())
         Notifier.removeOverlay(this)
         if (spot == null) { finish(); return }
         setContent {

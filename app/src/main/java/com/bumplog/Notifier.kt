@@ -109,7 +109,7 @@ object Notifier {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         val b = NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_stat)
-            .setContentTitle("Bump detected.")
+            .setContentTitle("Major bump")
             .setContentText("%.2fg near ${s.title}".format(s.maxG))
             .setPriority(NotificationCompat.PRIORITY_MAX).setCategory(NotificationCompat.CATEGORY_ALARM)
             .setAutoCancel(true).setContentIntent(openApp(ctx, s.id)).setColor(0xFFFF5228.toInt())
@@ -120,7 +120,7 @@ object Notifier {
             b.addAction(0, "Ignore", action(ctx, ActionReceiver.NO, s.id))
             b.addAction(0, "Warn me here forever", action(ctx, ActionReceiver.WARN, s.id))
         }
-        nm.notify(1000 + s.id.toInt(), b.build())
+        nm.notify("hit", s.id.toInt(), b.build())
         if (Prefs.overlay && showButtons) overlay(ctx, s)
     }
 
@@ -134,13 +134,13 @@ object Notifier {
 
     fun ahead(ctx: Context, s: Spot, feet: Int, final: Boolean) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
-        val dist = if (final) "%d ft".format(feet / 10 * 10) else if (feet >= 1000) "about a quarter mile" else "%d ft".format(feet / 10 * 10)
+        val dist = if (feet >= 1000) "%,d ft".format(feet / 10 * 10) else "%d ft".format(feet / 10 * 10)
         val b = NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_stat).setContentTitle("${aheadName(s)} - $dist")
             .setContentText("${s.type.label} on ${s.title}")
             .setPriority(NotificationCompat.PRIORITY_HIGH).setCategory(NotificationCompat.CATEGORY_NAVIGATION)
             .setTimeoutAfter(15000).setAutoCancel(true).setContentIntent(openApp(ctx, s.id)).setColor(0xFFFF5228.toInt())
-        nm.notify(2000 + s.id.toInt(), b.build())
+        nm.notify("ahead", s.id.toInt(), b.build())
     }
 
     /** Offers to mark a reported spot fixed after clean passes. Mark fixed opens the app for the celebration. */
@@ -149,13 +149,13 @@ object Notifier {
         val what = if (s.typeUser) s.type.spoken else "road defect"
         val b = NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_stat).setContentTitle("Reported spot may be fixed")
-            .setContentText("No impact detected in a previously reported area, mark $what fixed?")
-            .setStyle(NotificationCompat.BigTextStyle().bigText("No impact detected in a previously reported area, mark $what fixed? (${s.title})"))
+            .setContentText("No hit at the $what you reported. Mark it fixed?")
+            .setStyle(NotificationCompat.BigTextStyle().bigText("No hit at the $what you reported. Mark it fixed? (${s.title})"))
             .setPriority(NotificationCompat.PRIORITY_DEFAULT).setCategory(NotificationCompat.CATEGORY_RECOMMENDATION)
             .setAutoCancel(true).setContentIntent(openApp(ctx, s.id)).setColor(0xFFFF5228.toInt())
         b.addAction(0, "Mark fixed", openApp(ctx, s.id, "markfixed"))
         b.addAction(0, "Still there", action(ctx, ActionReceiver.STILL, s.id))
-        nm.notify(3000 + s.id.toInt(), b.build())
+        nm.notify("fixed", s.id.toInt(), b.build())
     }
 
     fun driveDone(ctx: Context, hits: Int, toFile: Int, driveId: Long) {
@@ -167,7 +167,7 @@ object Notifier {
             val what = if (toFile == 1) "1 report" else "$toFile reports"
             b.setContentText("$what ready to send. Tap to open one email with " + (if (toFile == 1) "it." else "all of them."))
                 .setContentIntent(PendingIntent.getActivity(ctx, 6000 + driveId.toInt(), i, flags()))
-        } else b.setContentText("$hits saved. Nothing to send.").setContentIntent(openApp(ctx, 0, "review"))
+        } else b.setContentText("$hits hits logged. Nothing to send.").setContentIntent(openApp(ctx, 0, "review"))
         nm.notify(ID_DRIVE_DONE, b.build())
     }
 
@@ -225,6 +225,7 @@ object Notifier {
     }
 
     fun cancel(ctx: Context, id: Int) = ctx.getSystemService(NotificationManager::class.java).cancel(id)
+    fun cancel(ctx: Context, tag: String, id: Int) = ctx.getSystemService(NotificationManager::class.java).cancel(tag, id)
 
     // ---- experimental overlay (off by default) ----
 
@@ -252,7 +253,7 @@ object Notifier {
                     background = GradientDrawable().apply { setColor(0xFF1C1C20.toInt()); cornerRadius = 20 * dp; setStroke((2 * dp).toInt(), accentArgb) }
                 }
                 box.addView(TextView(app).apply {
-                    text = (if (preview) "PREVIEW  " else "") + "MAJOR BUMP DETECTED."; setTextColor(Color.WHITE)
+                    text = (if (preview) "PREVIEW  " else "") + "MAJOR BUMP"; setTextColor(Color.WHITE)
                     textSize = 16f; typeface = Typeface.DEFAULT_BOLD
                 })
                 val row = LinearLayout(app).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
@@ -277,7 +278,9 @@ object Notifier {
                 ).apply { gravity = Gravity.TOP; y = (60 * dp).toInt(); x = 0 }
                 wm.addView(box, lp)
                 overlayView = box
-                if (Prefs.hitTimeoutSec > 0) main.postDelayed({ removeOverlay(app) }, Prefs.hitTimeoutSec * 1000L)
+                val shown = box
+                // Only this banner's own timer may clear it, and "Never" still clears itself after 30 s.
+                main.postDelayed({ if (overlayView === shown) removeOverlay(app) }, (if (Prefs.hitTimeoutSec > 0) Prefs.hitTimeoutSec else 30) * 1000L)
             } catch (e: Exception) { }
         }
     }
