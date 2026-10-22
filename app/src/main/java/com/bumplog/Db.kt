@@ -34,6 +34,8 @@ fun Damage.ref(hit: Hit?): String = if (reportNo > 0) ReportNumbers.ref(reportNo
 data class Hit(
     val id: Long, val spotId: Long, val driveId: Long, val ts: Long, val lat: Double, val lon: Double,
     val heading: Double, val speedMph: Float, val peakG: Float, val durationMs: Long, val peaks: Int, val type: DefectType,
+    /** Placed with less confidence (old fix, no bearing, or a rejected correction). Kept for future tuning. */
+    val lowConf: Boolean = false,
 )
 
 data class Damage(
@@ -41,7 +43,7 @@ data class Damage(
     val note: String, val ts: Long, val status: String, val reportNo: Int = 0, val reportTs: Long = 0,
 )
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 5) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 6) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -51,8 +53,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         )
         db.execSQL(
             """CREATE TABLE hits(id INTEGER PRIMARY KEY AUTOINCREMENT, spot_id INTEGER, drive_id INTEGER, ts INTEGER,
-            lat REAL, lon REAL, heading REAL, speed REAL, peak_g REAL, duration INTEGER, peaks INTEGER, type TEXT)"""
+            lat REAL, lon REAL, heading REAL, speed REAL, peak_g REAL, duration INTEGER, peaks INTEGER, type TEXT, low_conf INTEGER DEFAULT 0)"""
         )
+        db.execSQL("CREATE INDEX IF NOT EXISTS hits_spot ON hits(spot_id)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS hits_drive ON hits(drive_id)")
         db.execSQL(
             """CREATE TABLE damage(id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT, hit_id INTEGER, spot_id INTEGER,
             category TEXT, note TEXT, ts INTEGER, status TEXT, report_no INTEGER DEFAULT 0, report_ts INTEGER DEFAULT 0)"""
@@ -89,6 +93,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             db.execSQL("ALTER TABLE spots ADD COLUMN report_outcome TEXT DEFAULT 'NONE'")
             db.execSQL("ALTER TABLE spots ADD COLUMN outcome_ts INTEGER DEFAULT 0")
         }
+        if (o < 6) {
+            // Confidence flag on hits, and the Review lookup's indexes.
+            db.execSQL("ALTER TABLE hits ADD COLUMN low_conf INTEGER DEFAULT 0")
+            db.execSQL("CREATE INDEX IF NOT EXISTS hits_spot ON hits(spot_id)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS hits_drive ON hits(drive_id)")
+        }
     }
 
     // ---- the shared report counter ----
@@ -111,14 +121,14 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
 
     // ---- spots ----
 
-    private fun spotOf(c: Cursor) = Spot(
-        c.getLong(0), c.getString(1) ?: "", c.getDouble(2), c.getDouble(3), c.getDouble(4),
-        DefectType.parse(c.getString(5)), c.getInt(6) == 1, c.getFloat(7), c.getInt(8), c.getFloat(9),
-        c.getLong(10), c.getLong(11), c.getLong(12), c.getString(13) ?: "PENDING", c.getInt(14) == 1,
-        c.getString(15) ?: "NONE", c.getLong(16), c.getString(17) ?: "", c.getInt(18),
-        c.getString(19) ?: "MAJOR", c.getInt(20) == 1, c.getInt(21), c.getInt(22) == 1, c.getLong(23),
-        c.getInt(24), c.getString(25) ?: "", c.getString(26) ?: "", c.getLong(27),
-        c.getString(28) ?: "NONE", c.getLong(29),
+    private fun spotOf(c: Cursor, o: Int = 0) = Spot(
+        c.getLong(o), c.getString(o + 1) ?: "", c.getDouble(o + 2), c.getDouble(o + 3), c.getDouble(o + 4),
+        DefectType.parse(c.getString(o + 5)), c.getInt(o + 6) == 1, c.getFloat(o + 7), c.getInt(o + 8), c.getFloat(o + 9),
+        c.getLong(o + 10), c.getLong(o + 11), c.getLong(o + 12), c.getString(o + 13) ?: "PENDING", c.getInt(o + 14) == 1,
+        c.getString(o + 15) ?: "NONE", c.getLong(o + 16), c.getString(o + 17) ?: "", c.getInt(o + 18),
+        c.getString(o + 19) ?: "MAJOR", c.getInt(o + 20) == 1, c.getInt(o + 21), c.getInt(o + 22) == 1, c.getLong(o + 23),
+        c.getInt(o + 24), c.getString(o + 25) ?: "", c.getString(o + 26) ?: "", c.getLong(o + 27),
+        c.getString(o + 28) ?: "NONE", c.getLong(o + 29),
     )
 
     private val spotCols = "id,report_id,lat,lon,heading,type,type_user,max_g,hit_count,speed,first_ts,last_ts,drive_id,review,warn,report_status,sent_ts,address,clean_passes,severity,file_trip,saves,fixed_after_report,fixed_ts,report_no,town,county,report_ts,report_outcome,outcome_ts"
@@ -159,6 +169,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             val v = ContentValues().apply {
                 put("hit_count", near.hitCount + 1); put("max_g", maxG); put("last_ts", h.ts)
                 put("drive_id", h.driveId); put("clean_passes", 0)
+                if (near.reportStatus == "NONE") {
+                    // A spot re-centres on the average of its hits only until its report is handed to the mail app;
+                    // a reported spot keeps the position the city already has. Later hits still count.
+                    val n = near.hitCount
+                    put("lat", (near.lat * n + h.lat) / (n + 1)); put("lon", (near.lon * n + h.lon) / (n + 1))
+                }
                 if (!near.typeUser) put("type", guess.name)
                 if (maxG >= Prefs.severeG && near.review != "DISMISSED") put("warn", 1)
             }
@@ -249,8 +265,16 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     /** Every spot whose report went to the mail app, newest send first - the Reported tab. */
     @Synchronized fun reportedSpots(): List<Spot> = spots("report_status='SENT'", null, order = "sent_ts DESC")
 
-    /** The owner says how a sent report turned out (Fixed / Unclear / Won't fix). */
-    fun markOutcome(id: Long, outcome: String, now: Long) = update(id, "report_outcome" to outcome, "outcome_ts" to now)
+    /** The owner says how a sent report turned out (Fixed / Unclear / Won't fix). Fixed here is the same mark
+     * as Mark fixed in Review, and picking anything else on a spot marked fixed brings it back as confirmed. */
+    @Synchronized fun markOutcome(id: Long, outcome: String, now: Long) {
+        update(id, "report_outcome" to outcome, "outcome_ts" to now)
+        when (OutcomeSync.forOutcome(outcome, spot(id)?.review ?: "")) {
+            OutcomeSync.Mark.FIX -> markFixed(id, now)
+            OutcomeSync.Mark.REVIVE -> update(id, "review" to "CONFIRMED", "warn" to true, "fixed_ts" to 0L, "fixed_after_report" to false)
+            OutcomeSync.Mark.NONE -> {}
+        }
+    }
 
     /** Report the same spot again: a fresh report number and send date, back to waiting on the city. */
     fun reportAgain(id: Long, now: Long) = update(id,
@@ -275,6 +299,10 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         val header = splitCsv(lines[0])
         val withNo = ReportNumbers.spotsCsvHasNumbers(header)
         val skippedIds = HashSet<String>(); var bad = 0
+        var dn = 0
+        // One transaction: a failed import never leaves half the file behind.
+        db.beginTransaction()
+        try {
         for (line in lines.drop(1)) {
             val c = splitCsv(line)
             if (c.size < 12 || c[0].isBlank()) { bad++; continue }
@@ -315,7 +343,6 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                 db.execSQL("UPDATE spots SET hit_count=hit_count+1, max_g=MAX(max_g,?), first_ts=MIN(first_ts,?), last_ts=MAX(last_ts,?) WHERE id=?", arrayOf(g, ts, ts, sid))
             } catch (e: Exception) { bad++ }
         }
-        var dn = 0
         if (damageText != null && damageText.startsWith("damage_report_id,")) {
             val dheader = splitCsv(damageText.lines().first())
             val dNo = ReportNumbers.damageCsvHasNumbers(dheader)
@@ -343,6 +370,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                 } catch (e: Exception) { bad++ }
             }
         }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
         val existing = db.rawQuery("SELECT (SELECT COUNT(*) FROM spots WHERE (review='CONFIRMED' OR (review='FIXED' AND report_status<>'NONE')) AND report_id NOT LIKE 'TEST-%') + (SELECT COUNT(*) FROM damage)", null)
             .use { it.moveToFirst(); it.getInt(0) }
         bumpCounterTo(ReportNumbers.restoreNext(maxNo, 0, existing))
@@ -365,10 +394,14 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         out.add(cur.toString()); return out
     }
 
-    /** Marks a spot fixed. If it had been reported (sent to mail or filed), it also counts as fixed after reporting. */
+    /** Marks a spot fixed. If it had been reported (sent to mail or filed), it also counts as fixed after reporting,
+     * and the Reported tab shows the Fixed outcome too. */
     @Synchronized fun markFixed(id: Long, now: Long) {
         val s = spot(id) ?: return
-        update(id, "review" to "FIXED", "warn" to false, "fixed_ts" to now, "fixed_after_report" to (s.reportStatus != "NONE"))
+        val kv = mutableListOf<Pair<String, Any>>("review" to "FIXED", "warn" to false, "fixed_ts" to now,
+            "fixed_after_report" to (s.reportStatus != "NONE"))
+        if (OutcomeSync.fixedOutcome(s.reportStatus)) { kv += "report_outcome" to "FIXED"; kv += "outcome_ts" to now }
+        update(id, *kv.toTypedArray())
     }
     /** "Still there": the spot is not fixed, so the clean-pass count starts over. */
     @Synchronized fun resetCleanPasses(id: Long) = update(id, "clean_passes" to 0)
@@ -378,12 +411,27 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
 
     // ---- hits ----
 
-    private fun hitOf(c: Cursor) = Hit(
-        c.getLong(0), c.getLong(1), c.getLong(2), c.getLong(3), c.getDouble(4), c.getDouble(5), c.getDouble(6),
-        c.getFloat(7), c.getFloat(8), c.getLong(9), c.getInt(10), DefectType.parse(c.getString(11)),
+    private fun hitOf(c: Cursor, off: Int = 0) = Hit(
+        c.getLong(off), c.getLong(off + 1), c.getLong(off + 2), c.getLong(off + 3), c.getDouble(off + 4), c.getDouble(off + 5), c.getDouble(off + 6),
+        c.getFloat(off + 7), c.getFloat(off + 8), c.getLong(off + 9), c.getInt(off + 10), DefectType.parse(c.getString(off + 11)), c.getInt(off + 12) == 1,
     )
 
-    private val hitCols = arrayOf("id", "spot_id", "drive_id", "ts", "lat", "lon", "heading", "speed", "peak_g", "duration", "peaks", "type")
+    private val hitCols = arrayOf("id", "spot_id", "drive_id", "ts", "lat", "lon", "heading", "speed", "peak_g", "duration", "peaks", "type", "low_conf")
+
+    /** Review's list in one query: recent hits joined to their spots, newest first. */
+    @Synchronized fun reviewRows(limit: Int = 200): List<Pair<Hit, Spot>> {
+        val out = ArrayList<Pair<Hit, Spot>>()
+        val cols = hitCols.joinToString(",") { "h.$it" } + "," + spotCols.split(",").joinToString(",") { "s.$it" }
+        readableDatabase.rawQuery("SELECT $cols FROM hits h JOIN spots s ON s.id = h.spot_id ORDER BY h.ts DESC LIMIT ?",
+            arrayOf(limit.toString())).use { c ->
+            while (c.moveToNext()) out.add(hitOf(c) to spotOf(c, hitCols.size))
+        }
+        return out
+    }
+
+    /** Newest spots the Report-last-hit button may open: waiting on you, or confirmed and not yet sent. */
+    @Synchronized fun reportableSpots(limit: Int = 6): List<Spot> =
+        spots("review='PENDING' OR (review='CONFIRMED' AND report_status='NONE')", null, limit = limit.toString())
 
     @Synchronized fun hits(limit: Int = 200): List<Hit> {
         val out = ArrayList<Hit>()
@@ -454,7 +502,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         })
         return spot(id)!!
     }
-    @Synchronized fun clearTestData(): Int = writableDatabase.delete("spots", "report_id LIKE 'TEST-%'", null)
+    @Synchronized fun clearTestData(): Int {
+        val n = writableDatabase.delete("spots", "report_id LIKE 'TEST-%'", null)
+        writableDatabase.delete("hits", "spot_id NOT IN (SELECT id FROM spots)", null)
+        return n
+    }
     @Synchronized fun testCount(): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM spots WHERE report_id LIKE 'TEST-%'", null).use { it.moveToFirst(); it.getInt(0) }
 
     /** Parses a number that may use a comma decimal; throws on junk or non-finite values. */
