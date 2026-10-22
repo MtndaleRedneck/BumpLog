@@ -49,11 +49,14 @@ shot v12-settings --es screen settings
 shot v16-reported --ez demo true --es screen reported
 shot v16-stats --es screen stats
 adb shell input swipe 540 1800 540 600 400; sleep 1; adb exec-out screencap -p > $OUT/v16-stats-most.png
-shot v16-logstop-base --ez demo true --es screen home --ez logstop true
-sleep 1
-adb shell input swipe 540 0 540 900 300; sleep 2; adb exec-out screencap -p > $OUT/v16-logstop.png
-adb shell input swipe 540 1400 540 400 300
-rm -f $OUT/v16-logstop-base.png
+adb shell am force-stop com.bumplog; sleep 1
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --ez logstop true
+sleep 3; adb exec-out screencap -p > $OUT/v16-logstop-headsup.png
+sleep 3
+adb shell input swipe 540 10 540 700 200; sleep 1
+adb shell input swipe 540 10 540 700 200; sleep 2
+adb exec-out screencap -p > $OUT/v16-logstop.png
+shot v16-settings-b --es screen settings
 scroll_to "auto backup" v16-backup
 shot v16-askmail --ez demo true --es screen home --ez askmail true
 ls -la $OUT
