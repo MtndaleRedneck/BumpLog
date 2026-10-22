@@ -48,7 +48,6 @@ shot v12-scorecard --es screen score
 shot v12-settings --es screen settings
 shot v16-reported --ez demo true --es screen reported
 shot v16-stats --es screen stats
-adb shell input swipe 540 1800 540 600 400; sleep 1; adb exec-out screencap -p > $OUT/v16-stats-most.png
 adb shell am force-stop com.bumplog; sleep 1
 adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --ez logstop true
 sleep 3; adb exec-out screencap -p > $OUT/v16-logstop-headsup.png
