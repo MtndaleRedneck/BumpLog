@@ -6,7 +6,7 @@ OUT=docs/screenshots
 mkdir -p $OUT
 adb shell settings put global hide_error_dialogs 1
 # Match the primary tester's phone (1440x3088 @ ~649dpi, Galaxy S22 Ultra class)
-adb shell wm size 1440x3088
+adb shell wm size 1440x2807
 adb shell wm density 649
 adb install -r $APK
 for p in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION POST_NOTIFICATIONS BLUETOOTH_CONNECT; do adb shell pm grant com.bumplog android.permission.$p; done
