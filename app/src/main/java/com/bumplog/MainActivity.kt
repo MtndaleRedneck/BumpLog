@@ -289,7 +289,7 @@ class MainActivity : ComponentActivity() {
                 onDismissRequest = { confirmFixed = null },
                 title = { Text("Mark as fixed?") },
                 text = { Text("${sp.title}. No impact was detected there on recent passes. Marking it fixed stops warnings for it. You can restore it any time from its screen.") },
-                confirmButton = { TextButton({ Db.get(this@MainActivity).markFixed(id, System.currentTimeMillis()); Notifier.cancel(this@MainActivity, 3000 + id.toInt()); confirmFixed = null; Celebrate.trigger(); Live.bump() }) { Text("Mark fixed") } },
+                confirmButton = { TextButton({ Db.get(this@MainActivity).markFixed(id, System.currentTimeMillis()); Notifier.cancel(this@MainActivity, "fixed", id.toInt()); confirmFixed = null; Celebrate.trigger(); Live.bump() }) { Text("Mark fixed") } },
                 dismissButton = { TextButton({ confirmFixed = null }) { Text("Not yet") } },
             )
         }

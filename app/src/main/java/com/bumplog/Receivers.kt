@@ -18,7 +18,7 @@ class ActionReceiver : BroadcastReceiver() {
             YES -> { db.confirmForTrip(id); android.widget.Toast.makeText(ctx, ConfirmationNotice.flash(db.spot(id)?.ref() ?: "", true), android.widget.Toast.LENGTH_LONG).show() }
             NO -> { db.setReview(id, "DISMISSED"); db.setWarn(id, false) }
             WARN -> db.setWarn(id, true)
-            STILL -> { db.resetCleanPasses(id); Notifier.cancel(ctx, 3000 + id.toInt()) }
+            STILL -> { db.resetCleanPasses(id); Notifier.cancel(ctx, "fixed", id.toInt()) }
             PAUSE -> { Prefs.passenger = !Prefs.passenger; Live.update { it.copy(paused = Prefs.passenger) } }
             EXTEND -> { Prefs.extendPassenger(); Notifier.cancel(ctx, Notifier.ID_PASSENGER) }
             UNDO -> {
@@ -28,7 +28,7 @@ class ActionReceiver : BroadcastReceiver() {
             STOP -> { Prefs.detectionEnabled = false; Prefs.passenger = false; Notifier.cancel(ctx, Notifier.ID_CAR); ctx.startService(Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_STOP)) }
         }
         if (id != 0L) {
-            Notifier.cancel(ctx, 1000 + id.toInt())
+            Notifier.cancel(ctx, "hit", id.toInt())
             Notifier.removeOverlay(ctx)
         }
         Live.bump()
