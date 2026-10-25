@@ -33,8 +33,20 @@ object Sound {
 
     // A short duck asks music to dip while an alert plays, like navigation guidance.
     private val focus by lazy { AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN_TRANSIENT_MAY_DUCK).setAudioAttributes(attrs).build() }
-    private fun duck(ctx: Context) = ctx.getSystemService(AudioManager::class.java).requestAudioFocus(focus)
-    private fun unduck(ctx: Context) = ctx.getSystemService(AudioManager::class.java).abandonAudioFocusRequest(focus)
+    // Overlapping alerts (the early warning, then the close one) each hold one count: music comes back up only when the last one ends (item 7).
+    private val focusLock = Any()
+    private var focusHolds = 0
+    private fun duck(ctx: Context) = synchronized(focusLock) {
+        val r = if (focusHolds == 0) ctx.getSystemService(AudioManager::class.java).requestAudioFocus(focus) else AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        focusHolds++
+        r
+    }
+    private fun unduck(ctx: Context) = synchronized(focusLock) {
+        if (focusHolds > 0) {
+            focusHolds--
+            if (focusHolds == 0) ctx.getSystemService(AudioManager::class.java).abandonAudioFocusRequest(focus)
+        }
+    }
 
     val tones = listOf("CHIME" to "Chime", "ALARM" to "Alarm", "BEEP" to "Beep", "DOUBLE" to "Double beep")
     val modes = listOf("BOTH" to "Tone and voice", "TONE" to "Tone only", "VOICE" to "Voice only", "OFF" to "Off")
@@ -106,8 +118,8 @@ object Sound {
             afd.use { p.setDataSource(it.fileDescriptor, it.startOffset, it.length) }
             p.prepare()
             stopClip()
-            p.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null; onDone() }
-            p.start(); clipPlayer = p
+            p.setOnCompletionListener { it.release(); if (clipPlayer === it) { clipPlayer = null; clipDone = null }; onDone() }
+            p.start(); clipPlayer = p; clipDone = onDone
             android.util.Log.d("BumpLog", "natural clip played: $voice $key ${p.duration}ms")
             true
         } catch (e: Exception) {
@@ -117,11 +129,14 @@ object Sound {
         }
     }
 
-    /** Stops and releases the clip that is playing, and forgets it. */
+    /** Stops and releases the clip that is playing, and forgets it. Cutting a clip short still ends that alert, so its duck is released. */
     private fun stopClip() {
         val old = clipPlayer
         clipPlayer = null
+        val done = clipDone
+        clipDone = null
         try { old?.release() } catch (e: Exception) { }
+        if (old != null) done?.invoke()
     }
 
     /** Alerts that can be recorded: (key, spoken text). The key names the clip file. */
@@ -149,6 +164,7 @@ object Sound {
     }
 
     private var clipPlayer: android.media.MediaPlayer? = null
+    private var clipDone: (() -> Unit)? = null
 
     /** Plays the user's own recording for [key]. Returns false when there is none, so the caller can fall back to speech. */
     fun playClip(ctx: Context, key: String, onDone: () -> Unit = {}): Boolean {
@@ -161,8 +177,8 @@ object Sound {
             p.setDataSource(clipFile(ctx, key).absolutePath)
             p.prepare()
             stopClip()
-            p.setOnCompletionListener { it.release(); if (clipPlayer === it) clipPlayer = null; onDone() }
-            p.start(); clipPlayer = p; true
+            p.setOnCompletionListener { it.release(); if (clipPlayer === it) { clipPlayer = null; clipDone = null }; onDone() }
+            p.start(); clipPlayer = p; clipDone = onDone; true
         } catch (e: Exception) { try { mp?.release() } catch (x: Exception) { }; false }
     }
 
@@ -236,18 +252,27 @@ object Sound {
         } else main.postDelayed({ finish() }, 3000) // tone only: hold the duck until it has played out
     }
 
+    // Every utterance gets its own id and its own finish. A flushed phrase's onStop no longer ends the new alert early,
+    // and the cut-off alert still ends itself, so its duck never sticks (item 7).
+    private val utteranceDones = HashMap<String, () -> Unit>()
+    private val utteranceListener = object : UtteranceProgressListener() {
+        override fun onStart(id: String?) {}
+        override fun onDone(id: String?) { fire(id) }
+        @Deprecated("Deprecated in Java") override fun onError(id: String?) { fire(id) }
+        override fun onStop(id: String?, interrupted: Boolean) { fire(id) }
+        private fun fire(id: String?) { id ?: return; (synchronized(utteranceDones) { utteranceDones.remove(id) })?.invoke() }
+    }
+
     private fun speak(phrase: String, onDone: () -> Unit = {}): Boolean {
         val t = tts ?: return false
         if (!ttsReady) return false
         applyVoice(t, Prefs.voice)
-        t.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-            override fun onStart(id: String?) {}
-            override fun onDone(id: String?) { onDone() }
-            @Deprecated("Deprecated in Java") override fun onError(id: String?) { onDone() }
-            // A settings preview flushes an alert mid-sentence: that fires onStop, not onDone, and the duck would stick.
-            override fun onStop(id: String?, interrupted: Boolean) { onDone() }
-        })
-        return t.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, "bumplog") == TextToSpeech.SUCCESS
+        t.setOnUtteranceProgressListener(utteranceListener)
+        val id = "bumplog-" + System.nanoTime()
+        synchronized(utteranceDones) { utteranceDones[id] = onDone }
+        val ok = t.speak(phrase, TextToSpeech.QUEUE_FLUSH, null, id) == TextToSpeech.SUCCESS
+        if (!ok) synchronized(utteranceDones) { utteranceDones.remove(id) }
+        return ok
     }
 
     private fun tone(ctx: Context, urgent: Boolean) {

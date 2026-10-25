@@ -16,6 +16,7 @@ import android.location.LocationManager
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import androidx.core.app.ServiceCompat
 import java.util.Locale
 import java.util.concurrent.Executors
@@ -32,7 +33,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     private lateinit var lm: LocationManager
     private val main = Handler(Looper.getMainLooper())
     private val io = Executors.newSingleThreadExecutor()
-    private val detector = HitDetector(Prefs.cutoffG)
+    private lateinit var detector: HitDetector
     private val recentStarts = ArrayList<Long>()
     private var linear = true
     private val grav = FloatArray(3)
@@ -41,6 +42,9 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     private var last: Location? = null
     private var prevFix: Location? = null
     private var finishedCleanly = false
+    /** Set in onDestroy: late sensor/location callbacks and queued hit work stop touching the executor and database. */
+    @Volatile private var destroyed = false
+    private var wakeLock: PowerManager.WakeLock? = null
     private var lastFixMs = 0L
     private var lastNotifMs = 0L
     private var lastMoveMs = 0L
@@ -53,10 +57,23 @@ class DriveService : Service(), SensorEventListener, LocationListener {
             if (Live.state.value.running) Prefs.lastAliveMs = now
             val fresh = now - lastFixMs < 30_000L
             passengerTick(if (fresh) lastSpeedMph else 99f) // without a fresh fix we cannot confirm a stop, so Passenger waits
-            if (Live.state.value.running && autoOffDue(lastDrivingMs, now, Prefs.autoOffMin)) { autoOff(); return }
-            // No GPS indoors: the wall clock closes the trip 15 minutes after the last movement too.
-            if (Live.state.value.running && now - lastMoveMs > 15 * 60_000L) rollTrip()
+            // While the fix is stale (tunnel, GPS stuck) we cannot tell parked from driving, so auto-off and the trip split wait for GPS.
+            val stale = now - lastFixMs > 10_000L
+            if (!stale && Live.state.value.running && autoOffDue(lastDrivingMs, now, Prefs.autoOffMin)) { autoOff(); return }
+            if (!stale && Live.state.value.running && now - lastMoveMs > 15 * 60_000L) rollTrip()
             main.postDelayed(this, 30_000L)
+        }
+    }
+    /** Every 5 s: a fix older than 10 s means GPS is gone, so the screen and the ongoing notice stop showing a live speed. */
+    private val gpsWatch = object : Runnable {
+        override fun run() {
+            val hadFix = lastFixMs > 0
+            if (Live.state.value.running && hadFix && System.currentTimeMillis() - lastFixMs > 10_000L && Live.state.value.gps) {
+                Live.update { it.copy(gps = false, gpsLost = true) }
+                lastNotifMs = System.currentTimeMillis()
+                Notifier.cancelAndRefresh(this@DriveService)
+            }
+            if (!destroyed) main.postDelayed(this, 5_000L)
         }
     }
     private val wave = FloatArray(120)
@@ -74,6 +91,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     override fun onCreate() {
         super.onCreate()
         Prefs.init(this)
+        detector = HitDetector(Prefs.cutoffG)
         db = Db.get(this)
         sm = getSystemService(SensorManager::class.java)
         lm = getSystemService(LocationManager::class.java)
@@ -106,11 +124,30 @@ class DriveService : Service(), SensorEventListener, LocationListener {
             ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
         startSensors()
         main.removeCallbacks(clock); main.postDelayed(clock, 30_000L)
+        main.removeCallbacks(gpsWatch); main.postDelayed(gpsWatch, 5_000L)
         return START_STICKY
+    }
+
+    /** Held only while logging: the accelerometer is a non-wake-up sensor, so hits can be missed with the screen off without it. */
+    private fun holdWake() {
+        if (wakeLock?.isHeld == true) return
+        try {
+            val pm = getSystemService(PowerManager::class.java)
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "bumplog:drive").apply {
+                setReferenceCounted(false)
+                acquire(8 * 60 * 60 * 1000L) // safety net only; released on every exit path
+            }
+        } catch (e: Exception) { }
+    }
+
+    private fun releaseWake() {
+        try { wakeLock?.takeIf { it.isHeld }?.release() } catch (e: Exception) { }
+        wakeLock = null
     }
 
     @SuppressLint("MissingPermission")
     private fun startSensors() {
+        holdWake()
         val lin = sm.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION)
         linear = lin != null
         val s = lin ?: sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -121,6 +158,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     }
 
     override fun onSensorChanged(e: SensorEvent) {
+        if (destroyed) return
         var x = e.values[0]; var y = e.values[1]; var z = e.values[2]
         if (!linear) { // remove gravity with a low-pass filter
             val a = 0.9f
@@ -145,20 +183,20 @@ class DriveService : Service(), SensorEventListener, LocationListener {
 
     private fun mph(l: Location) = l.speed * Geo.MPH_PER_MPS.toFloat()
 
-    /** A hit held for the next GPS fix (up to 2 s) so it can be pinned between two fixes. */
-    private class PendingHit(val ev: HitEvent, val fix: Location, val prev: Location?, val fallback: Runnable)
+    /** A hit held for the next GPS fix (up to 2 s) so it can be pinned between two fixes. Keeps its drive id so a late hit never lands in the next trip. */
+    private class PendingHit(val ev: HitEvent, val fix: Location, val prev: Location?, val driveId: Long, val fallback: Runnable)
 
     private val pendingHits = ArrayList<PendingHit>()
 
     /** Worst case before this change: a fix up to 4 s old pinned the hit about 80 m back at 45 mph, about 115 m at 65 mph. */
     private fun onHit(ev: HitEvent, loc: Location) {
         val r = Runnable { settleHit(ev, loc) }
-        synchronized(pendingHits) { pendingHits.add(PendingHit(ev, Location(loc), prevFix?.let { Location(it) }, r)) }
+        synchronized(pendingHits) { pendingHits.add(PendingHit(ev, Location(loc), prevFix?.let { Location(it) }, driveId, r)) }
         main.postDelayed(r, 2000)
     }
 
     /** The next fix arrived in time: place the hit between the two fixes by its timestamp, which follows the real path through a turn. */
-    private fun interpolateHit(ev: HitEvent, l0: Location, l1: Location) {
+    private fun interpolateHit(ev: HitEvent, l0: Location, l1: Location, driveId: Long = this.driveId) {
         val tH = ev.startMs; val t0 = l0.elapsedRealtimeNanos / 1_000_000; val t1 = l1.elapsedRealtimeNanos / 1_000_000
         val f = if (t1 > t0) ((tH - t0).toDouble() / (t1 - t0)).coerceIn(0.0, 1.0) else 1.0
         var lat = l0.latitude + f * (l1.latitude - l0.latitude)
@@ -174,7 +212,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
             l0.hasBearing() && speed > 5 -> l0.bearing.toDouble()
             else -> -1.0
         }
-        recordHitNow(ev, lat, lon, heading, speed, lowConf)
+        recordHitNow(ev, lat, lon, heading, speed, lowConf, driveId)
     }
 
     /** No next fix within 2 s: walk the last fix forward along its course. A fix older than 2 s, a hard turn just
@@ -197,10 +235,34 @@ class DriveService : Service(), SensorEventListener, LocationListener {
             }
         }
         val heading = if (l0.hasBearing() && speed > 5) l0.bearing.toDouble() else -1.0
-        recordHitNow(ev, lat, lon, heading, speed, lowConf)
+        recordHitNow(ev, lat, lon, heading, speed, lowConf, pending.driveId)
     }
 
-    private fun recordHitNow(ev: HitEvent, lat: Double, lon: Double, heading: Double, speed: Float, lowConf: Boolean) {
+    /** Settles every waiting hit right now, so Stop and a trip split count the bump that just happened in the drive it belongs to. */
+    private fun settlePendingHits() {
+        val waiting = synchronized(pendingHits) { ArrayList(pendingHits).also { pendingHits.clear() } }
+        for (p in waiting) {
+            main.removeCallbacks(p.fallback)
+            val l0 = p.fix
+            val ageS = ((p.ev.startMs - l0.elapsedRealtimeNanos / 1_000_000) / 1000.0).coerceIn(0.0, 4.0)
+            val speed = mph(l0)
+            var lat = l0.latitude; var lon = l0.longitude; var lowConf = false
+            if (ageS > 2.0) lowConf = true
+            else if (l0.hasBearing() && l0.speed > 2) {
+                val swing = p.prev != null && p.prev.hasBearing() && Geo.angleDiff(l0.bearing.toDouble(), p.prev.bearing.toDouble()) > 30
+                if (swing) lowConf = true
+                else {
+                    val (plat, plon) = Geo.offset(l0.latitude, l0.longitude, l0.bearing.toDouble(), l0.speed * ageS)
+                    if (Geo.distance(plat, plon, l0.latitude, l0.longitude) <= 50) { lat = plat; lon = plon } else lowConf = true
+                }
+            }
+            val heading = if (l0.hasBearing() && speed > 5) l0.bearing.toDouble() else -1.0
+            recordHitNow(p.ev, lat, lon, heading, speed, lowConf, p.driveId)
+        }
+    }
+
+    private fun recordHitNow(ev: HitEvent, lat: Double, lon: Double, heading: Double, speed: Float, lowConf: Boolean, driveId: Long) {
+        if (destroyed) return
         val now = System.currentTimeMillis()
         Prefs.lastAliveMs = now
         val guess = Classifier.guess(ev, speed, recentStarts)
@@ -210,7 +272,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         passes.values.forEach { it.hit = true }
         Live.update { it.copy(hardestHitG = hardestAfterHit(it.hardestHitG, ev.peakG)) }
         Live.bump()
-        if (spot.address.isBlank()) io.execute { lookupAddress(spot) }
+        if (spot.address.isBlank()) try { io.execute { lookupAddress(spot) } } catch (e: Exception) { }
         val quiet = guess == DefectType.RUMBLE || spot.type == DefectType.RUMBLE
         if (ev.peakG >= Prefs.severeG && !quiet && spot.review != "DISMISSED" && !(spot.typeUser && spot.review == "CONFIRMED")) {
             Notifier.severe(this, spot, true)
@@ -230,13 +292,14 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     }
 
     override fun onLocationChanged(l: Location) {
+        if (destroyed) return
         val waiting = synchronized(pendingHits) { if (pendingHits.isEmpty()) null else ArrayList(pendingHits).also { pendingHits.clear() } }
-        waiting?.forEach { main.removeCallbacks(it.fallback); interpolateHit(it.ev, it.fix, l) }
+        waiting?.forEach { main.removeCallbacks(it.fallback); interpolateHit(it.ev, it.fix, l, it.driveId) }
         prevFix = last; last = l; lastFixMs = System.currentTimeMillis()
         val sp = mph(l)
         passengerTick(sp)
         val prev = Live.state.value
-        Live.update { it.copy(speedMph = sp, gps = true) }
+        Live.update { it.copy(speedMph = sp, gps = true, gpsLost = false) }
         lastSpeedMph = sp
         if (sp > STANDSTILL_MPH) { lastMoveMs = lastFixMs; lastDrivingMs = lastFixMs }
         if (autoOffDue(lastDrivingMs, lastFixMs, Prefs.autoOffMin)) { autoOff(); return }
@@ -248,13 +311,24 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         }
     }
 
+    // The warn list changes only when the database changes, so it is read once per change instead of once per second (item 12).
+    private var warnCache: List<Spot>? = null
+    private var warnCacheWrites = -1L
+
+    private fun warnList(): List<Spot> {
+        val w = Db.writes
+        val c = warnCache
+        if (c != null && w == warnCacheWrites) return c
+        return db.warnSpots().also { warnCache = it; warnCacheWrites = w }
+    }
+
     private fun checkSpots(l: Location, speed: Float) {
         if (speed < 3f || !l.hasBearing()) return
         val now = System.currentTimeMillis()
         val far = Prefs.warnFarFt / Geo.FT_PER_M
         val near = Prefs.warnNearFt / Geo.FT_PER_M
         val zone = 24.0 // about 80 ft, so any lane counts
-        val spots = db.warnSpots()
+        val spots = warnList()
         for (s in spots) {
             val d = Geo.distance(l.latitude, l.longitude, s.lat, s.lon)
             // Only spots we travel toward in the same direction as when logged.
@@ -264,7 +338,8 @@ class DriveService : Service(), SensorEventListener, LocationListener {
             if (ahead && d <= far && d > near && now - (warned[s.id] ?: 0L) > 120_000) {
                 warned[s.id] = now
                 Notifier.ahead(this, s, (d * Geo.FT_PER_M).toInt(), false)
-                if (Prefs.audioMode == "VOICE" || Prefs.audioMode == "BOTH") Sound.playAhead(this, s, (d * Geo.FT_PER_M).toInt(), false, false)
+                // The far warning sounds in every audible mode now, Tone only included (item 10).
+                Sound.playAhead(this, s, (d * Geo.FT_PER_M).toInt(), false, false)
             }
             if (ahead && d <= near && now - (warnedNear[s.id] ?: 0L) > 60_000) {
                 warnedNear[s.id] = now
@@ -319,6 +394,7 @@ class DriveService : Service(), SensorEventListener, LocationListener {
 
     /** Parked for 15 minutes: close the trip with its summary, then keep logging as a fresh one. Passenger mode carries over. */
     private fun rollTrip() {
+        settlePendingHits()
         val hits = db.hitsInDrive(driveId)
         val toFile = db.tripSpots(driveId).size
         if (hits > 0 || toFile > 0) Notifier.driveDone(this, hits, toFile, driveId)
@@ -340,14 +416,16 @@ class DriveService : Service(), SensorEventListener, LocationListener {
 
     private fun finishDrive() {
         finishedCleanly = true
+        releaseWake()
         if (!Live.state.value.running) { stopSelf(); return }
-        main.removeCallbacks(stopRunnable); main.removeCallbacks(clock)
+        main.removeCallbacks(stopRunnable); main.removeCallbacks(clock); main.removeCallbacks(gpsWatch)
         sm.unregisterListener(this)
         try { lm.removeUpdates(this) } catch (e: Exception) { }
+        settlePendingHits()
         val hits = db.hitsInDrive(driveId)
         val toFile = db.tripSpots(driveId).size
         Prefs.passenger = false // the next drive starts un-paused, however it is started
-        Live.update { it.copy(running = false, paused = false, speedMph = 0f, gps = false, driveId = driveId, tick = it.tick + 1) }
+        Live.update { it.copy(running = false, paused = false, speedMph = 0f, gps = false, gpsLost = false, driveId = driveId, tick = it.tick + 1) }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
         Notifier.removeOverlay(this)
         if (hits > 0 || toFile > 0) Notifier.driveDone(this, hits, toFile, driveId)
@@ -357,9 +435,12 @@ class DriveService : Service(), SensorEventListener, LocationListener {
     }
 
     override fun onDestroy() {
-        main.removeCallbacks(clock)
+        destroyed = true
+        releaseWake()
+        main.removeCallbacks(clock); main.removeCallbacks(gpsWatch)
         sm.unregisterListener(this)
         try { lm.removeUpdates(this) } catch (e: Exception) { }
+        io.shutdown()
         if (Live.state.value.running) {
             Live.update { it.copy(running = false) }
             // Android killed logging mid-drive with Power still on: say so, because nothing restarts it until the app opens.

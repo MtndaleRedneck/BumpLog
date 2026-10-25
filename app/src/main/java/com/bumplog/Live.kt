@@ -9,6 +9,8 @@ data class LiveState(
     val paused: Boolean = false,
     val speedMph: Float = 0f,
     val gps: Boolean = false,
+    /** True once a fix has been had this drive and then gone stale: the screen and notice say so instead of implying all is well. */
+    val gpsLost: Boolean = false,
     val hardestHitG: Float = 0f,
     val lastG: Float = 0f,
     val tick: Int = 0,          // bumps when the database changes, so screens reload
@@ -50,7 +52,7 @@ fun passengerStep(leftMs: Long, warned: Boolean, speedMph: Float, stillMs: Long)
 
 /** A new trip after a long stop keeps the GPS state and, above all, the Passenger/Driver mode the user chose. */
 fun tripRolloverState(previous: LiveState, passenger: Boolean, driveId: Long) =
-    driveStartState(previous.tick, passenger, driveId).copy(gps = previous.gps)
+    driveStartState(previous.tick, passenger, driveId).copy(gps = previous.gps, gpsLost = previous.gpsLost)
 
 const val STANDSTILL_MPH = 3f
 

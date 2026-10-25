@@ -58,6 +58,13 @@ adb shell am force-stop com.bumplog; sleep 1
 adb shell am start -n com.bumplog/.MainActivity --es screen settings; sleep 3
 scroll_to "auto backup" v16-backup
 shot v16-askmail --ez demo true --es screen home --ez askmail true
+# v1.17: the four approved design changes, captured on the real screens
+shot v17-home-gpslost --ez demo true --es screen home --ez mockgpslost true
+shot v17-delete-dialog --es screen settings --ez showwipe true
+adb shell am force-stop com.bumplog; sleep 1
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --ez logpaused true
+sleep 3; adb exec-out screencap -p > $OUT/v17-logpaused-headsup.png
+scroll_to "Auto backup: off" v17-backup-status
 ls -la $OUT
 adb shell wm size reset
 adb shell wm density reset

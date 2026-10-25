@@ -85,23 +85,57 @@ object Backup {
 
     /** Writes the full backup zip into the auto-backup folder the owner picked. False when no folder is set or the write fails. */
     fun autoSave(ctx: Context): Boolean {
+        val ok = autoSaveUri(ctx) != null
+        if (ok) prune(ctx, android.net.Uri.parse(Prefs.backupFolder)) // prune only after the new backup wrote cleanly (item 6)
+        return ok
+    }
+
+    /** Like [autoSave] but returns the new file, so the caller can verify it before trusting it. */
+    private fun autoSaveUri(ctx: Context): android.net.Uri? {
         val tree = Prefs.backupFolder
-        if (tree.isBlank()) return false
+        if (tree.isBlank()) return null
         return try {
             val treeUri = android.net.Uri.parse(tree)
             val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri))
-            val created = android.provider.DocumentsContract.createDocument(ctx.contentResolver, docUri, "application/zip", fileName("zip")) ?: return false
+            val created = android.provider.DocumentsContract.createDocument(ctx.contentResolver, docUri, "application/zip", fileName("zip")) ?: return null
             val ok = ctx.contentResolver.openOutputStream(created, "wt")?.use { writeZip(ctx, it); true } ?: false
-            if (ok) { Prefs.lastBackupTs = System.currentTimeMillis(); prune(ctx, treeUri) }
-            ok
-        } catch (e: Exception) { false }
+            if (ok) {
+                Prefs.lastBackupTs = System.currentTimeMillis()
+                created
+            } else {
+                // A failed save must not leave a half-written zip that counts as the newest backup (item 6). Only this just-created file is removed.
+                try { android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, created) } catch (e: Exception) { }
+                null
+            }
+        } catch (e: Exception) { null }
     }
 
-    /** Keeps the newest 8 auto-backup zips in the picked folder; older ones are deleted. */
+    /**
+     * Saves a fresh backup into the picked folder and reads it all the way back: every entry decompressed, the zip's
+     * end record checked by ZipFile. Only then is it offered as the safety copy before a delete (item 11).
+     * False when no folder is set, the write fails, or the read-back fails.
+     */
+    fun autoSaveVerified(ctx: Context): Boolean {
+        val created = autoSaveUri(ctx) ?: return false
+        val tmp = File(ctx.cacheDir, "verify-backup.zip")
+        return try {
+            ctx.contentResolver.openInputStream(created)?.use { ins -> tmp.outputStream().use { ins.copyTo(it) } } ?: return false
+            java.util.zip.ZipFile(tmp).use { z ->
+                val names = z.entries().toList().map { it.name }
+                if ("backup.json" !in names) return false
+                val buf = ByteArray(65536)
+                for (e in z.entries()) { z.getInputStream(e).use { while (it.read(buf) >= 0) { } } }
+            }
+            prune(ctx, android.net.Uri.parse(Prefs.backupFolder)) // only a backup that read back complete may push older ones out
+            true
+        } catch (e: Exception) { false } finally { tmp.delete() }
+    }
+
+    /** Keeps the newest backup of each of the last 8 days, and never fewer than the newest 2 files (item 6). Runs only after a new backup wrote cleanly. */
     private fun prune(ctx: Context, treeUri: android.net.Uri) {
         try {
             val kids = android.provider.DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri))
-            val zips = mutableListOf<Pair<android.net.Uri, Long>>()
+            val zips = mutableListOf<Triple<android.net.Uri, Long, String>>()
             ctx.contentResolver.query(kids, arrayOf(
                 android.provider.DocumentsContract.Document.COLUMN_DOCUMENT_ID,
                 android.provider.DocumentsContract.Document.COLUMN_DISPLAY_NAME,
@@ -109,11 +143,16 @@ object Backup {
                 while (c.moveToNext()) {
                     val name = c.getString(1) ?: continue
                     if (!name.startsWith("BumpLog-backup-") || !name.endsWith(".zip")) continue
-                    zips.add(android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(0)) to c.getLong(2))
+                    zips.add(Triple(android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(0)), c.getLong(2), name))
                 }
             }
-            zips.sortBy { it.second }
-            while (zips.size > 8) android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, zips.removeAt(0).first)
+            zips.sortByDescending { it.second }
+            // A busy day no longer pushes out last week's copy: one per day survives, newest days first.
+            val keep = HashSet<android.net.Uri>()
+            val days = zips.map { it.third.removePrefix("BumpLog-backup-").removeSuffix(".zip") }.distinct().take(8)
+            for (d in days) zips.firstOrNull { it.third == "BumpLog-backup-$d.zip" }?.let { keep.add(it.first) }
+            zips.take(2).forEach { keep.add(it.first) } // the floor: pruning never leaves fewer than 2
+            for (z in zips) if (z.first !in keep) android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, z.first)
         } catch (e: Exception) { /* a folder that can't be listed keeps its zips */ }
     }
 

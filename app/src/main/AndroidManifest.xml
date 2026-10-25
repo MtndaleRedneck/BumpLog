@@ -10,6 +10,10 @@
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- Held only while logging, so hits are not missed with the screen off. -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Lets the paused-logging notice come back after a phone restart. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Used by the always-on update check. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -29,6 +33,7 @@
     </queries>
 
     <application
+        android:name=".BumpLogApp"
         android:allowBackup="false"
         android:networkSecurityConfig="@xml/network_security"
         android:icon="@mipmap/ic_launcher"
@@ -76,6 +81,12 @@
         </receiver>
 
         <receiver android:name=".ActionReceiver" android:exported="false" />
+
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
 
         <provider
             android:name="androidx.core.content.FileProvider"

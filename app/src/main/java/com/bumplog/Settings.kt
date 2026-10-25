@@ -76,7 +76,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     var hitTimeout by remember { mutableStateOf(Prefs.hitTimeoutSec.toString()) }
     var car by remember { mutableStateOf(Prefs.carAddress) }
     var batt by remember { mutableStateOf(batteryDone(ctx)) }
-    var confirmWipe by remember { mutableStateOf(false) }
+    var confirmWipe by remember { mutableStateOf(BuildConfig.DEBUG && Testing.openWipeOnce.also { Testing.openWipeOnce = false }) }
     var permsOk by remember { mutableStateOf(permsGranted(ctx)) }
     LaunchedEffect(tick) { batt = batteryDone(ctx); permsOk = permsGranted(ctx) }
     // Re-check live every time the app comes back to the front, so a row reappears if something is revoked later.
@@ -262,8 +262,21 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         }
         if (confirmWipe) AlertDialog(onDismissRequest = { confirmWipe = false },
             confirmButton = { TextButton({ Db.get(ctx).wipeAll(); DamagePhotos.wipeAll(ctx); Prefs.wipeLocalExtras(ctx); Live.bump(); confirmWipe = false }) { Text("Delete") } },
-            dismissButton = { TextButton({ confirmWipe = false }) { Text("Cancel") } },
-            title = { Text("Delete all data?") }, text = { Text("Every logged hit, spot, report, damage photo, voice recording, draft, saved reference, and exported file on this phone will be erased.") })
+            dismissButton = {
+                Row {
+                    // Back up first is optional and never deletes anything. With an auto-backup folder the new zip is
+                    // read back complete before it counts; the share sheet is just the sheet - it never confirms a save.
+                    TextButton({
+                        if (Prefs.backupFolder.isNotBlank()) {
+                            runIo(ctx) { if (Backup.autoSaveVerified(ctx)) "Backup saved and checked." else "Backup failed - nothing was deleted." }
+                        } else {
+                            runIo(ctx) { ctx.startActivity(Backup.shareIntent(ctx).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); "Save or share the file yourself. Delete stays here when you're back." }
+                        }
+                    }) { Text("Back up first") }
+                    TextButton({ confirmWipe = false }) { Text("Cancel") }
+                }
+            },
+            title = { Text("Delete all data?") }, text = { Text("Every logged hit, spot, report, damage photo, voice recording, and draft on this phone will be erased. Backups and files you saved elsewhere stay.") })
     }
 }
 
@@ -393,6 +406,11 @@ private fun BackupCards() {
             Muted("Auto backup is on: the full backup saves to your folder weekly and after each trip email.", 12)
             if (Prefs.lastBackupTs > 0) Muted("Last backup: " + java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(Prefs.lastBackupTs)), 12)
         }
+        // One honest line about automatic backups: off, on-but-never-succeeded, or the date of the last one that wrote.
+        Muted(
+            if (!folderSet) "Auto backup: off"
+            else if (Prefs.lastBackupTs > 0) "Last auto backup: " + java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(Prefs.lastBackupTs))
+            else "Auto backup: on - no backup saved yet", 12)
     }
     Card(pad = 16.dp) {
         Txt("Spreadsheet CSV", 18, FontWeight.Bold)

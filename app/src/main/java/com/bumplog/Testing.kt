@@ -4,6 +4,9 @@ import android.content.Context
 
 /** Simulation controls for pre-beta testing. They fire the real notifications and screens using flagged TEST spots. */
 object Testing {
+    /** Debug builds only: the CI screenshot run asks once for the delete dialog to be open. */
+    var openWipeOnce = false
+
     fun majorHit(ctx: Context) {
         Notifier.channels(ctx)
         val s = Db.get(ctx).addTestSpot(DefectType.POTHOLE, confirmed = false, severity = "MAJOR", fileTrip = false, maxG = 1.6f)

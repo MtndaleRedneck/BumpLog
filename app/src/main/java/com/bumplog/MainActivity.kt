@@ -223,6 +223,12 @@ class MainActivity : ComponentActivity() {
         if (BuildConfig.DEBUG && i.getBooleanExtra("celebrate", false)) Celebrate.trigger()
         if (BuildConfig.DEBUG && i.getBooleanExtra("askmail", false)) { Prefs.askSentFor = "5"; Prefs.askSentKind = "trip" }
         if (BuildConfig.DEBUG && i.getBooleanExtra("logstop", false)) Notifier.loggingStopped(this)
+        if (BuildConfig.DEBUG && i.getBooleanExtra("logpaused", false)) Notifier.loggingPaused(this)
+        if (BuildConfig.DEBUG && i.getBooleanExtra("showwipe", false)) { Testing.openWipeOnce = true; tab = "settings"; stack = emptyList() }
+        // Debug builds only, for the CI screenshot run: the Home screen as it looks after GPS drops mid-drive.
+        if (BuildConfig.DEBUG && i.getBooleanExtra("mockgpslost", false)) {
+            Live.update { it.copy(running = true, gps = false, gpsLost = true, speedMph = 38f, hardestHitG = 1.42f, lastG = 0.34f) }
+        }
         if (BuildConfig.DEBUG && i.getBooleanExtra("confirmnotice", false)) ConfirmationNotice.show()
         // Debug builds only, for the CI screenshot run: open the voice screens directly and put a few clips in place so every button shows.
         if (BuildConfig.DEBUG) {
