@@ -73,3 +73,14 @@ class BluetoothReceiver : BroadcastReceiver() {
         return chosen.isNotBlank() && d.address == chosen
     }
 }
+
+/** After a phone restart with Power on, says logging is paused and offers the same tap-to-start as the car notice. Never starts by itself. */
+class BootReceiver : BroadcastReceiver() {
+    override fun onReceive(ctx: Context, i: Intent) {
+        if (i.action != Intent.ACTION_BOOT_COMPLETED) return
+        Prefs.init(ctx)
+        if (!Prefs.detectionEnabled) return
+        Notifier.channels(ctx)
+        Notifier.loggingPaused(ctx)
+    }
+}

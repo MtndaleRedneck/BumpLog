@@ -33,6 +33,7 @@ object Notifier {
     const val ID_DAMAGE = 5
     const val ID_AUTO_OFF = 6
     const val ID_LOGGING_STOPPED = 8
+    const val ID_LOGGING_PAUSED = 9
     const val ID_PASSENGER = 7
     private val main = Handler(Looper.getMainLooper())
     private var overlayView: View? = null
@@ -89,6 +90,7 @@ object Notifier {
     fun foreground(ctx: Context, state: LiveState): Notification {
         val text = when {
             state.paused -> { val m = (Prefs.passengerLeftMs() + 59_999) / 60_000; "Paused (passenger). Back to Driver in ${m / 60}h ${m % 60}m." }
+            state.gpsLost -> "GPS lost - not logging."
             !state.gps -> "Detecting. Waiting for GPS."
             else -> "Detecting. %d mph".format(state.speedMph.toInt())
         }
@@ -183,6 +185,15 @@ object Notifier {
         nm.notify(ID_CAR, NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_stat).setContentTitle("Car connected")
             .setContentText("Tap to start logging this drive.")
+            .setAutoCancel(true).setContentIntent(openApp(ctx, 0, null, true)).build())
+    }
+
+    /** After a phone restart with Power on: neutral wording (no car is involved), the same tap-to-start action as the car notice. Never starts by itself. */
+    fun loggingPaused(ctx: Context) {
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        nm.notify(ID_LOGGING_PAUSED, NotificationCompat.Builder(ctx, CH_ALERT)
+            .setSmallIcon(R.drawable.ic_stat).setContentTitle("Logging paused")
+            .setContentText("Tap to start logging after restart.")
             .setAutoCancel(true).setContentIntent(openApp(ctx, 0, null, true)).build())
     }
 

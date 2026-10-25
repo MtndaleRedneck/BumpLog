@@ -96,6 +96,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
         !permsOk -> "Needs permission" to p.muted
         !live.running -> "Starting..." to p.muted
         live.paused -> { val m = (Prefs.passengerLeftMs() + 59_999) / 60_000; "Paused - passenger, ${m / 60}h ${m % 60}m left" to p.muted }
+        live.gpsLost -> "GPS lost - not logging" to p.yellow
         !live.gps -> "Waiting for GPS" to p.muted
         else -> "Detecting" to p.text
     }
@@ -130,7 +131,8 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
         }
         val isPassenger = Prefs.passenger || live.paused
         Row(Modifier.fillMaxWidth().height(76.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            val seg = listOf(false to "DRIVER" to "Logging hits", true to "PASSENGER" to "Not logging")
+            val driverSub = if (live.running && !live.gps) "Waiting for GPS" else "Logging hits"
+            val seg = listOf(false to "DRIVER" to driverSub, true to "PASSENGER" to "Not logging")
             @Composable fun Seg(k: Pair<Pair<Boolean, String>, String>, mod: Modifier) {
                 val (mode, title) = k.first
                 val on = isPassenger == mode
@@ -154,7 +156,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
             Muted("BumpLog needs these to log hits and warn you. Location stays on this phone.")
             Spacer(Modifier.height(10.dp)); SmallButton("Allow", Modifier.fillMaxWidth(), outline = false, onClick = askPerms)
         }
-        val liveOn = detOn && !isPassenger // Power off and Passenger both freeze Live Data at dimmed zeros
+        val liveOn = detOn && !isPassenger && live.gps // Power off, Passenger and a lost GPS all freeze Live Data at dimmed values
         val dimA = Modifier.alpha(if (liveOn) 1f else 0.35f)
         val speedTxt = if (liveOn) "${live.speedMph.toInt()}" else "0"
         Card(dimA, pad = 14.dp) {

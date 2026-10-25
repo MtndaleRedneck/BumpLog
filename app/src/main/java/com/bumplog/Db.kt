@@ -158,11 +158,19 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
      */
     @Synchronized fun recordHit(h: Hit, guess: DefectType): Spot {
         val db = writableDatabase
-        val near = spots("review!='FIXED'", null).filter {
+        // The join distance stays 30 m. A lat/lon box in the WHERE clause keeps the per-hit scan small
+        // instead of loading every unfixed spot on the main thread (item 12).
+        val latD = CLUSTER_M / 111_320.0
+        val lonD = CLUSTER_M / (111_320.0 * kotlin.math.cos(Math.toRadians(h.lat))).coerceAtLeast(0.01)
+        val near = spots("review!='FIXED' AND lat BETWEEN ? AND ? AND lon BETWEEN ? AND ?",
+            arrayOf((h.lat - latD).toString(), (h.lat + latD).toString(), (h.lon - lonD).toString(), (h.lon + lonD).toString())).filter {
             Geo.distance(it.lat, it.lon, h.lat, h.lon) <= CLUSTER_M &&
                 (it.heading < 0 || h.heading < 0 || Geo.angleDiff(it.heading, h.heading) <= 50)
         }.minByOrNull { Geo.distance(it.lat, it.lon, h.lat, h.lon) }
         val spotId: Long
+        // One transaction: a kill between the spot update and the hit insert never leaves the two out of step (item 14).
+        db.beginTransaction()
+        try {
         if (near != null) {
             spotId = near.id
             val maxG = maxOf(near.maxG, h.peakG)
@@ -171,8 +179,8 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                 put("drive_id", h.driveId); put("clean_passes", 0)
                 // A spot re-centres on the average of its hits only until its report is handed to the mail app
                 // (the "did the email go out?" ask), not only after "Yes, sent": the handed-off position is what
-                // the city gets. Later hits still count.
-                if (near.reportStatus == "NONE" && near.id.toString() !in Prefs.askSentFor.split(",")) {
+                // the city gets. Later hits still count. A shaky fix never moves the pin at all (item 5).
+                if (!h.lowConf && near.reportStatus == "NONE" && near.id.toString() !in Prefs.askSentFor.split(",")) {
                     val n = near.hitCount
                     put("lat", (near.lat * n + h.lat) / (n + 1)); put("lon", (near.lon * n + h.lon) / (n + 1))
                 }
@@ -193,9 +201,12 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         val hv = ContentValues().apply {
             put("spot_id", spotId); put("drive_id", h.driveId); put("ts", h.ts); put("lat", h.lat); put("lon", h.lon)
             put("heading", h.heading); put("speed", h.speedMph); put("peak_g", h.peakG); put("duration", h.durationMs)
-            put("peaks", h.peaks); put("type", guess.name)
+            put("peaks", h.peaks); put("type", guess.name); put("low_conf", h.lowConf)
         }
         db.insert("hits", null, hv)
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+        noteWrite()
         return spot(spotId)!!
     }
 
@@ -206,6 +217,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             is Float -> v.put(k, x); is Boolean -> v.put(k, if (x) 1 else 0); else -> v.put(k, x.toString())
         }
         writableDatabase.update("spots", v, "id=?", arrayOf(id.toString()))
+        noteWrite()
     }
 
     fun setReview(id: Long, review: String) = update(id, "review" to review)
@@ -232,7 +244,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     @Synchronized fun tripSpots(driveId: Long): List<Spot> =
         spots(TripReportPolicy.queueWhere(driveId == TEST_DRIVE), null, test = driveId == TEST_DRIVE)
     /** A warned spot's heads-up fired and the driver passed it again (hit or no hit). */
-    @Synchronized fun addSave(id: Long) { writableDatabase.execSQL("UPDATE spots SET saves=saves+1 WHERE id=?", arrayOf(id)) }
+    @Synchronized fun addSave(id: Long) { writableDatabase.execSQL("UPDATE spots SET saves=saves+1 WHERE id=?", arrayOf(id)); noteWrite() }
     /** Lifetime counters, all derived from the logged spots (so they go when the data is deleted). */
     class Score(val logged: Int, val sent: Int, val saves: Int, val warned: Int, val fixedAfterReport: Int = 0)
     @Synchronized fun score(): Score {
@@ -410,7 +422,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     /** "Still there": the spot is not fixed, so the clean-pass count starts over. */
     @Synchronized fun resetCleanPasses(id: Long) = update(id, "clean_passes" to 0)
     @Synchronized fun addCleanPass(id: Long) {
-        writableDatabase.execSQL("UPDATE spots SET clean_passes=clean_passes+1 WHERE id=?", arrayOf<Any>(id))
+        writableDatabase.execSQL("UPDATE spots SET clean_passes=clean_passes+1 WHERE id=?", arrayOf<Any>(id)); noteWrite()
     }
 
     // ---- hits ----
@@ -522,11 +534,16 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
 
     @Synchronized fun wipeAll() {
         writableDatabase.execSQL("DELETE FROM spots"); writableDatabase.execSQL("DELETE FROM hits"); writableDatabase.execSQL("DELETE FROM damage")
+        noteWrite()
     }
 
     companion object {
         const val CLUSTER_M = 30.0
         const val TEST_DRIVE = -77L
+        /** Bumped by every spot-table write, so cached reads (the drive-time warn list) refresh exactly when the data changes. */
+        @Volatile var writes = 0L
+            private set
+        fun noteWrite() { writes++ }
         @Volatile private var inst: Db? = null
         fun get(ctx: Context): Db = inst ?: synchronized(this) { inst ?: Db(ctx.applicationContext).also { inst = it } }
 

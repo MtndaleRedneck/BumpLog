@@ -1,3 +1,16 @@
+BumpLog 1.17.0
+
+- Logging no longer stops silently when Android restarts it in the background, and the weekly auto backup works even when the app was closed.
+- Screen off no longer means missed bumps: logging holds the phone awake while you drive.
+- When GPS drops (tunnel, location off), BumpLog says "GPS lost - not logging" instead of showing a live speed, and the auto-off and trip split wait for GPS instead of acting on a guess.
+- After a phone restart with Power on, a "Logging paused" notice offers to start logging again. It never starts by itself.
+- Bumps logged on a shaky GPS fix no longer move a spot's pin, and the shaky flag is saved with the hit.
+- "Delete all data" now offers "Back up first", and its wording matches what is actually erased. Delete is always your own separate tap. With an auto-backup folder, the fresh backup is read back complete before it counts.
+- In Tone only mode, the quarter-mile warning now beeps like the close warning.
+- Music stays dipped for the whole alert when two alerts overlap, instead of coming back up mid-sentence.
+- Auto backup keeps the newest backup of each of the last 8 days (never fewer than 2), and a failed save no longer leaves a broken zip behind.
+- Faster while driving: warned spots are looked up only when they change, and hit matching reads a small map box instead of the whole list.
+
 BumpLog 1.16.1
 
 - Fix the setup email (and damage reports without photos) opening in the mail app with an empty subject and message
