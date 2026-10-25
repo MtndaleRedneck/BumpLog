@@ -11,6 +11,13 @@ on:
         type: boolean
         default: false
 
+# A newer push cancels a stale run of the same ref - otherwise two runs can race their
+# screenshots commits and the loser dies on a binary rebase conflict. Manual publish runs
+# get their own group so a push never cancels a publish.
+concurrency:
+  group: build-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
