@@ -5,9 +5,22 @@ APK=app/build/outputs/apk/debug/app-debug.apk
 OUT=docs/screenshots
 mkdir -p $OUT
 adb shell settings put global hide_error_dialogs 1
-# Match the primary tester's phone (1440x3088 @ ~649dpi, Galaxy S22 Ultra class)
-adb shell wm size 1440x2807
-adb shell wm density 649
+# Match the primary tester's phone exactly: Galaxy S22 Ultra, 360dp wide at 480dpi,
+# font scale 1.00 (measured via a BumpLog feedback report 2026-10-14).
+adb shell wm size 1080x2310
+adb shell wm density 480
+# Verify what actually applied - captures are review evidence and must carry real geometry.
+for t in 1 2; do
+  SZ=$(adb shell wm size | tr '\n' ' '); DN=$(adb shell wm density | tr '\n' ' '); FS=$(adb shell settings get system font_scale)
+  [ "$FS" = "null" ] && FS="1.0 (unset=default)"
+  W=$(echo "$SZ" | grep -o '[0-9][0-9]*x[0-9][0-9]*' | tail -1 | cut -dx -f1)
+  D=$(echo "$DN" | grep -o '[0-9][0-9]*' | tail -1)
+  DPW=$((W*160/D))
+  echo "display check: $SZ | $DN | font_scale=$FS -> ${W}px wide @ ${D}dpi = ${DPW}dp"
+  [ "$DPW" -ge 355 ] && [ "$DPW" -le 365 ] && break
+  if [ "$t" = 2 ]; then echo "DISPLAY GEOMETRY MISMATCH - captures would not match his phone"; exit 1; fi
+  adb shell wm size 1080x2310; adb shell wm density 480; sleep 2
+done
 adb install -r $APK
 for p in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION POST_NOTIFICATIONS BLUETOOTH_CONNECT; do adb shell pm grant com.bumplog android.permission.$p; done
 shot() { adb shell am force-stop com.bumplog; sleep 1; adb shell am start -n com.bumplog/.MainActivity "${@:2}"; sleep 5; adb exec-out screencap -p > $OUT/$1.png; }
@@ -16,6 +29,7 @@ shot warmup --ez demo true --es screen home
 sleep 5
 rm -f $OUT/warmup.png
 shot home --ez demo true --es screen home
+echo "capture check: home.png is $(file -b $OUT/home.png)"
 shot alert --es screen alert --el spot 3
 shot review --es screen review
 shot setup --ez demo true --es screen setup
