@@ -75,9 +75,13 @@ shot v16-askmail --ez demo true --es screen home --ez askmail true
 # v1.17: the four approved design changes, captured on the real screens
 shot v17-home-gpslost --ez demo true --es screen home --ez mockgpslost true
 shot v17-delete-dialog --es screen settings --ez showwipe true
+# Restart heads-up: draw Home first, then re-launch warm with the debug extra - the notice
+# posts over the drawn screen and the capture beats the ~5s peek window (deterministic).
 adb shell am force-stop com.bumplog; sleep 1
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home
+sleep 7
 adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --ez logpaused true
-sleep 7; adb exec-out screencap -p > $OUT/v17-logpaused-headsup.png
+sleep 2; adb exec-out screencap -p > $OUT/v17-logpaused-headsup.png
 adb shell am force-stop com.bumplog; sleep 1
 adb shell am start -n com.bumplog/.MainActivity --es screen settings; sleep 3
 # v17 backup status line sits at the bottom of the Backup card: scroll until its
