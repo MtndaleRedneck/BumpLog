@@ -158,15 +158,17 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
         }
         val liveOn = detOn && !isPassenger && live.gps // Power off, Passenger and a lost GPS all freeze Live Data at dimmed values
         val dimA = Modifier.alpha(if (liveOn) 1f else 0.35f)
-        val speedTxt = if (liveOn) "${live.speedMph.toInt()}" else "0"
-        Card(dimA, pad = 14.dp) {
+        val speedTxt = if (liveOn || live.gpsLost) "${live.speedMph.toInt()}" else "0" // GPS lost: frozen last values, dimmed (approved preview), not zeroed
+        Card(pad = 14.dp) {
             Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+              Column(dimA.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                 Muted("LIVE DATA", 13, Modifier.asHeading())
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.Bottom) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) { Row(verticalAlignment = Alignment.Bottom) { Txt(speedTxt, 44, FontWeight.Bold); Spacer(Modifier.width(4.dp)); Txt("mph", 16, FontWeight.Normal, p.muted, Modifier.padding(bottom = 7.dp)) } }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) { Row(verticalAlignment = Alignment.Bottom) { Txt("%.1f".format(if (liveOn) live.lastG else 0f), 44, FontWeight.Bold); Spacer(Modifier.width(4.dp)); Txt("g", 16, FontWeight.Normal, p.muted, Modifier.padding(bottom = 7.dp)) } }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) { Row(verticalAlignment = Alignment.Bottom) { Txt("%.1f".format(if (liveOn || live.gpsLost) live.lastG else 0f), 44, FontWeight.Bold); Spacer(Modifier.width(4.dp)); Txt("g", 16, FontWeight.Normal, p.muted, Modifier.padding(bottom = 7.dp)) } }
                 }
                 Wave(if (liveOn) live.wave else FloatArray(0), Modifier.fillMaxWidth().height(96.dp).padding(top = 6.dp), color = p.accent)
+              }
                 Spacer(Modifier.height(6.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) { Dot(status.second); Spacer(Modifier.width(8.dp)); Txt(status.first, 15, FontWeight.Medium, status.second) }
             }
