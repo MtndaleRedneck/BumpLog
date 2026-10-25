@@ -66,7 +66,7 @@ val LocalPal = staticCompositionLocalOf { palette(true, 0) }
 
 @Composable
 fun BumpLogTheme(theme: String, accent: Int, content: @Composable () -> Unit) {
-    // Dark only (Ezzy, Oct 2026): the Light/System choices are gone, the app always uses the dark palette.
+    // Dark only (owner decision, Oct 2026): the Light/System choices are gone, the app always uses the dark palette.
     val p = palette(true, accent)
     val scheme = darkColorScheme(primary = p.accent, onPrimary = p.onAccent, background = p.bg, surface = p.card,
         onBackground = p.text, onSurface = p.text, surfaceVariant = p.card2)
