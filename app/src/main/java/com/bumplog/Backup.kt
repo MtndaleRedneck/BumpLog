@@ -83,6 +83,42 @@ object Backup {
         }
     }
 
+
+    /**
+     * Creates a file, writes the zip, and hands the file back only when the write finished. Any failure - the stream
+     * never opening OR the write throwing midway - removes the just-created partial file, so a failed save leaves no
+     * half-written zip that prune could mistake for the day's newest backup (item 6). Pure plumbing, unit-tested.
+     */
+    internal fun <T> writeOrDelete(create: () -> T?, openOut: (T) -> OutputStream?, write: (OutputStream) -> Unit, delete: (T) -> Unit): T? {
+        val created = create() ?: return null
+        try {
+            val ok = openOut(created)?.use { write(it); true } ?: false
+            if (ok) return created
+        } catch (e: Exception) { }
+        try { delete(created) } catch (e: Exception) { }
+        return null
+    }
+
+    /** The yyyyMMdd day a backup file belongs to. Provider renames like "BumpLog-backup-20261025 (1).zip" keep the date at the front. Null for files this app did not name - those are never pruned. */
+    internal fun dayKey(name: String): String? = Regex("^BumpLog-backup-(\\d{8})(?!\\d)").find(name)?.groupValues?.get(1)
+
+    /**
+     * Which of [zips] (id, lastModified, displayName) survive pruning, split out pure for tests: the newest file of
+     * each of the 8 newest days, never fewer than the newest 2 files. A busy day's second save shares the day's key,
+     * so it counts once and the first-in-list (newest) save of the day survives; a day can no longer burn two slots
+     * and push an older day out. Files not named by this app are left alone.
+     */
+    internal fun <T> selectKeep(zips: List<Triple<T, Long, String>>): Set<T> {
+        val sorted = zips.sortedByDescending { it.second }
+        val keep = HashSet<T>()
+        sorted.filter { dayKey(it.third) == null }.forEach { keep.add(it.first) }
+        val keyed = sorted.mapNotNull { z -> dayKey(z.third)?.let { z to it } }
+        val days = keyed.map { it.second }.distinct().take(8)
+        for (d in days) keyed.firstOrNull { it.second == d }?.let { keep.add(it.first.first) }
+        sorted.take(2).forEach { keep.add(it.first) } // the floor: pruning never leaves fewer than 2
+        return keep
+    }
+
     /** Writes the full backup zip into the auto-backup folder the owner picked. False when no folder is set or the write fails. */
     fun autoSave(ctx: Context): Boolean {
         val ok = autoSaveUri(ctx) != null
@@ -97,16 +133,14 @@ object Backup {
         return try {
             val treeUri = android.net.Uri.parse(tree)
             val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri))
-            val created = android.provider.DocumentsContract.createDocument(ctx.contentResolver, docUri, "application/zip", fileName("zip")) ?: return null
-            val ok = ctx.contentResolver.openOutputStream(created, "wt")?.use { writeZip(ctx, it); true } ?: false
-            if (ok) {
-                Prefs.lastBackupTs = System.currentTimeMillis()
-                created
-            } else {
-                // A failed save must not leave a half-written zip that counts as the newest backup (item 6). Only this just-created file is removed.
-                try { android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, created) } catch (e: Exception) { }
-                null
-            }
+            val created = writeOrDelete(
+                create = { android.provider.DocumentsContract.createDocument(ctx.contentResolver, docUri, "application/zip", fileName("zip")) },
+                openOut = { ctx.contentResolver.openOutputStream(it, "wt") },
+                write = { writeZip(ctx, it) },
+                // Only this just-created file is removed, never anything already in the folder.
+                delete = { android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, it) })
+            if (created != null) Prefs.lastBackupTs = System.currentTimeMillis()
+            created
         } catch (e: Exception) { null }
     }
 
@@ -146,12 +180,7 @@ object Backup {
                     zips.add(Triple(android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, c.getString(0)), c.getLong(2), name))
                 }
             }
-            zips.sortByDescending { it.second }
-            // A busy day no longer pushes out last week's copy: one per day survives, newest days first.
-            val keep = HashSet<android.net.Uri>()
-            val days = zips.map { it.third.removePrefix("BumpLog-backup-").removeSuffix(".zip") }.distinct().take(8)
-            for (d in days) zips.firstOrNull { it.third == "BumpLog-backup-$d.zip" }?.let { keep.add(it.first) }
-            zips.take(2).forEach { keep.add(it.first) } // the floor: pruning never leaves fewer than 2
+            val keep = selectKeep(zips)
             for (z in zips) if (z.first !in keep) android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, z.first)
         } catch (e: Exception) { /* a folder that can't be listed keeps its zips */ }
     }
