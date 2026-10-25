@@ -66,7 +66,15 @@ adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home 
 sleep 3; adb exec-out screencap -p > $OUT/v17-logpaused-headsup.png
 adb shell am force-stop com.bumplog; sleep 1
 adb shell am start -n com.bumplog/.MainActivity --es screen settings; sleep 3
-scroll_to "Auto backup: off" v17-backup-status
+# v17 backup status line sits at the bottom of the Backup card: scroll until its
+# bounds are comfortably above the nav bar, then capture (uiautomator bounds are in px).
+for i in $(seq 1 12); do
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+  TOP=$(adb shell cat /sdcard/ui.xml | grep -o 'text="Auto backup: off"[^>]*' | grep -o 'bounds="\[[0-9]*,\[[0-9]*' | grep -o '[0-9]*$')
+  if [ -n "$TOP" ] && [ "$TOP" -gt 100 ] && [ "$TOP" -lt 950 ]; then break; fi
+  adb shell input swipe 540 1800 540 900 300; sleep 1
+done
+sleep 1; adb exec-out screencap -p > $OUT/v17-backup-status.png
 ls -la $OUT
 adb shell wm size reset
 adb shell wm density reset
