@@ -1,3 +1,5 @@
+<p align="center"><img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="BumpLog icon" width="96"></p>
+
 # BumpLog
 
 After destroying one too many tires on bad roads, I built BumpLog - an app that reports bad roads to the authorities, and files a damage report when they don't get fixed and my car pays for it.
