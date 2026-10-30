@@ -19,11 +19,14 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Write access: this job can push an unpacked source bundle and publishes the release.
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +48,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
 
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
@@ -57,6 +60,7 @@ jobs:
           KEY_ALIAS: bumplog
         run: |
           if [ -z "$KEYSTORE_B64" ]; then echo "No signing secrets set"; exit 1; fi
+          trap 'rm -f "$RUNNER_TEMP/release.keystore"' EXIT
           echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
           export KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
           ./gradlew --no-daemon assembleRelease assembleDebug
@@ -102,6 +106,9 @@ jobs:
   screenshots:
     needs: build
     runs-on: ubuntu-latest
+    # Write access: this job commits the new screenshots.
+    permissions:
+      contents: write
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -111,7 +118,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
       - name: Build debug APK
         run: ./gradlew --no-daemon assembleDebug
       - name: Enable KVM
@@ -119,7 +126,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - uses: reactivecircus/android-emulator-runner@v2
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
           api-level: 34
           arch: x86_64

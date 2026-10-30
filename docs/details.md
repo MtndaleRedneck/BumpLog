@@ -4,7 +4,7 @@ Back to the [README](../README.md).
 
 ## Screens
 
-Captured by CI from the debug build running on an Android emulator, with demo data seeded. Visually checked for layout and text. Sensors and driving behaviour are not exercised by these.
+Captured by CI from the debug build running on an Android emulator, with demo data seeded. Visually checked for layout and text. Sensors and driving behavior are not exercised by these.
 
 | | | | |
 |---|---|---|---|
@@ -35,8 +35,7 @@ The app has no server and no accounts. It cannot send email by itself. **Send** 
 
 - While Power is on, GPS and the motion sensor stay on, which uses battery. Power turns itself off after the set time stopped. After a restart of the phone, open BumpLog once to resume logging. Restarting by itself after a reboot is planned for a later version.
 - The auto-off and Passenger timers keep running without a GPS fix, but Passenger only switches back to Driver once a fresh fix confirms you are stopped, so it waits indoors or in a tunnel until the phone gets one. Auto-off measures time stopped, so a long dead stop on a highway can turn logging off; the notification lets you turn it back on.
-The app builds in CI and passes its unit tests. The screens render on an Android emulator (see screenshots above). Hit detection and alert timing have not been tuned on real roads.
-
+- The app builds in CI and passes its unit tests. The screens render on an Android emulator (see screenshots above). Hit detection and alert timing have not been tuned on real roads.
 - Car Bluetooth prompts only react to the one device you choose in Settings. They only offer: nothing starts or stops until you tap the notification.
 - Hit detection uses fixed thresholds and simple pattern rules. Real mount and car tuning will change them.
 - Defect-type guessing is a heuristic. Always confirm.
@@ -54,7 +53,7 @@ Tap **Battery setup** in Settings. On Samsung phones also add the app to Setting
 ./gradlew assembleRelease
 ```
 
-Needs JDK 17 and the Android SDK 34. GitHub Actions builds the APK on every push to `main` and publishes a release when the version number is new. Without the signing secrets the release build is unsigned.
+Needs JDK 17 and the Android SDK 34. GitHub Actions builds the APK on every push to `main`. Publishing is a manual run with publish turned on, after review. Without the signing secrets the release build is unsigned.
 
 ## Credits
 
