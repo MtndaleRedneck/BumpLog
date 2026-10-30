@@ -6,8 +6,6 @@ It logs hard hits by watching the accelerometer and GPS while you drive, and war
 
 Built for highways with violent height steps between pavement sections, not only city street potholes.
 
-> Battery use while Power is on, the auto-off timing, and the hit thresholds need real drives to tune. See [Known limits](docs/details.md#known-limits).
-
 ## How it works
 
 **Drive detection.** Turning Power on starts logging and keeps it running until you turn Power off, or until the phone has been stopped for a set time (30 minutes by default, adjustable from 10 to 120; slow traffic does not count as stopped). An optional setting, off by default, lets you pick your car's Bluetooth device: BumpLog then offers a notification to start logging when it connects and to stop when it disconnects. The accelerometer logs a hit at 0.85 g and a severe hit at 1.30 g (both adjustable), ignoring anything under 15 mph. Hits within 30 m in the same direction group into one spot. A Driver / Passenger switch on the home screen stops logging when you are not driving. Passenger goes back to Driver after 3 hours (waiting until you are stopped), with a heads-up, Extend and Undo.
@@ -32,7 +30,5 @@ Also: running report numbers assigned at confirm, CSV export and import (1 MB li
 2. Open it and allow installs from your browser when Android asks.
 3. Open BumpLog and follow the setup: add your assistant address, send the setup email so the assistant knows what to do, allow location (choose **Allow all the time**), notifications, and Bluetooth only if you want the car prompts.
 4. Tap **Battery setup** in Settings. On Samsung phones also add the app to Settings > Battery > Background usage limits > Never sleeping apps, or One UI can stop it mid-drive.
-
-Release APKs are built by GitHub Actions and signed with a private key held in encrypted repository secrets. The key is not in this repo. If you build the app yourself, your build is signed with your own key and will not install over a release APK.
 
 More detail on screens, filing, privacy, known limits, and building is in [docs/details.md](docs/details.md).
