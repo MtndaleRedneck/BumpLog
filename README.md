@@ -1,4 +1,4 @@
-<p align="center"><img src="app/src/main/res/mipmap-xxxhdpi/ic_launcher.png" alt="BumpLog icon" width="96"></p>
+<p align="center"><img src="docs/readme-icon.png" alt="BumpLog icon" width="96"></p>
 
 # BumpLog
 
