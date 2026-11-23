@@ -369,7 +369,8 @@ private fun BackupCards() {
                     val r = Backup.restoreZip(ctx, i)
                     if (r == null) "That file is not a BumpLog backup."
                     else "Restored ${r.spots} spot(s), ${r.hits} hit(s), ${r.damages} damage report(s), ${r.photos} photo(s) and ${r.settings} setting(s)." +
-                        (if (r.skipped > 0) " Skipped ${r.skipped} already here or unreadable." else "")
+                        (if (r.skipped > 0) " Skipped ${r.skipped} already here or unreadable." else "") +
+                        (if (r.incomplete) " Some photos, voice clips or settings did not copy - run Restore again with the same file to finish." else "")
                 } else {
                     val b = i.readNBytes(1_000_001)
                     if (b.size > 1_000_000) "That file is over 1 MB, so it was not imported."

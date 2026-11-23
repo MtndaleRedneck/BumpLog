@@ -112,3 +112,35 @@ class BackupTest {
         assertNull(out) // no exception escapes
     }
 }
+
+class RestoreGateTest {
+
+    @Test fun countsEveryEntryAndCapsThem() {
+        val g = Backup.RestoreGate()
+        repeat(5_000) { assertTrue(g.countEntry()) }
+        assertFalse("entry 5001 is past the cap", g.countEntry())
+    }
+
+    @Test fun rejectsDuplicateAndOversizedVoiceClips() {
+        val g = Backup.RestoreGate()
+        assertTrue(g.admitVoice("a.clip", 100))
+        assertFalse("a real backup has each voice name once", g.admitVoice("a.clip", 100))
+        assertFalse("over 5 MB is not a clip this app wrote", g.admitVoice("b.clip", 5_000_001))
+        assertTrue(g.admitVoice("b.clip", 5_000_000))
+    }
+
+    @Test fun capsCumulativeBytesAcrossJsonPhotosAndVoice() {
+        val g = Backup.RestoreGate()
+        assertTrue(g.addBytes(30_000_000L))   // a full backup.json
+        assertTrue(g.addBytes(1_470_000_000L)) // photos + voice up to the same cap
+        assertEquals(1_500_000_000L, g.total)
+        assertFalse("one byte past the cap", g.addBytes(1))
+    }
+
+    @Test fun runPhaseFlagsFailureWithoutThrowing() {
+        assertTrue(Backup.runPhase { })
+        var ran = false
+        assertFalse(Backup.runPhase { ran = true; throw java.io.IOException("disk full") })
+        assertTrue("the phase itself ran", ran)
+    }
+}
