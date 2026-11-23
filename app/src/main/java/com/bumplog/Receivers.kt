@@ -19,11 +19,11 @@ class ActionReceiver : BroadcastReceiver() {
             NO -> { db.setReview(id, "DISMISSED"); db.setWarn(id, false) }
             WARN -> db.setWarn(id, true)
             STILL -> { db.resetCleanPasses(id); Notifier.cancel(ctx, "fixed", id.toInt()) }
-            PAUSE -> { Prefs.passenger = !Prefs.passenger; Live.update { it.copy(paused = Prefs.passenger) } }
+            PAUSE -> { Prefs.passenger = !Prefs.passenger; Live.update { it.copy(paused = Prefs.passenger) }; if (Live.state.value.running) Notifier.cancelAndRefresh(ctx) }
             EXTEND -> { Prefs.extendPassenger(); Notifier.cancel(ctx, Notifier.ID_PASSENGER) }
             UNDO -> {
                 Notifier.cancel(ctx, Notifier.ID_PASSENGER)
-                if (System.currentTimeMillis() < Prefs.passengerUndoUntil) { Prefs.passengerUndoUntil = 0L; Prefs.passenger = true; Live.update { it.copy(paused = true) } }
+                if (System.currentTimeMillis() < Prefs.passengerUndoUntil) { Prefs.passengerUndoUntil = 0L; Prefs.passenger = true; Live.update { it.copy(paused = true) }; if (Live.state.value.running) Notifier.cancelAndRefresh(ctx) }
             }
             STOP -> { Prefs.detectionEnabled = false; Prefs.passenger = false; Notifier.cancel(ctx, Notifier.ID_CAR); ctx.startService(Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_STOP)) }
         }

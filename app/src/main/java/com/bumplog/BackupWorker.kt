@@ -23,7 +23,13 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
                 Notifier.backupFailed(applicationContext, r.reason)
                 Result.success()
             }
-            is Backup.SaveResult.Failed -> Result.retry()
+            // An ordinary failure (folder gone, permission revoked) is told once too, not
+            // retried silently; the weekly schedule brings the next regular run, and the
+            // Settings screen keeps showing the older last-backup day.
+            is Backup.SaveResult.Failed -> {
+                Notifier.backupFailed(applicationContext, r.reason)
+                Result.success()
+            }
         }
     }
 

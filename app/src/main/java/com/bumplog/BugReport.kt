@@ -56,7 +56,7 @@ fun BugReportScreen(done: () -> Unit) {
     val ctx = LocalContext.current
     var text by remember { mutableStateOf("") }
     val c = remember { BugReport.context(ctx) }
-    fun open(url: String) = ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+    fun open(url: String) = runCatching { ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
     Column(Modifier.fillMaxSize().pane("Feedback").verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         BackRow("Feedback", done)
         Card {

@@ -308,9 +308,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         val made = HashMap<String, Long>()
         var n = 0
         var maxNo = 0
-        val sections = text.trimStart('\uFEFF', '\n', '\r', ' ').split(Regex("\r?\n[ \t]*\r?\n"), limit = 2)
-        val damageText = sections.getOrNull(1)?.trim()
-        val lines = sections[0].lines().map { it.trimEnd('\r') }.filter { it.isNotBlank() }
+        // Quote-aware records first, sections after: a quoted field with a newline (or a
+        // blank line) inside must not split a record or start the damage section early.
+        val records = csvRecords(text.trimStart('\uFEFF')).dropWhile { it.isBlank() }
+        val lines = records.takeWhile { it.isNotBlank() }
+        val damageLines = records.drop(lines.size).dropWhile { it.isBlank() }.filter { it.isNotBlank() }
         if (lines.isEmpty() || !lines[0].startsWith("report_id,")) return null
         val header = splitCsv(lines[0])
         val withNo = ReportNumbers.spotsCsvHasNumbers(header)
@@ -359,11 +361,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                 db.execSQL("UPDATE spots SET hit_count=hit_count+1, max_g=MAX(max_g,?), first_ts=MIN(first_ts,?), last_ts=MAX(last_ts,?) WHERE id=?", arrayOf(g, ts, ts, sid))
             } catch (e: Exception) { bad++ }
         }
-        if (damageText != null && damageText.startsWith("damage_report_id,")) {
-            val dheader = splitCsv(damageText.lines().first())
+        if (damageLines.isNotEmpty() && damageLines[0].startsWith("damage_report_id,")) {
+            val dheader = splitCsv(damageLines[0])
             val dNo = ReportNumbers.damageCsvHasNumbers(dheader)
             val dhave = damages().map { it.reportId }.toMutableSet()
-            for (line in damageText.lines().drop(1).map { it.trimEnd('\r') }.filter { it.isNotBlank() }) {
+            for (line in damageLines.drop(1)) {
                 try {
                     val f = splitCsv(line)
                     if (f.size < 6) { bad++; continue }
@@ -391,7 +393,32 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         val existing = db.rawQuery("SELECT (SELECT COUNT(*) FROM spots WHERE (review='CONFIRMED' OR (review='FIXED' AND report_status<>'NONE')) AND report_id NOT LIKE 'TEST-%') + (SELECT COUNT(*) FROM damage)", null)
             .use { it.moveToFirst(); it.getInt(0) }
         bumpCounterTo(ReportNumbers.restoreNext(maxNo, 0, existing))
+        noteWrite() // an import changes what warnings should fire: drop the service's cached list
         return ImportResult(n, skippedIds.size + bad, dn)
+    }
+
+    /**
+     * Quote-aware logical CSV records: a newline inside a quoted field does not end the
+     * record. The writer quotes addresses/towns/counties that can contain newlines; reading
+     * back must not split those records apart.
+     */
+    internal fun csvRecords(text: String): List<String> {
+        val out = ArrayList<String>(); val cur = StringBuilder(); var inQ = false; var i = 0
+        while (i < text.length) {
+            val c = text[i]
+            when {
+                inQ && c == '"' && i + 1 < text.length && text[i + 1] == '"' -> { cur.append('"'); cur.append('"'); i++ }
+                c == '"' -> { inQ = !inQ; cur.append(c) }
+                (c == '\n' || c == '\r') && !inQ -> {
+                    if (c == '\r' && i + 1 < text.length && text[i + 1] == '\n') i++
+                    out.add(cur.toString()); cur.setLength(0)
+                }
+                else -> cur.append(c)
+            }
+            i++
+        }
+        out.add(cur.toString())
+        return out
     }
 
     /** Splits one CSV line, honouring double-quoted fields with doubled quotes. */
@@ -501,7 +528,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         val out = ArrayList<Damage>()
         readableDatabase.query("damage", arrayOf("id", "report_id", "hit_id", "spot_id", "category", "note", "ts", "status", "report_no", "report_ts"),
             null, null, null, null, "ts DESC").use { c ->
-            while (c.moveToNext()) out.add(Damage(c.getLong(0), c.getString(1), c.getLong(2), c.getLong(3), c.getString(4), c.getString(5), c.getLong(6), c.getString(7), c.getInt(8), c.getLong(9)))
+            while (c.moveToNext()) out.add(Damage(c.getLong(0), c.getString(1) ?: "", c.getLong(2), c.getLong(3), c.getString(4) ?: "", c.getString(5) ?: "", c.getLong(6), c.getString(7) ?: "", c.getInt(8), c.getLong(9)))
         }
         return out
     }

@@ -120,8 +120,16 @@ class DriveService : Service(), SensorEventListener, LocationListener {
         lastMoveMs = now
         lastDrivingMs = now
         Live.update { driveStartState(it.tick, Prefs.passenger, driveId) }
-        ServiceCompat.startForeground(this, Notifier.ID_FOREGROUND, Notifier.foreground(this, Live.state.value),
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+        try {
+            ServiceCompat.startForeground(this, Notifier.ID_FOREGROUND, Notifier.foreground(this, Live.state.value),
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION)
+        } catch (e: SecurityException) {
+            // Location permission is gone (revoked since, or an OS restart without it):
+            // stop cleanly instead of crashing, and stay off until he turns it back on.
+            Prefs.detectionEnabled = false
+            stopSelf()
+            return START_NOT_STICKY
+        }
         startSensors()
         main.removeCallbacks(clock); main.postDelayed(clock, 30_000L)
         main.removeCallbacks(gpsWatch); main.postDelayed(gpsWatch, 5_000L)
