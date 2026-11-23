@@ -5,6 +5,7 @@ import androidx.test.core.app.ApplicationProvider
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -152,5 +153,50 @@ class BackupRestoreTest {
         val out = ByteArrayOutputStream()
         Backup.writeZip(ctx, out)
         assertTrue(Backup.restoreZip(ctx, ByteArrayInputStream(out.toByteArray())) is Backup.RestoreResult.Done)
+    }
+
+    @Test
+    fun ownWriterWithNearBoundaryMediaPassesRestore() {
+        // Real data at the caps, not an empty database: a photo exactly at 60 MB and a
+        // voice clip exactly at 5 MB are written and accepted back by restore's scan.
+        done(Backup.restoreZip(ctx, damageZip()))
+        val dir = DamagePhotos.dir(ctx, "BD-20261102-EFGH")
+        File(dir, "p1.jpg").writeBytes(ByteArray(60_000_000))
+        Sound.clipFile(ctx, "generic").writeBytes(ByteArray(5_000_000))
+        val out = ByteArrayOutputStream()
+        Backup.writeZip(ctx, out)
+        val r = done(Backup.restoreZip(ctx, ByteArrayInputStream(out.toByteArray())))
+        assertFalse(r.incomplete)
+    }
+
+    @Test
+    fun writerRefusesAVoiceClipRestoreWouldReject() {
+        Sound.clipFile(ctx, "generic").writeBytes(ByteArray(5_000_001))
+        val e = assertThrows(Backup.BackupTooLarge::class.java) {
+            Backup.writeZip(ctx, ByteArrayOutputStream())
+        }
+        assertTrue(e.reason.isNotEmpty())
+    }
+
+    @Test
+    fun unknownEntriesAreIgnored() {
+        // Entries restore doesn't know don't fail the restore and are never opened.
+        val z = zipWith(backupJson(), mapOf(
+            "junk.bin" to ByteArray(2_000_000) { 7 },
+            "notes/readme.txt" to byteArrayOf(1, 2, 3)))
+        val r = done(Backup.restoreZip(ctx, z))
+        assertEquals(1, r.spots)
+    }
+
+    @Test
+    fun stagingLeftoversAreHiddenAndCleanedUp() {
+        done(Backup.restoreZip(ctx, damageZip()))
+        val dir = DamagePhotos.dir(ctx, "BD-20261102-EFGH")
+        File(dir, "half.jpg.restore-tmp").writeBytes(byteArrayOf(1, 2, 3))
+        assertFalse("a staging leftover is never shown as a photo",
+            DamagePhotos.files(ctx, "BD-20261102-EFGH").any { it.name.contains("restore-tmp") })
+        done(Backup.restoreZip(ctx, damageZip()))
+        assertFalse("a staging leftover is cleaned up on the next restore",
+            File(dir, "half.jpg.restore-tmp").exists())
     }
 }
