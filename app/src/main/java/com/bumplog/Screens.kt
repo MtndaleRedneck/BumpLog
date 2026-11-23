@@ -471,7 +471,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     fun build(): Damage? {
         val h = hits.firstOrNull { it.id == picked } ?: return null
         val d = Db.get(ctx).addDamage(h.id, h.spotId, cat, note, System.currentTimeMillis(), draftId)
-        if (photos.isNotEmpty()) DamagePhotos.add(ctx, d.reportId, photos)
+        if (photos.isNotEmpty()) DamagePhotos.addOnce(ctx, d.reportId, photos) // retry-safe: rebuilds add nothing twice
         return d
     }
     Column(Modifier.fillMaxSize().pane("File damage report").verticalScroll(ScrollMemory.get("Damage:$preSpot")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
