@@ -54,6 +54,31 @@ class DamageDraftTest {
     }
 
     @Test
+    fun aRetryFollowsThePickedHit() {
+        val db = Db.get(ctx)
+        val a = db.addDamage(7L, 0, "Tire", "first", 1000L, "draft-1")
+        // He taps a different hit before sending: the row follows, hit and all.
+        val b = db.addDamage(8L, 0, "Tire", "first", 2000L, "draft-1")
+        assertEquals(a.id, b.id)
+        assertEquals(8L, b.hitId)
+        assertEquals(8L, db.damageForDraft("draft-1")?.hitId)
+    }
+
+    @Test
+    fun rebuildingWithTheSamePhotosAddsNothingTwice() {
+        val src = java.io.File(ctx.cacheDir, "src"); src.mkdirs()
+        val one = java.io.File(src, "a.jpg").apply { writeBytes(ByteArray(100) { 1 }) }
+        val two = java.io.File(src, "b.jpg").apply { writeBytes(ByteArray(50) { 2 }) }
+        val pics = listOf(android.net.Uri.fromFile(one), android.net.Uri.fromFile(two))
+        DamagePhotos.addOnce(ctx, "BD-20261123-AAAA", pics)
+        DamagePhotos.addOnce(ctx, "BD-20261123-AAAA", pics) // a rebuilt sheet retries this line
+        assertEquals(2, DamagePhotos.files(ctx, "BD-20261123-AAAA").size)
+        DamagePhotos.addOnce(ctx, "BD-20261123-AAAA", pics + android.net.Uri.fromFile(
+            java.io.File(src, "c.jpg").apply { writeBytes(ByteArray(10) { 3 }) }))
+        assertEquals("a genuinely new pick lands", 3, DamagePhotos.files(ctx, "BD-20261123-AAAA").size)
+    }
+
+    @Test
     fun aSentDraftNeverFilesTwice() {
         val db = Db.get(ctx)
         val a = db.addDamage(9L, 0, "Tire", "done", 1000L, "draft-1")

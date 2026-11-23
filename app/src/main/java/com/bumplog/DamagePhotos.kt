@@ -9,6 +9,19 @@ import java.io.File
 object DamagePhotos {
     fun dir(ctx: Context, reportId: String) = File(ctx.filesDir, "damage/" + reportId.replace(Regex("[^A-Za-z0-9_-]"), "_")).apply { mkdirs() }
 
+    /** Adds each pick once per draft: the file name carries the pick position and the source
+     *  size, so rebuilding the sheet rewrites nothing and only genuinely new picks land. No
+     *  deletes: a pick that was removed before a rebuild stays as an orphan, never data loss. */
+    fun addOnce(ctx: Context, reportId: String, uris: List<Uri>) {
+        val d = dir(ctx, reportId)
+        uris.forEachIndexed { i, u ->
+            val size = try { ctx.contentResolver.openAssetFileDescriptor(u, "r")?.use { it.length } ?: -1L } catch (e: Exception) { -1L }
+            val f = File(d, "photo-$i-$size.jpg")
+            if (size >= 0 && f.isFile && f.length() == size) return@forEachIndexed
+            try { ctx.contentResolver.openInputStream(u)?.use { inp -> f.outputStream().use { inp.copyTo(it) } } } catch (e: Exception) { }
+        }
+    }
+
     fun add(ctx: Context, reportId: String, uris: List<Uri>): Int {
         var n = 0
         val d = dir(ctx, reportId)

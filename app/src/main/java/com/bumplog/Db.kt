@@ -526,9 +526,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             if (old.status == "SENT") return old
             val rts = hit(hitId)?.ts ?: now
             writableDatabase.update("damage", ContentValues().apply {
-                put("spot_id", spotId); put("category", category); put("note", note); put("report_ts", rts)
+                put("hit_id", hitId); put("spot_id", spotId); put("category", category); put("note", note); put("report_ts", rts)
             }, "id=?", arrayOf(old.id.toString()))
-            return old.copy(spotId = spotId, category = category, note = note, reportTs = rts)
+            return old.copy(hitId = hitId, spotId = spotId, category = category, note = note, reportTs = rts)
         }
         val rid = newReportId("BD", now)
         val no = takeReportNo()
