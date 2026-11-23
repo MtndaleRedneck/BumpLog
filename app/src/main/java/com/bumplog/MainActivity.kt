@@ -309,12 +309,26 @@ class MainActivity : ComponentActivity() {
         }
         askSent?.let { ids ->
             AlertDialog(
-                onDismissRequest = { askSent = null },
+                onDismissRequest = {
+                    // Same as "Not yet": hiding the dialog without a yes rolls a "Report
+                    // again" back and clears the pending state, so a later mail handoff
+                    // can't silently overwrite the rollback snapshot.
+                    if (Prefs.askSentKind == "again") Prefs.askAgain.split("|").let { p ->
+                        if (p.size == 6) Db.get(this@MainActivity).unReportAgain(p[0].toLong(), p[1].toInt(), p[2].toLong(), p[3].toLong(), p[4], p[5].toLong())
+                    }
+                    Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; askSent = null; Live.bump()
+                },
                 title = { Text("Did the email go out?") },
                 text = { Text(if (ids.size == 1) "The report went to your mail app. If it wasn't sent, it stays in the queue for the next try." else "The ${ids.size} reports went to your mail app. If they weren't sent, they stay in the queue for the next try.") },
                 confirmButton = { TextButton({
                     val now = System.currentTimeMillis(); val db = Db.get(this@MainActivity); ids.forEach { db.markSent(it, now) }
-                    if (Prefs.askSentKind == "trip") ioScope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Backup.autoSave(this@MainActivity) } }
+                    if (Prefs.askSentKind == "trip") ioScope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                        when (val r = Backup.autoSaveResult(this@MainActivity)) {
+                            is Backup.SaveResult.TooLarge -> Notifier.backupFailed(this@MainActivity, r.reason)
+                            is Backup.SaveResult.Failed -> Notifier.backupFailed(this@MainActivity, r.reason)
+                            else -> {}
+                        }
+                    } }
                     Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; askSent = null; Live.bump()
                 }) { Text("Yes, sent") } },
                 dismissButton = { TextButton({

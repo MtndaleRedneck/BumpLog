@@ -182,6 +182,7 @@ object Backup {
     fun autoSaveResult(ctx: Context): SaveResult {
         val a = autoSaveAttempt(ctx)
         a.failure?.let { return it }
+        Prefs.lastBackupTs = System.currentTimeMillis()
         prune(ctx, android.net.Uri.parse(Prefs.backupFolder))
         return SaveResult.Saved
     }
@@ -198,7 +199,6 @@ object Backup {
                 write = { writeZip(ctx, it) },
                 // Only this just-created file is removed, never anything already in the folder.
                 delete = { android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, it) })
-            if (created != null) Prefs.lastBackupTs = System.currentTimeMillis()
             Attempt(created, if (created == null) SaveResult.Failed("the file would not write") else null)
         } catch (e: BackupTooLarge) { Attempt(null, SaveResult.TooLarge(e.reason)) }
         catch (e: Exception) { Attempt(null, SaveResult.Failed("the file would not write")) }
@@ -222,18 +222,25 @@ object Backup {
         a.failure?.let { return it }
         val created = a.uri ?: return SaveResult.Failed("the file would not write")
         val tmp = File(ctx.cacheDir, "verify-backup.zip")
+        // The file only counts (timestamp, prune, delete-gate) once it read back complete;
+        // a file that fails the read-back is removed again, not left looking like a backup.
+        fun bad(): SaveResult {
+            try { android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, created) } catch (e: Exception) { }
+            return SaveResult.Failed("the saved file would not read back")
+        }
         return try {
             ctx.contentResolver.openInputStream(created)?.use { ins -> tmp.outputStream().use { ins.copyTo(it) } }
-                ?: return SaveResult.Failed("the saved file would not read back")
+                ?: return bad()
             java.util.zip.ZipFile(tmp).use { z ->
                 val names = z.entries().toList().map { it.name }
-                if ("backup.json" !in names) return SaveResult.Failed("the saved file would not read back")
+                if ("backup.json" !in names) return bad()
                 val buf = ByteArray(65536)
                 for (e in z.entries()) { z.getInputStream(e).use { while (it.read(buf) >= 0) { } } }
             }
+            Prefs.lastBackupTs = System.currentTimeMillis()
             prune(ctx, android.net.Uri.parse(Prefs.backupFolder)) // only a backup that read back complete may push older ones out
             SaveResult.Saved
-        } catch (e: Exception) { SaveResult.Failed("the saved file would not read back") } finally { tmp.delete() }
+        } catch (e: Exception) { bad() } finally { tmp.delete() }
     }
 
     /** Keeps the newest backup of each of the last 8 days, and never fewer than the newest 2 files (item 6). Runs only after a new backup wrote cleanly. */
@@ -261,7 +268,12 @@ object Backup {
         val dir = File(ctx.cacheDir, "exports").apply { mkdirs() }
         dir.listFiles()?.forEach { it.delete() }
         val f = File(dir, fileName("zip"))
-        f.outputStream().use { writeZip(ctx, it) }
+        try {
+            f.outputStream().use { writeZip(ctx, it) }
+        } catch (e: Exception) {
+            f.delete() // a refused or interrupted write never leaves a partial zip to share
+            throw e
+        }
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", f)
         return Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
             type = "application/zip"; putExtra(Intent.EXTRA_STREAM, uri); addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
@@ -340,6 +352,7 @@ object Backup {
         var json: JSONObject? = null
         var photos = 0
         val gate = RestoreGate()
+        val seenPhotoNames = HashSet<String>()
         val photoFiles = ArrayList<Triple<String, String, File>>()
         val voiceFiles = ArrayList<Pair<String, File>>()
         val tmp = File(ctx.cacheDir, "restore").apply { deleteRecursively(); mkdirs() }
@@ -353,10 +366,27 @@ object Backup {
         // declared size counts toward the one budget up front (spreadsheet export and anything
         // unrecognized included), and entries restore doesn't know are never opened, so their
         // bytes are never decompressed at all. The copy itself is plain bounded file I/O.
+        // The raw archive copy is capped too: bigger than any backup this app can produce
+        // (the budget plus zip overhead) is refused before it fills the disk.
         val zipCopy = File(tmp, "in.zip")
-        ins.buffered().use { it.copyTo(zipCopy.outputStream()) }
+        run {
+            var raw = 0L
+            ins.buffered().use { i ->
+                zipCopy.outputStream().use { o ->
+                    val buf = ByteArray(65536)
+                    while (true) {
+                        val r = i.read(buf); if (r < 0) break
+                        raw += r
+                        if (raw > MAX_TOTAL + 8_000_000L) return RestoreResult.Refused("the file itself is too big")
+                        o.write(buf, 0, r)
+                    }
+                }
+            }
+        }
         java.util.zip.ZipFile(zipCopy).use { z ->
             val entries = z.entries().toList().filter { !it.isDirectory }
+            // Declared sizes bound everything, opened or not; the reads below additionally
+            // count real bytes, so a header that lies about its size cannot slip past.
             budgetRefusal(entries.map { e -> if (e.size >= 0) e.size else e.compressedSize.coerceAtLeast(0) })
                 ?.let { return RestoreResult.Refused(it) }
             for (e in entries) {
@@ -365,13 +395,17 @@ object Backup {
                     e.name == "backup.json" -> {
                         val b = z.getInputStream(e).use { it.readNBytes(MAX_JSON + 1) }
                         if (b.size > MAX_JSON) return RestoreResult.Refused("its report data is over 30 MB")
+                        if (!gate.addBytes(b.size.toLong())) return RestoreResult.Refused("it unpacks to more than 1.5 GB")
                         json = try { JSONObject(String(b)) } catch (x: Exception) { return RestoreResult.NotABackup }
                     }
                     parts.size == 3 && parts[0] == "photos" && safeName.matches(parts[1]) && safeName.matches(parts[2]) -> {
+                        // Same deterministic rule as voice clips: a name appearing twice is
+                        // refused, never a silent first-wins pick.
+                        if (!seenPhotoNames.add(e.name)) return RestoreResult.Refused("a photo appears twice")
                         val f = File(tmp, "p${photoFiles.size}")
                         z.getInputStream(e).use { es ->
                             var n = 0L
-                            f.outputStream().use { o -> val buf = ByteArray(65536); while (true) { val r = es.read(buf); if (r < 0) break; n += r; if (n > MAX_ENTRY) return RestoreResult.Refused("a photo is over 60 MB"); o.write(buf, 0, r) } }
+                            f.outputStream().use { o -> val buf = ByteArray(65536); while (true) { val r = es.read(buf); if (r < 0) break; n += r; if (n > MAX_ENTRY) return RestoreResult.Refused("a photo is over 60 MB"); if (!gate.addBytes(r.toLong())) return RestoreResult.Refused("it unpacks to more than 1.5 GB"); o.write(buf, 0, r) } }
                         }
                         photoFiles.add(Triple(parts[1], parts[2], f))
                     }
@@ -380,6 +414,7 @@ object Backup {
                         if (b.isNotEmpty()) {
                             if (b.size > MAX_VOICE) return RestoreResult.Refused("a voice clip is over 5 MB")
                             if (!gate.admitVoice(parts[1], b.size)) return RestoreResult.Refused("a voice clip appears twice")
+                            if (!gate.addBytes(b.size.toLong())) return RestoreResult.Refused("it unpacks to more than 1.5 GB")
                             val f = File(tmp, "v-" + parts[1]); f.writeBytes(b); voiceFiles.add(parts[1].removeSuffix(".clip") to f)
                         }
                     }
@@ -448,6 +483,7 @@ object Backup {
                 .use { it.moveToFirst(); it.getInt(0) }
             db.bumpCounterTo(ReportNumbers.restoreNext(maxNo, stored, existing))
         }
+        Db.noteWrite() // restored spots must reach the drive service's warning cache
         // Photos only go into the folder of a damage report that is in this backup, and never outside the damage folder.
         val damageRoot = File(ctx.filesDir, "damage").canonicalFile
         val allowed = HashSet<String>()

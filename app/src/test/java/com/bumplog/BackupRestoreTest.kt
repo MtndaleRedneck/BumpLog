@@ -49,7 +49,11 @@ class BackupRestoreTest {
             .put("spot_id", 1).put("report_no", 2)))
         .put("meta", JSONArray().put(JSONObject().put("k", "report_counter").put("v", "3")))
 
-    private fun zipWith(j: JSONObject, entries: Map<String, ByteArray>): ByteArrayInputStream {
+    private fun zipWith(j: JSONObject, entries: Map<String, ByteArray>): ByteArrayInputStream =
+        zipWith(j, entries.entries.map { it.toPair() })
+
+    // Pair list, not a map: a hostile archive can carry the same name twice.
+    private fun zipWith(j: JSONObject, entries: List<Pair<String, ByteArray>>): ByteArrayInputStream {
         val out = ByteArrayOutputStream()
         ZipOutputStream(out).use { z ->
             z.putNextEntry(ZipEntry("backup.json")); z.write(j.toString().toByteArray()); z.closeEntry()
@@ -186,6 +190,66 @@ class BackupRestoreTest {
             "notes/readme.txt" to byteArrayOf(1, 2, 3)))
         val r = done(Backup.restoreZip(ctx, z))
         assertEquals(1, r.spots)
+    }
+
+    @Test
+    fun duplicatePhotoEntryIsRefusedLikeADuplicateClip() {
+        val dir = DamagePhotos.dir(ctx, "BD-20261102-EFGH").name
+        val z = zipWith(backupJson(), listOf(
+            "photos/$dir/p1.jpg" to ByteArray(10) { 1 },
+            "photos/$dir/p1.jpg" to ByteArray(10) { 2 }))
+        assertTrue(Backup.restoreZip(ctx, z) is Backup.RestoreResult.Refused)
+    }
+
+    @Test
+    fun lyingDeclaredSizesAreRefusedUpfront() {
+        // Patch the central directory so every entry claims 3 GB uncompressed: the
+        // declared-size budget must refuse the archive before anything is read.
+        val bytes = zipWith(backupJson(), mapOf("junk.bin" to ByteArray(4))).readBytes()
+        val sig = byteArrayOf(0x50, 0x4B, 0x01, 0x02) // PK\x01\x02 central file header
+        var i = bytes.size - 22
+        var patched = 0
+        while (i >= 0) {
+            if (bytes[i] == sig[0] && bytes[i + 1] == sig[1] && bytes[i + 2] == sig[2] && bytes[i + 3] == sig[3]) {
+                val v = 3_000_000_000L
+                for (k in 0..3) bytes[i + 24 + k] = (v shr (8 * k)).toByte()
+                patched++
+            }
+            i--
+        }
+        assertTrue("test setup patches at least one central header", patched > 0)
+        assertTrue(Backup.restoreZip(ctx, ByteArrayInputStream(bytes)) is Backup.RestoreResult.Refused)
+    }
+
+    @Test
+    fun csvWithNewlineInAddressRoundTrips() {
+        // The writer quotes address fields; a geocoded address with a newline in it must
+        // come back through the importer as one record.
+        done(Backup.restoreZip(ctx, damageZip()))
+        val db = Db.get(ctx)
+        val spotId = db.writableDatabase.let { w ->
+            w.execSQL("UPDATE spots SET address=? WHERE report_id='BL-20261101-ABCD'", arrayOf("Main St\nSecond line"))
+            w.rawQuery("SELECT id FROM spots WHERE report_id='BL-20261101-ABCD'", null).use { it.moveToFirst(); it.getLong(0) }
+        }
+        assertTrue(spotId > 0)
+        val csv = Reports.csvText(ctx)
+        db.writableDatabase.execSQL("DELETE FROM spots WHERE report_id='BL-20261101-ABCD'")
+        val r = db.importCsv(csv)
+        assertTrue("import of the app's own CSV succeeds", r != null)
+        val back = db.writableDatabase.rawQuery("SELECT address FROM spots WHERE report_id='BL-20261101-ABCD'", null)
+            .use { if (it.moveToFirst()) it.getString(0) else null }
+        assertEquals("Main St\nSecond line", back)
+    }
+
+    @Test
+    fun backupRowWithMissingColumnsDoesNotCrashReaders() {
+        // A damage row missing note/status inserts SQL NULLs; the readers must tolerate them.
+        val j = backupJson()
+        j.getJSONArray("damage").getJSONObject(0).apply { remove("note"); remove("status") }
+        val r = done(Backup.restoreZip(ctx, zipWith(j, emptyMap())))
+        assertEquals(1, r.damages)
+        assertTrue(Db.get(ctx).damages().isNotEmpty())
+        assertTrue(Db.get(ctx).queuedDamages().isEmpty())
     }
 
     @Test

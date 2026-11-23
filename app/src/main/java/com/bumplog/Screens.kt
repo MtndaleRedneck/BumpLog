@@ -478,6 +478,9 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
         Muted(if (photos.isEmpty()) "Optional. Add them now, or choose to send at the end of the drive and add them then." else "${photos.size} photo(s) added.", 13)
         PhotoButtons { photos = photos + it }
         BigButton("Send now", Icons.Default.Send, enabled = picked != 0L) {
+            // Check before build(): a failed mail handoff after the insert would leave a
+            // duplicate row, burned report number and copied photos behind on every retry.
+            if (Prefs.activeAddress.isBlank()) { toast(ctx, "Set your assistant address first (Settings > Assistant)."); return@BigButton }
             val d = build() ?: return@BigButton
             val db = Db.get(ctx)
             val h = hits.firstOrNull { it.id == picked }
