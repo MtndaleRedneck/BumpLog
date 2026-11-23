@@ -103,6 +103,34 @@ scroll_to "Backup failed" v17-backup-failure
 # Boundary evidence: the notification-tap action activity must be non-exported.
 adb shell dumpsys package com.bumplog | grep -A6 "InternalActionActivity" > $OUT/v17-internal-action-not-exported.txt
 cat $OUT/v17-internal-action-not-exported.txt
+# Notification-tap lifecycle evidence (Android 12+ trampoline check): tapping the "Logging
+# paused" notification must reach InternalActionActivity directly - MainActivity resumes and
+# the start flow applies. If a receiver sat in between, the tap would be blocked and nothing
+# would resume. (The trip action's mail handoff needs a mail app, which the emulator image
+# lacks; the no-mail path is the handOffMail precheck + toast, covered by unit tests.)
+adb shell am force-stop com.bumplog; sleep 1
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home
+sleep 6
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --ez logpaused true
+sleep 2
+adb shell input keyevent KEYCODE_HOME; sleep 1
+adb shell cmd statusbar expand-notifications; sleep 2
+adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+B=$(adb shell cat /sdcard/ui.xml | grep -o 'text="Logging paused"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
+if [ -n "$B" ]; then
+  read X1 Y1 X2 Y2 <<< $(echo "$B" | tr -d '[]' | tr ',' ' ' | awk '{print $1, $2, $3, $4}')
+  adb shell input tap $(( (X1+X2)/2 )) $(( (Y1+Y2)/2 ))
+  sleep 3
+else
+  echo "WARN: 'Logging paused' notification not found in shade"
+fi
+{
+  echo "-- resumed activity after tapping the notification (MainActivity = the direct-activity path worked) --"
+  adb shell dumpsys activity activities | grep -iE "mResumedActivity|topResumedActivity" | head -2
+  echo "-- prefs after the tap (detection_enabled true = the start flow consumed restart_wanted) --"
+  adb shell run-as com.bumplog cat shared_prefs/spotter.xml 2>/dev/null | grep -oE 'name="(restart_wanted|detection_enabled)"[^/]*' || echo "(run-as unavailable)"
+} > $OUT/v17-restart-tap-lifecycle.txt
+cat $OUT/v17-restart-tap-lifecycle.txt
 ls -la $OUT
 adb shell wm size reset
 adb shell wm density reset

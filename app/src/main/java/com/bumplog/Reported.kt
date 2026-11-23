@@ -40,7 +40,7 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
             title = { M3Text(s.title) },
             text = {
                 Column {
-                    M3Text(s.ref() + (if (s.sentTs > 0) " - sent ${sentDay(s.sentTs)}" else ""))
+                    M3Text((if (s.reportNo > 0) "Report #${s.reportNo}" else s.ref()) + (if (s.sentTs > 0) " - sent ${sentDay(s.sentTs)}" else ""))
                     Spacer(Modifier.height(10.dp))
                     M3Text("How did it turn out?")
                     Spacer(Modifier.height(14.dp))
@@ -103,7 +103,7 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
     }
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.card).clickable(onClick = onMark).padding(14.dp)) {
         Txt(s.title, 17, FontWeight.Bold, modifier = Modifier.clickable(onClick = onOpen))
-        Muted(s.ref() + (if (s.sentTs > 0) " - sent ${sentDay(s.sentTs)}" else ""))
+        Muted((if (s.reportNo > 0) "Report #${s.reportNo}" else s.ref()) + (if (s.sentTs > 0) " - sent ${sentDay(s.sentTs)}" else ""))
         Spacer(Modifier.height(4.dp))
         Txt(status, 15, FontWeight.Medium, color)
         if (s.reportOutcome == "WONTFIX" || (s.reportOutcome != "NONE" && hitAgain)) {

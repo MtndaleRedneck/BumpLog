@@ -75,3 +75,9 @@ val copyAssistantGuide = tasks.register<Copy>("copyAssistantGuide") {
     into(layout.buildDirectory.dir("generated/guide"))
 }
 tasks.named("preBuild") { dependsOn(copyAssistantGuide) }
+
+
+// CI unit-test failures must show the real exception message, not a bare class name.
+tasks.withType<org.gradle.api.tasks.testing.Test>().configureEach {
+    testLogging { exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL }
+}

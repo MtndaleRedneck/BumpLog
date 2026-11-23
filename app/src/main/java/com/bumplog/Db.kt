@@ -43,7 +43,7 @@ data class Damage(
     val note: String, val ts: Long, val status: String, val reportNo: Int = 0, val reportTs: Long = 0,
 )
 
-class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 6) {
+class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db", null, 7) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL(
@@ -59,7 +59,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         db.execSQL("CREATE INDEX IF NOT EXISTS hits_drive ON hits(drive_id)")
         db.execSQL(
             """CREATE TABLE damage(id INTEGER PRIMARY KEY AUTOINCREMENT, report_id TEXT, hit_id INTEGER, spot_id INTEGER,
-            category TEXT, note TEXT, ts INTEGER, status TEXT, report_no INTEGER DEFAULT 0, report_ts INTEGER DEFAULT 0)"""
+            category TEXT, note TEXT, ts INTEGER, status TEXT, report_no INTEGER DEFAULT 0, report_ts INTEGER DEFAULT 0, draft_id TEXT DEFAULT '')"""
         )
         db.execSQL("CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT)")
     }
@@ -92,6 +92,11 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             // The Reported tab: what happened after a report went to the city.
             db.execSQL("ALTER TABLE spots ADD COLUMN report_outcome TEXT DEFAULT 'NONE'")
             db.execSQL("ALTER TABLE spots ADD COLUMN outcome_ts INTEGER DEFAULT 0")
+        }
+        if (o < 7) {
+            // One sheet session owns one damage draft by this token, so a rebuild retries the
+            // same row while a deliberate new report gets a new row - even for the same hit.
+            db.execSQL("ALTER TABLE damage ADD COLUMN draft_id TEXT DEFAULT ''")
         }
         if (o < 6) {
             // Confidence flag on hits, and the Review lookup's indexes.
@@ -504,18 +509,21 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
 
     // ---- damage ----
 
-    /** The unsent damage draft for a hit, if one exists. */
-    @Synchronized fun openDamageForHit(hitId: Long): Damage? =
+    /** The row a draft token owns: an unsent one is a retry to update, a sent one is history. */
+    @Synchronized fun damageForDraft(draftId: String): Damage? =
         readableDatabase.query("damage", arrayOf("id", "report_id", "hit_id", "spot_id", "category", "note", "ts", "status", "report_no", "report_ts"),
-            "hit_id=? AND status!='SENT'", arrayOf(hitId.toString()), null, null, "ts DESC", "1").use { c ->
+            "draft_id=?", arrayOf(draftId), null, null, "ts DESC", "1").use { c ->
             if (c.moveToFirst()) Damage(c.getLong(0), c.getString(1) ?: "", c.getLong(2), c.getLong(3), c.getString(4) ?: "", c.getString(5) ?: "", c.getLong(6), c.getString(7) ?: "", c.getInt(8), c.getLong(9)) else null
         }
 
-    /** One open damage draft per hit: building the sheet again (recomposition, or process death
-     *  between building and sending) updates the existing unsent row - same report id and number -
-     *  instead of stacking duplicates. A row already SENT is history and is never reused. */
-    @Synchronized fun addDamage(hitId: Long, spotId: Long, category: String, note: String, now: Long): Damage {
-        openDamageForHit(hitId)?.let { old ->
+    /** Files one draft. The draft token - not the hit - decides identity: rebuilding the sheet
+     *  (recomposition, process restore) retries the SAME row with its report id, number and
+     *  photos; a deliberate new report starts a new draft and gets a new row, even for the same
+     *  hit and the same category. A row already handed to the mail app is never touched: a
+     *  retried send of the same draft must not double-file. */
+    @Synchronized fun addDamage(hitId: Long, spotId: Long, category: String, note: String, now: Long, draftId: String): Damage {
+        if (draftId.isNotEmpty()) damageForDraft(draftId)?.let { old ->
+            if (old.status == "SENT") return old
             val rts = hit(hitId)?.ts ?: now
             writableDatabase.update("damage", ContentValues().apply {
                 put("spot_id", spotId); put("category", category); put("note", note); put("report_ts", rts)
@@ -527,7 +535,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         val rts = hit(hitId)?.ts ?: now
         val v = ContentValues().apply {
             put("report_id", rid); put("hit_id", hitId); put("spot_id", spotId); put("category", category)
-            put("note", note); put("ts", now); put("status", "NONE"); put("report_no", no); put("report_ts", rts)
+            put("note", note); put("ts", now); put("status", "NONE"); put("report_no", no); put("report_ts", rts); put("draft_id", draftId)
         }
         val id = writableDatabase.insert("damage", null, v)
         return Damage(id, rid, hitId, spotId, category, note, now, "NONE", no, rts)
