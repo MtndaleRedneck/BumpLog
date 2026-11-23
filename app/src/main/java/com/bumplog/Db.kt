@@ -504,7 +504,24 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
 
     // ---- damage ----
 
+    /** The unsent damage draft for a hit, if one exists. */
+    @Synchronized fun openDamageForHit(hitId: Long): Damage? =
+        readableDatabase.query("damage", arrayOf("id", "report_id", "hit_id", "spot_id", "category", "note", "ts", "status", "report_no", "report_ts"),
+            "hit_id=? AND status!='SENT'", arrayOf(hitId.toString()), null, null, "ts DESC", "1").use { c ->
+            if (c.moveToFirst()) Damage(c.getLong(0), c.getString(1) ?: "", c.getLong(2), c.getLong(3), c.getString(4) ?: "", c.getString(5) ?: "", c.getLong(6), c.getString(7) ?: "", c.getInt(8), c.getLong(9)) else null
+        }
+
+    /** One open damage draft per hit: building the sheet again (recomposition, or process death
+     *  between building and sending) updates the existing unsent row - same report id and number -
+     *  instead of stacking duplicates. A row already SENT is history and is never reused. */
     @Synchronized fun addDamage(hitId: Long, spotId: Long, category: String, note: String, now: Long): Damage {
+        openDamageForHit(hitId)?.let { old ->
+            val rts = hit(hitId)?.ts ?: now
+            writableDatabase.update("damage", ContentValues().apply {
+                put("spot_id", spotId); put("category", category); put("note", note); put("report_ts", rts)
+            }, "id=?", arrayOf(old.id.toString()))
+            return old.copy(spotId = spotId, category = category, note = note, reportTs = rts)
+        }
         val rid = newReportId("BD", now)
         val no = takeReportNo()
         val rts = hit(hitId)?.ts ?: now

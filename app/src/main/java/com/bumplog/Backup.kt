@@ -178,13 +178,25 @@ object Backup {
     /** Writes the full backup zip into the auto-backup folder the owner picked. False when no folder is set or the write fails. */
     fun autoSave(ctx: Context): Boolean = autoSaveResult(ctx) is SaveResult.Saved
 
+    /** The one place backup outcomes reach the Settings failure line: every failure names itself,
+     *  and every success - manual or weekly - clears it, so a stale "Backup failed" never survives
+     *  a later good save. No folder picked is not a failure and clears a stale line too. */
+    internal fun noteOutcome(r: SaveResult): SaveResult {
+        when (r) {
+            is SaveResult.Failed -> Prefs.lastBackupError = r.reason
+            is SaveResult.TooLarge -> Prefs.lastBackupError = r.reason
+            else -> Prefs.lastBackupError = ""
+        }
+        return r
+    }
+
     /** The typed form of [autoSave]: prune runs only after the new backup wrote cleanly (item 6). */
     fun autoSaveResult(ctx: Context): SaveResult {
         val a = autoSaveAttempt(ctx)
-        a.failure?.let { return it }
+        a.failure?.let { return noteOutcome(it) }
         Prefs.lastBackupTs = System.currentTimeMillis()
         prune(ctx, android.net.Uri.parse(Prefs.backupFolder))
-        return SaveResult.Saved
+        return noteOutcome(SaveResult.Saved)
     }
 
     private fun autoSaveAttempt(ctx: Context): Attempt {
@@ -219,14 +231,14 @@ object Backup {
      */
     fun autoSaveVerifiedResult(ctx: Context): SaveResult {
         val a = autoSaveAttempt(ctx)
-        a.failure?.let { return it }
+        a.failure?.let { return noteOutcome(it) }
         val created = a.uri ?: return SaveResult.Failed("the file would not write")
         val tmp = File(ctx.cacheDir, "verify-backup.zip")
         // The file only counts (timestamp, prune, delete-gate) once it read back complete;
         // a file that fails the read-back is removed again, not left looking like a backup.
         fun bad(): SaveResult {
             try { android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, created) } catch (e: Exception) { }
-            return SaveResult.Failed("the saved file would not read back")
+            return noteOutcome(SaveResult.Failed("the saved file would not read back"))
         }
         return try {
             ctx.contentResolver.openInputStream(created)?.use { ins -> tmp.outputStream().use { ins.copyTo(it) } }
@@ -239,7 +251,7 @@ object Backup {
             }
             Prefs.lastBackupTs = System.currentTimeMillis()
             prune(ctx, android.net.Uri.parse(Prefs.backupFolder)) // only a backup that read back complete may push older ones out
-            SaveResult.Saved
+            noteOutcome(SaveResult.Saved)
         } catch (e: Exception) { bad() } finally { tmp.delete() }
     }
 
