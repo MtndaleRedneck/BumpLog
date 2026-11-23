@@ -69,13 +69,21 @@ object Notifier {
 
     private fun flags() = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
 
-    fun openApp(ctx: Context, spotId: Long = 0, screen: String? = null, start: Boolean = false): PendingIntent {
+    fun openApp(ctx: Context, spotId: Long = 0, screen: String? = null): PendingIntent {
         val i = Intent(ctx, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            putExtra("spot", spotId); screen?.let { putExtra("screen", it) }; putExtra("start", start)
+            putExtra("spot", spotId); screen?.let { putExtra("screen", it) }
         }
-        return PendingIntent.getActivity(ctx, (spotId * 7 + (screen?.hashCode() ?: 0) + (if (start) 13 else 0)).toInt(), i, flags())
+        return PendingIntent.getActivity(ctx, (spotId * 7 + (screen?.hashCode() ?: 0)).toInt(), i, flags())
     }
+
+    // Side-effecting taps target the non-exported ActionReceiver, never the exported
+    // launcher activity: an intent any app can forge cannot start logging or send a trip.
+    fun restartApp(ctx: Context): PendingIntent =
+        PendingIntent.getBroadcast(ctx, 71, Intent(ctx, ActionReceiver::class.java).setAction(ActionReceiver.RESTART).setPackage(ctx.packageName), flags())
+
+    fun sendTrip(ctx: Context, driveId: Long): PendingIntent =
+        PendingIntent.getBroadcast(ctx, 72, Intent(ctx, ActionReceiver::class.java).setAction(ActionReceiver.SENDTRIP).putExtra("drive", driveId).setPackage(ctx.packageName), flags())
 
     fun logIt(ctx: Context, spotId: Long): PendingIntent =
         PendingIntent.getActivity(ctx, 5000 + spotId.toInt(), logItIntent(ctx, spotId), flags())
@@ -165,11 +173,9 @@ object Notifier {
         val nm = ctx.getSystemService(NotificationManager::class.java)
         val b = NotificationCompat.Builder(ctx, CH_ALERT).setSmallIcon(R.drawable.ic_stat).setContentTitle("Drive complete").setAutoCancel(true)
         if (toFile > 0) {
-            val i = Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-                .putExtra("sendtrip", driveId)
             val what = if (toFile == 1) "1 report" else "$toFile reports"
             b.setContentText("$what ready to send. Tap to open one email with " + (if (toFile == 1) "it." else "all of them."))
-                .setContentIntent(PendingIntent.getActivity(ctx, 6000 + driveId.toInt(), i, flags()))
+                .setContentIntent(sendTrip(ctx, driveId))
         } else b.setContentText("$hits hits logged. Nothing to send.").setContentIntent(openApp(ctx, 0, "review"))
         nm.notify(ID_DRIVE_DONE, b.build())
     }
@@ -195,7 +201,7 @@ object Notifier {
         nm.notify(ID_CAR, NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_stat).setContentTitle("Car connected")
             .setContentText("Tap to start logging this drive.")
-            .setAutoCancel(true).setContentIntent(openApp(ctx, 0, null, true)).build())
+            .setAutoCancel(true).setContentIntent(restartApp(ctx)).build())
     }
 
     /** After a phone restart with Power on: neutral wording (no car is involved), the same tap-to-start action as the car notice. Never starts by itself. */
@@ -204,7 +210,7 @@ object Notifier {
         nm.notify(ID_LOGGING_PAUSED, NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_stat).setContentTitle("Logging paused")
             .setContentText("Tap to start logging after restart.")
-            .setAutoCancel(true).setContentIntent(openApp(ctx, 0, null, true)).build())
+            .setAutoCancel(true).setContentIntent(restartApp(ctx)).build())
     }
 
     fun passengerSoon(ctx: Context, minutes: Int) {
@@ -242,7 +248,7 @@ object Notifier {
         ctx.getSystemService(NotificationManager::class.java).notify(ID_AUTO_OFF, NotificationCompat.Builder(ctx, CH_ALERT)
             .setSmallIcon(R.drawable.ic_stat).setContentTitle("BumpLog turned off")
             .setContentText("No driving for $minutes minutes. Tap to turn it back on.")
-            .setAutoCancel(true).setContentIntent(openApp(ctx, 0, null, true)).build())
+            .setAutoCancel(true).setContentIntent(restartApp(ctx)).build())
     }
 
     fun cancel(ctx: Context, id: Int) = ctx.getSystemService(NotificationManager::class.java).cancel(id)

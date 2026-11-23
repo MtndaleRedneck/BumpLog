@@ -42,6 +42,12 @@ fun dayTime(ts: Long): String = SimpleDateFormat("MMM d, h:mm a", Locale.US).for
 
 fun toast(ctx: Context, s: String) = Toast.makeText(ctx, s, Toast.LENGTH_LONG).show()
 
+/** True when some app can take a mail handoff. Checked before anything is written. */
+fun mailAppAvailable(ctx: Context): Boolean {
+    val probe = Intent(Intent.ACTION_SENDTO).setData(android.net.Uri.parse("mailto:"))
+    return ctx.packageManager.queryIntentActivities(probe, 0).isNotEmpty()
+}
+
 /** Opens the mail app with the prepared message. Returns true when the handoff worked. */
 fun handOffMail(ctx: Context, i: Intent): Boolean {
     if (Prefs.activeAddress.isBlank()) { toast(ctx, "Set your assistant address first (Settings > Assistant)."); return false }
@@ -481,6 +487,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
             // Check before build(): a failed mail handoff after the insert would leave a
             // duplicate row, burned report number and copied photos behind on every retry.
             if (Prefs.activeAddress.isBlank()) { toast(ctx, "Set your assistant address first (Settings > Assistant)."); return@BigButton }
+            if (!mailAppAvailable(ctx)) { toast(ctx, "No mail app found."); return@BigButton }
             val d = build() ?: return@BigButton
             val db = Db.get(ctx)
             val h = hits.firstOrNull { it.id == picked }

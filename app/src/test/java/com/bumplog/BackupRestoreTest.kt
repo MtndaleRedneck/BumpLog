@@ -34,6 +34,8 @@ class BackupRestoreTest {
     fun setUp() {
         Db.closeForTests() // each test gets a fresh sandbox: drop any stale open handle
         Prefs.init(ctx)
+        Backup.rawCapForTests = null
+        Backup.gateLimitForTests = null
         Backup.copyFileForRestore = { src, dst -> src.copyTo(dst, overwrite = true) }
     }
 
@@ -263,5 +265,80 @@ class BackupRestoreTest {
         done(Backup.restoreZip(ctx, damageZip()))
         assertFalse("a staging leftover is cleaned up on the next restore",
             File(dir, "half.jpg.restore-tmp").exists())
+    }
+
+    @Test
+    fun lyingSmallDeclaredSizeIsCaughtByTheActualRead() {
+        // Central directory claims a 100-byte photo; the entry actually inflates past the
+        // 60 MB per-entry cap. The declared budget passes; the real byte count must refuse.
+        val dir = DamagePhotos.dir(ctx, "BD-20261102-EFGH").name
+        val bytes = zipWith(backupJson(), mapOf("photos/$dir/big.jpg" to ByteArray(61_000_000))).readBytes()
+        val sig = byteArrayOf(0x50, 0x4B, 0x01, 0x02) // PK\x01\x02 central file header
+        var i = bytes.size - 22
+        var patched = 0
+        while (i >= 0) {
+            if (bytes[i] == sig[0] && bytes[i + 1] == sig[1] && bytes[i + 2] == sig[2] && bytes[i + 3] == sig[3]) {
+                val v = 100L
+                for (k in 0..3) bytes[i + 24 + k] = (v shr (8 * k)).toByte() // uncompressed size
+                patched++
+            }
+            i--
+        }
+        assertEquals("test setup patches json + photo central headers", 2, patched)
+        val r = Backup.restoreZip(ctx, ByteArrayInputStream(bytes))
+        assertTrue("actual bytes refuse what declared sizes passed, was $r", r is Backup.RestoreResult.Refused)
+    }
+
+    @Test
+    fun rawArchiveCopyIsCapped() {
+        // The archive file itself is bounded before any zip parsing: past the cap it is
+        // refused instead of filling the disk.
+        Backup.rawCapForTests = 1_000_000L
+        val big = object : java.io.InputStream() {
+            var left = 2_000_000
+            override fun read(): Int { if (left-- <= 0) return -1; return 0 }
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                if (left <= 0) return -1
+                val n = minOf(len, left); left -= n; return n
+            }
+        }
+        val r = Backup.restoreZip(ctx, big)
+        assertTrue(r is Backup.RestoreResult.Refused)
+        assertEquals("the file itself is too big", (r as Backup.RestoreResult.Refused).reason)
+    }
+
+    @Test
+    fun actualAggregateAcrossEntriesIsEnforced() {
+        // Each photo is under the per-entry cap; together they cross the aggregate gate on
+        // real decompressed bytes, so the restore is refused.
+        Backup.gateLimitForTests = 100_000_000L
+        val dir = DamagePhotos.dir(ctx, "BD-20261102-EFGH").name
+        val z = zipWith(backupJson(), mapOf(
+            "photos/$dir/a.jpg" to ByteArray(40_000_000),
+            "photos/$dir/b.jpg" to ByteArray(40_000_000),
+            "photos/$dir/c.jpg" to ByteArray(40_000_000)))
+        val r = Backup.restoreZip(ctx, z)
+        assertTrue("aggregate real bytes refuse the restore, was $r", r is Backup.RestoreResult.Refused)
+    }
+
+    @Test
+    fun exportFailureLeavesNoPartialFile() {
+        // A refused export (here: one photo over the writer cap) must delete the partial
+        // zip, never leave it for the share sheet.
+        done(Backup.restoreZip(ctx, damageZip()))
+        val dir = DamagePhotos.dir(ctx, "BD-20261102-EFGH")
+        File(dir, "p1.jpg").writeBytes(ByteArray(60_000_001))
+        assertThrows(Backup.BackupTooLarge::class.java) { Backup.shareIntent(ctx) }
+        val exports = File(ctx.cacheDir, "exports")
+        assertTrue("no partial export left behind", exports.listFiles()?.isEmpty() != false)
+    }
+
+    @Test
+    fun failedAutoSaveDoesNotMoveTheTimestamp() {
+        Prefs.lastBackupTs = 0L
+        Prefs.backupFolder = ""
+        val r = Backup.autoSaveResult(ctx)
+        assertTrue("no folder is not a save, was $r", r !is Backup.SaveResult.Saved)
+        assertEquals(0L, Prefs.lastBackupTs)
     }
 }

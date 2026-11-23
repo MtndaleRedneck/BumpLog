@@ -288,14 +288,18 @@ object Backup {
      * photo and voice bytes up against the one cumulative cap, and allows each voice clip name once.
      * Pure, unit-tested.
      */
-    internal class RestoreGate {
+    internal class RestoreGate(private val limit: Long = MAX_TOTAL) {
         private var entries = 0
         var total = 0L; private set
         private val voiceNames = HashSet<String>()
         fun countEntry(): Boolean = ++entries <= MAX_ENTRIES
-        fun addBytes(n: Long): Boolean { total += n; return total <= MAX_TOTAL }
+        fun addBytes(n: Long): Boolean { total += n; return total <= limit }
         fun admitVoice(name: String, size: Int): Boolean = size <= MAX_VOICE && voiceNames.add(name)
     }
+
+    /** Test seams: exercise the raw-copy cap and the aggregate gate without gigabytes on disk. */
+    internal var rawCapForTests: Long? = null
+    internal var gateLimitForTests: Long? = null
 
     /** One post-commit restore phase: a failure is flagged, not thrown, and never skips the other phases. */
     internal fun runPhase(phase: () -> Unit): Boolean = try { phase(); true } catch (e: Exception) { false }
@@ -351,7 +355,7 @@ object Backup {
         val db = Db.get(ctx)
         var json: JSONObject? = null
         var photos = 0
-        val gate = RestoreGate()
+        val gate = RestoreGate(gateLimitForTests ?: MAX_TOTAL)
         val seenPhotoNames = HashSet<String>()
         val photoFiles = ArrayList<Triple<String, String, File>>()
         val voiceFiles = ArrayList<Pair<String, File>>()
@@ -377,7 +381,7 @@ object Backup {
                     while (true) {
                         val r = i.read(buf); if (r < 0) break
                         raw += r
-                        if (raw > MAX_TOTAL + 8_000_000L) return RestoreResult.Refused("the file itself is too big")
+                        if (raw > (rawCapForTests ?: (MAX_TOTAL + 8_000_000L))) return RestoreResult.Refused("the file itself is too big")
                         o.write(buf, 0, r)
                     }
                 }

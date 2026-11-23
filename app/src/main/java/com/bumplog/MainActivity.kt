@@ -60,7 +60,6 @@ class MainActivity : ComponentActivity() {
     private var tab by mutableStateOf("home")
     private var stack by mutableStateOf(listOf<Screen>())
     private var pendingLink by mutableStateOf<PendingLink?>(null)
-    private var pendingTrip by mutableStateOf(0L)
     private var guideOffer by mutableStateOf(false)
     private var confirmFixed by mutableStateOf<Long?>(null)
     private var askSent by mutableStateOf<List<Long>?>(null)
@@ -204,19 +203,15 @@ class MainActivity : ComponentActivity() {
                 stack = emptyList()
             }
         }
-        if (i.hasExtra("sendtrip")) {
-            val driveId = i.getLongExtra("sendtrip", 0)
-            if (!Prefs.setupDone) {
-                // The assistant setup has to happen once before the first report goes out. The trip waits for it.
-                pendingTrip = driveId; stack = listOf(Screen.Setup)
-            } else sendTrip(driveId)
-            i.removeExtra("sendtrip")
-        }
+        // Trips and restarts arrive only from the non-exported ActionReceiver, which
+        // records them in Prefs. Extras on this exported activity never cause side effects:
+        // any app can forge them.
+        if (Prefs.pendingTrip != 0L && !Prefs.setupDone) stack = listOf(Screen.Setup)
+        if (Prefs.restartWanted) { Prefs.restartWanted = false; startDetection() }
         if (spot != 0L && i.getStringExtra("screen") == null) {
             val s = Db.get(this).spot(spot)
             stack = listOf(if (s != null && s.severe && s.review == "PENDING") Screen.Alert(spot) else Screen.Spot(spot))
         }
-        if (i.getBooleanExtra("start", false)) { Prefs.detectionEnabled = true; startDetection() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("demo", false)) { Demo.seed(this); Live.bump() }
         // Debug builds only, for the CI screenshot run: pick the voice source and trigger the celebration.
         if (BuildConfig.DEBUG && i.hasExtra("setvoice")) { Prefs.voice = i.getStringExtra("setvoice").orEmpty(); Live.bump() }
@@ -284,8 +279,8 @@ class MainActivity : ComponentActivity() {
     /** Setup screen closed. A trip that waited for it goes out only if setup actually completed; otherwise it stays queued. */
     private fun finishSetup() {
         stack = emptyList()
-        val driveId = pendingTrip
-        pendingTrip = 0
+        val driveId = Prefs.pendingTrip
+        Prefs.pendingTrip = 0
         if (driveId == 0L) return
         if (Prefs.setupDone) sendTrip(driveId)
         else toast(this, "The trip's reports are still waiting. Finish the assistant setup to send them.")
@@ -324,9 +319,9 @@ class MainActivity : ComponentActivity() {
                     val now = System.currentTimeMillis(); val db = Db.get(this@MainActivity); ids.forEach { db.markSent(it, now) }
                     if (Prefs.askSentKind == "trip") ioScope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                         when (val r = Backup.autoSaveResult(this@MainActivity)) {
-                            is Backup.SaveResult.TooLarge -> Notifier.backupFailed(this@MainActivity, r.reason)
-                            is Backup.SaveResult.Failed -> Notifier.backupFailed(this@MainActivity, r.reason)
-                            else -> {}
+                            is Backup.SaveResult.TooLarge -> { Prefs.lastBackupError = r.reason; Notifier.backupFailed(this@MainActivity, r.reason) }
+                            is Backup.SaveResult.Failed -> { Prefs.lastBackupError = r.reason; Notifier.backupFailed(this@MainActivity, r.reason) }
+                            else -> Prefs.lastBackupError = ""
                         }
                     } }
                     Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; askSent = null; Live.bump()

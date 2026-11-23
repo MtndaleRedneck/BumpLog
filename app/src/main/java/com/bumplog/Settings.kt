@@ -417,6 +417,8 @@ private fun BackupCards() {
         else {
             Muted("Auto backup is on: the full backup saves to your folder weekly and after each trip email.", 12)
             if (Prefs.lastBackupTs > 0) Muted("Last backup: " + java.text.SimpleDateFormat("MMM d", java.util.Locale.US).format(java.util.Date(Prefs.lastBackupTs)), 12)
+            // Visible even when notification permission is denied: a failed weekly save stays here until a save succeeds.
+            if (Prefs.lastBackupError.isNotBlank()) Muted("Backup failed: " + Prefs.lastBackupError, 12)
         }
         // One honest line about automatic backups: off, on-but-never-succeeded, or the date of the last one that wrote.
         Muted(
