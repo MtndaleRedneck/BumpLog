@@ -483,12 +483,15 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
         Txt("Photos", 16, FontWeight.Bold)
         Muted(if (photos.isEmpty()) "Optional. Add them now, or choose to send at the end of the drive and add them then." else "${photos.size} photo(s) added.", 13)
         PhotoButtons { photos = photos + it }
+        // If a handoff fails after the row was built, the SAME row is resent on the next
+        // tap: retry can never duplicate the row, burn a second number or copy photos twice.
+        var builtDamage by androidx.compose.runtime.remember(picked) { mutableStateOf<Damage?>(null) }
         BigButton("Send now", Icons.Default.Send, enabled = picked != 0L) {
             // Check before build(): a failed mail handoff after the insert would leave a
             // duplicate row, burned report number and copied photos behind on every retry.
             if (Prefs.activeAddress.isBlank()) { toast(ctx, "Set your assistant address first (Settings > Assistant)."); return@BigButton }
             if (!mailAppAvailable(ctx)) { toast(ctx, "No mail app found."); return@BigButton }
-            val d = build() ?: return@BigButton
+            val d = builtDamage ?: build()?.also { builtDamage = it } ?: return@BigButton
             val db = Db.get(ctx)
             val h = hits.firstOrNull { it.id == picked }
             if (handOffMail(ctx, Reports.damageMail(ctx, d, h, db.spot(d.spotId)))) { db.markDamageSent(d.id); toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() }

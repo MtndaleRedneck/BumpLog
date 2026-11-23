@@ -221,6 +221,12 @@ class MainActivity : ComponentActivity() {
         if (BuildConfig.DEBUG && i.getBooleanExtra("logpaused", false)) Notifier.loggingPaused(this)
         if (BuildConfig.DEBUG && i.getBooleanExtra("showwipe", false)) { Testing.openWipeOnce = true; tab = "settings"; stack = emptyList() }
         // Debug builds only, for the CI screenshot run: the Home screen as it looks after GPS drops mid-drive.
+        // Debug builds only, for the CI screenshot run: the backup failure line as it shows after a failed weekly save.
+        if (BuildConfig.DEBUG && i.getBooleanExtra("mockbackupfail", false)) {
+            if (Prefs.backupFolder.isBlank()) Prefs.backupFolder = "content://demo-backup-folder"
+            if (Prefs.lastBackupTs == 0L) Prefs.lastBackupTs = System.currentTimeMillis()
+            Prefs.lastBackupError = "the saved file would not read back"
+        }
         if (BuildConfig.DEBUG && i.getBooleanExtra("mockgpslost", false)) {
             Live.update { it.copy(running = true, gps = false, gpsLost = true, speedMph = 38f, hardestHitG = 1.42f, lastG = 0.34f) }
         }

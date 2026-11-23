@@ -96,6 +96,10 @@ for i in $(seq 1 16); do
   adb shell input swipe $SX $SY1 $SX $SY2 300; sleep 1
 done
 sleep 1; adb exec-out screencap -p > $OUT/v17-backup-status.png
+# v17 backup failure line: Settings > Backup card as it looks after a failed weekly save.
+shot v17-backup-fail-base --es screen settings --ez mockbackupfail true
+rm -f $OUT/v17-backup-fail-base.png
+scroll_to "Backup failed" v17-backup-failure
 ls -la $OUT
 adb shell wm size reset
 adb shell wm density reset
