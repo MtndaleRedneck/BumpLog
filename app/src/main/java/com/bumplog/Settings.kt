@@ -366,11 +366,15 @@ private fun BackupCards() {
                 i.mark(8)
                 val head = ByteArray(4); val n = i.read(head); i.reset()
                 if (n == 4 && head[0] == 0x50.toByte() && head[1] == 0x4B.toByte()) {
-                    val r = Backup.restoreZip(ctx, i)
-                    if (r == null) "That file is not a BumpLog backup."
-                    else "Restored ${r.spots} spot(s), ${r.hits} hit(s), ${r.damages} damage report(s), ${r.photos} photo(s) and ${r.settings} setting(s)." +
-                        (if (r.skipped > 0) " Skipped ${r.skipped} already here or unreadable." else "") +
-                        (if (r.incomplete) " Some photos, voice clips or settings did not copy - run Restore again with the same file to finish." else "")
+                    when (val o = Backup.restoreZip(ctx, i)) {
+                        is Backup.RestoreResult.NotABackup -> "That file is not a BumpLog backup."
+                        is Backup.RestoreResult.Refused -> "That backup can't be restored: ${o.reason}."
+                        is Backup.RestoreResult.Done -> o.r.let { r ->
+                            "Restored ${r.spots} spot(s), ${r.hits} hit(s), ${r.damages} damage report(s), ${r.photos} photo(s) and ${r.settings} setting(s)." +
+                                (if (r.skipped > 0) " Skipped ${r.skipped} already here or unreadable." else "") +
+                                (if (r.incomplete) " Some photos, voice clips or settings did not copy - run Restore again with the same file to finish." else "")
+                        }
+                    }
                 } else {
                     val b = i.readNBytes(1_000_001)
                     if (b.size > 1_000_000) "That file is over 1 MB, so it was not imported."

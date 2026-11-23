@@ -219,6 +219,19 @@ object Backup {
     /** One post-commit restore phase: a failure is flagged, not thrown, and never skips the other phases. */
     internal fun runPhase(phase: () -> Unit): Boolean = try { phase(); true } catch (e: Exception) { false }
 
+    /** Test seam: the copy used by the restore's post-commit phases. Production never overrides this. */
+    internal var copyFileForRestore: (File, File) -> Unit = { src, dst -> src.copyTo(dst, overwrite = true) }
+
+    /** What a restore attempt came back with. */
+    sealed class RestoreResult {
+        /** The restore ran; check [Restored.incomplete] for post-commit copy trouble. */
+        class Done(val r: Restored) : RestoreResult()
+        /** Not a file this app wrote. */
+        object NotABackup : RestoreResult()
+        /** A real-looking backup refused by an entry or size limit; [reason] says which, in his words. */
+        class Refused(val reason: String) : RestoreResult()
+    }
+
     private fun okId(s: String?) = s != null && ReportNumbers.isOldId(s)
 
     private fun cv(o: JSONObject, cols: Set<String>, skip: Set<String>): ContentValues {
@@ -236,8 +249,24 @@ object Backup {
     private fun cols(db: SQLiteDatabase, table: String): Set<String> =
         db.rawQuery("SELECT * FROM $table LIMIT 0", null).use { it.columnNames.toSet() }
 
-    /** Restores a zip made by [writeZip]. Anything already on the phone (same report ID) is left alone. Returns null if it is not a BumpLog backup. */
-    fun restoreZip(ctx: Context, ins: InputStream): Restored? {
+    /**
+     * Copies through a staging file in the destination folder, then renames: an interrupted copy
+     * never leaves a partial file that a re-run would mistake for the real thing and skip.
+     */
+    private fun stageCopy(src: File, dest: File) {
+        val staging = File(dest.parentFile, dest.name + ".restore-tmp")
+        try {
+            copyFileForRestore(src, staging)
+            if (!staging.renameTo(dest)) throw java.io.IOException("could not place " + dest.name)
+        } finally { staging.delete() }
+    }
+
+    /**
+     * Restores a zip made by [writeZip]. Anything already on the phone (same report ID) is left alone.
+     * NotABackup when it is not a BumpLog backup, Refused when a limit says it cannot be one this app
+     * wrote, otherwise Done - and Done.incomplete tells him to run it again when a copy failed.
+     */
+    fun restoreZip(ctx: Context, ins: InputStream): RestoreResult {
         val db = Db.get(ctx)
         var json: JSONObject? = null
         var photos = 0
@@ -249,35 +278,36 @@ object Backup {
         ZipInputStream(ins.buffered()).use { z ->
             while (true) {
                 val e = z.nextEntry ?: break
-                if (!gate.countEntry()) return null
+                if (!gate.countEntry()) return RestoreResult.Refused("it has more than 5,000 entries")
                 if (e.isDirectory) continue
                 val parts = e.name.split("/")
                 when {
                     e.name == "backup.json" -> {
                         val b = z.readNBytes(MAX_JSON + 1)
-                        if (b.size > MAX_JSON) return null
-                        if (!gate.addBytes(b.size.toLong())) return null
-                        json = try { JSONObject(String(b)) } catch (x: Exception) { return null }
+                        if (b.size > MAX_JSON) return RestoreResult.Refused("its report data is over 30 MB")
+                        if (!gate.addBytes(b.size.toLong())) return RestoreResult.Refused("it unpacks to more than 1.5 GB")
+                        json = try { JSONObject(String(b)) } catch (x: Exception) { return RestoreResult.NotABackup }
                     }
                     parts.size == 3 && parts[0] == "photos" && safeName.matches(parts[1]) && safeName.matches(parts[2]) -> {
                         val f = File(tmp, "p${photoFiles.size}")
                         var n = 0L
-                        f.outputStream().use { o -> val buf = ByteArray(65536); while (true) { val r = z.read(buf); if (r < 0) break; n += r; if (n > MAX_ENTRY || !gate.addBytes(r.toLong())) return null; o.write(buf, 0, r) } }
+                        f.outputStream().use { o -> val buf = ByteArray(65536); while (true) { val r = z.read(buf); if (r < 0) break; n += r; if (n > MAX_ENTRY) return RestoreResult.Refused("a photo is over 60 MB"); if (!gate.addBytes(r.toLong())) return RestoreResult.Refused("it unpacks to more than 1.5 GB"); o.write(buf, 0, r) } }
                         photoFiles.add(Triple(parts[1], parts[2], f))
                     }
                     parts.size == 2 && parts[0] == "voice" && parts[1].endsWith(".clip") && Sound.clipPhrases.any { it.first + ".clip" == parts[1] } -> {
                         val b = z.readNBytes(MAX_VOICE + 1)
                         if (b.isNotEmpty()) {
-                            if (!gate.admitVoice(parts[1], b.size)) return null
-                            if (!gate.addBytes(b.size.toLong())) return null
+                            if (b.size > MAX_VOICE) return RestoreResult.Refused("a voice clip is over 5 MB")
+                            if (!gate.admitVoice(parts[1], b.size)) return RestoreResult.Refused("a voice clip appears twice")
+                            if (!gate.addBytes(b.size.toLong())) return RestoreResult.Refused("it unpacks to more than 1.5 GB")
                             val f = File(tmp, "v-" + parts[1]); f.writeBytes(b); voiceFiles.add(parts[1].removeSuffix(".clip") to f)
                         }
                     }
                 }
             }
         }
-        val j = json ?: return null
-        if (j.optString("format") != "BumpLog backup") return null
+        val j = json ?: return RestoreResult.NotABackup
+        if (j.optString("format") != "BumpLog backup") return RestoreResult.NotABackup
         var nSpots = 0; var nHits = 0; var nDmg = 0; var skipped = 0
         synchronized(db) {
             val w = db.writableDatabase
@@ -343,23 +373,29 @@ object Backup {
         for (i in 0 until dj.length()) dj.optJSONObject(i)?.optString("report_id")?.takeIf { okId(it) }?.let { allowed.add(DamagePhotos.dir(ctx, it).name) }
         // The DB is already committed, so a failure below must not look like a clean restore:
         // each phase is wrapped, the result is flagged, and a re-run of the same file finishes it.
-        var complete = runPhase {
+        // One bad file never stops the rest of the phase: it is flagged and the re-run finishes it.
+        var complete = true
+        complete = runPhase {
             for ((dir, name, f) in photoFiles) {
                 if (dir !in allowed) continue
                 val folder = File(damageRoot, dir)
                 val dest = File(folder, name)
                 if (dest.canonicalFile.parentFile != folder.canonicalFile || folder.canonicalFile.parentFile != damageRoot) continue
                 folder.mkdirs()
-                if (!dest.exists()) { f.copyTo(dest); photos++ }
+                if (!dest.exists()) {
+                    try { stageCopy(f, dest); photos++ } catch (e: Exception) { complete = false }
+                }
             }
-        }
+        } && complete
         // Voice clips only fill gaps, so a restore never overwrites recordings made since.
         complete = runPhase {
-            for ((key, f) in voiceFiles) if (!Sound.hasClip(ctx, key)) f.copyTo(Sound.clipFile(ctx, key), overwrite = true)
+            for ((key, f) in voiceFiles) if (!Sound.hasClip(ctx, key)) {
+                try { stageCopy(f, Sound.clipFile(ctx, key)) } catch (e: Exception) { complete = false }
+            }
         } && complete
         var settings = 0
         complete = runPhase { settings = j.optJSONObject("prefs")?.let { Prefs.restoreAll(it) } ?: 0 } && complete
-        return Restored(nSpots, nHits, nDmg, photos, settings, skipped, incomplete = !complete)
+        return RestoreResult.Done(Restored(nSpots, nHits, nDmg, photos, settings, skipped, incomplete = !complete))
         } finally { tmp.deleteRecursively() }
     }
 }
