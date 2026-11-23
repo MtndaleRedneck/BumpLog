@@ -35,7 +35,12 @@ jobs:
         run: |
           F=$(ls ./*source.tgz 2>/dev/null | head -1)
           if [ -n "$F" ]; then
-            tar xzf "$F"
+            # Hygiene: refuse absolute paths, .. entries and links before unpacking, and never
+            # take ownership from the archive. Only someone who can push to main can land a
+            # bundle; this keeps a malformed one from writing outside the tree.
+            if tar -tzf "$F" | grep -qE '^/|(^|/)\.\.(/|$)'; then echo "Unsafe paths in source bundle"; exit 1; fi
+            if tar -tzvf "$F" | grep -qE '^[lh]'; then echo "Links in source bundle"; exit 1; fi
+            tar --no-same-owner -xzf "$F"
             rm "$F"
             git config user.name "MtndaleRedneck"
             git config user.email "117659952+MtndaleRedneck@users.noreply.github.com"

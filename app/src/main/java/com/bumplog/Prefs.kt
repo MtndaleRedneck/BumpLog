@@ -130,7 +130,9 @@ object Prefs {
                 n++
             } catch (ex: Exception) { }
         }
-        e.apply(); return n
+        // commit, not apply: a durability failure must surface so the restore can say it was incomplete.
+        if (!e.commit()) throw java.io.IOException("settings did not save")
+        return n
     }
 
     var activeAddress: String
