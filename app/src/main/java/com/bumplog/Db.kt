@@ -574,6 +574,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         @Volatile private var inst: Db? = null
         fun get(ctx: Context): Db = inst ?: synchronized(this) { inst ?: Db(ctx.applicationContext).also { inst = it } }
 
+        /** Tests only: Robolectric wipes the files dir between tests, so a held-open handle goes stale. */
+        fun closeForTests() = synchronized(this) { inst?.close(); inst = null }
+
         fun newReportId(prefix: String, ts: Long): String {
             val d = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date(ts))
             val r = (1..4).map { "ABCDEFGHJKMNPQRSTUVWXYZ23456789".random() }.joinToString("")

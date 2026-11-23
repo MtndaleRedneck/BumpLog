@@ -32,6 +32,7 @@ class BackupRestoreTest {
 
     @Before
     fun setUp() {
+        Db.closeForTests() // each test gets a fresh sandbox: drop any stale open handle
         Prefs.init(ctx)
         Backup.copyFileForRestore = { src, dst -> src.copyTo(dst, overwrite = true) }
     }
