@@ -15,7 +15,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /**
@@ -31,6 +30,24 @@ object Backup {
     private const val MAX_ENTRIES = 5_000
     /** No leading dot, so neither "." nor ".." can pass as a name. */
     private val safeName = Regex("[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}")
+
+    /** Suffix of a restore's staging copies; never a real photo, so it is filtered and cleaned up. */
+    internal const val RESTORE_TMP = ".restore-tmp"
+
+    /**
+     * The one budget every archive is checked against before anything is decompressed: entry count
+     * and the sum of every entry's declared size - including entries restore will never open, like
+     * the spreadsheet export or anything unrecognized. Pure, unit-tested.
+     */
+    internal fun budgetRefusal(sizes: List<Long>): String? {
+        if (sizes.size > MAX_ENTRIES) return "it has more than 5,000 entries"
+        var total = 0L
+        for (n in sizes) {
+            total += n
+            if (total < 0 || total > MAX_TOTAL) return "it unpacks to more than 1.5 GB"
+        }
+        return null
+    }
 
     fun fileName(ext: String): String = "BumpLog-backup-" + SimpleDateFormat("yyyyMMdd", Locale.US).format(Date()) + "." + ext
 
@@ -57,6 +74,9 @@ object Backup {
         return arr
     }
 
+    /** Bigger than a restore could ever take back: the write is refused, not half-saved. */
+    class BackupTooLarge(val reason: String) : Exception(reason)
+
     fun writeZip(ctx: Context, out: OutputStream) {
         val db = Db.get(ctx)
         val h = db.readableDatabase
@@ -69,18 +89,36 @@ object Backup {
                 .put("meta", dump(h, "meta", null))
         }
         ZipOutputStream(out.buffered()).use { z ->
-            z.putNextEntry(ZipEntry("backup.json")); z.write(json.toString().toByteArray()); z.closeEntry()
-            z.putNextEntry(ZipEntry("BumpLog-export.csv")); z.write(Reports.csvText(ctx).toByteArray()); z.closeEntry()
+            // The writer holds itself to the exact limits the restore side enforces, so a
+            // backup this app writes is always one it could restore back - and an oversized
+            // one is refused loudly here instead of being labeled "saved and checked" and
+            // then failing a restore. No media is ever dropped to make it fit.
+            var entries = 0
+            var total = 0L
+            fun put(name: String, size: Long, maxEntry: Long?, reason: String, write: () -> Unit) {
+                if (maxEntry != null && size > maxEntry) throw BackupTooLarge(reason)
+                if (++entries > MAX_ENTRIES) throw BackupTooLarge("there are more than 5,000 files to back up")
+                total += size
+                if (total > MAX_TOTAL) throw BackupTooLarge("everything together is over 1.5 GB, too big to restore later")
+                z.putNextEntry(ZipEntry(name)); write(); z.closeEntry()
+            }
+            val jsonBytes = json.toString().toByteArray()
+            put("backup.json", jsonBytes.size.toLong(), MAX_JSON.toLong(), "the report data alone is over 30 MB") { z.write(jsonBytes) }
+            val csvBytes = Reports.csvText(ctx).toByteArray()
+            put("BumpLog-export.csv", csvBytes.size.toLong(), null, "") { z.write(csvBytes) }
             for (d in db.damages()) {
                 val dir = DamagePhotos.dir(ctx, d.reportId)
                 for (f in DamagePhotos.files(ctx, d.reportId)) {
-                    z.putNextEntry(ZipEntry("photos/${dir.name}/${f.name}"))
-                    f.inputStream().use { it.copyTo(z) }; z.closeEntry()
+                    put("photos/${dir.name}/${f.name}", f.length(), MAX_ENTRY, "a damage photo is over 60 MB, too big to restore later") {
+                        f.inputStream().use { it.copyTo(z) }
+                    }
                 }
             }
             for ((key, _) in Sound.clipPhrases) if (Sound.hasClip(ctx, key)) {
-                z.putNextEntry(ZipEntry("voice/$key.clip"))
-                Sound.clipFile(ctx, key).inputStream().use { it.copyTo(z) }; z.closeEntry()
+                val f = Sound.clipFile(ctx, key)
+                put("voice/$key.clip", f.length(), MAX_VOICE.toLong(), "a voice recording is over 5 MB, too big to restore later") {
+                    f.inputStream().use { it.copyTo(z) }
+                }
             }
         }
     }
@@ -96,6 +134,10 @@ object Backup {
         try {
             val ok = openOut(created)?.use { write(it); true } ?: false
             if (ok) return created
+        } catch (e: BackupTooLarge) {
+            // The typed refusal travels so every save path can say why in his words.
+            try { delete(created) } catch (x: Exception) { }
+            throw e
         } catch (e: Exception) { }
         try { delete(created) } catch (e: Exception) { }
         return null
@@ -121,17 +163,32 @@ object Backup {
         return keep
     }
 
-    /** Writes the full backup zip into the auto-backup folder the owner picked. False when no folder is set or the write fails. */
-    fun autoSave(ctx: Context): Boolean {
-        val ok = autoSaveUri(ctx) != null
-        if (ok) prune(ctx, android.net.Uri.parse(Prefs.backupFolder)) // prune only after the new backup wrote cleanly (item 6)
-        return ok
+    /** What a save came back with, so the manual, share and weekly paths all say the same thing. */
+    sealed class SaveResult {
+        object Saved : SaveResult()
+        object NoFolder : SaveResult()
+        /** Bigger than a restore could ever take back; retrying the same save won't change that. */
+        class TooLarge(val reason: String) : SaveResult()
+        /** An ordinary failure (folder gone, write error) - worth another try later. */
+        class Failed(val reason: String) : SaveResult()
     }
 
-    /** Like [autoSave] but returns the new file, so the caller can verify it before trusting it. */
-    private fun autoSaveUri(ctx: Context): android.net.Uri? {
+    private class Attempt(val uri: android.net.Uri?, val failure: SaveResult?)
+
+    /** Writes the full backup zip into the auto-backup folder the owner picked. False when no folder is set or the write fails. */
+    fun autoSave(ctx: Context): Boolean = autoSaveResult(ctx) is SaveResult.Saved
+
+    /** The typed form of [autoSave]: prune runs only after the new backup wrote cleanly (item 6). */
+    fun autoSaveResult(ctx: Context): SaveResult {
+        val a = autoSaveAttempt(ctx)
+        a.failure?.let { return it }
+        prune(ctx, android.net.Uri.parse(Prefs.backupFolder))
+        return SaveResult.Saved
+    }
+
+    private fun autoSaveAttempt(ctx: Context): Attempt {
         val tree = Prefs.backupFolder
-        if (tree.isBlank()) return null
+        if (tree.isBlank()) return Attempt(null, SaveResult.NoFolder)
         return try {
             val treeUri = android.net.Uri.parse(tree)
             val docUri = android.provider.DocumentsContract.buildDocumentUriUsingTree(treeUri, android.provider.DocumentsContract.getTreeDocumentId(treeUri))
@@ -142,8 +199,9 @@ object Backup {
                 // Only this just-created file is removed, never anything already in the folder.
                 delete = { android.provider.DocumentsContract.deleteDocument(ctx.contentResolver, it) })
             if (created != null) Prefs.lastBackupTs = System.currentTimeMillis()
-            created
-        } catch (e: Exception) { null }
+            Attempt(created, if (created == null) SaveResult.Failed("the file would not write") else null)
+        } catch (e: BackupTooLarge) { Attempt(null, SaveResult.TooLarge(e.reason)) }
+        catch (e: Exception) { Attempt(null, SaveResult.Failed("the file would not write")) }
     }
 
     /**
@@ -151,20 +209,31 @@ object Backup {
      * end record checked by ZipFile. Only then is it offered as the safety copy before a delete (item 11).
      * False when no folder is set, the write fails, or the read-back fails.
      */
-    fun autoSaveVerified(ctx: Context): Boolean {
-        val created = autoSaveUri(ctx) ?: return false
+    fun autoSaveVerified(ctx: Context): Boolean = autoSaveVerifiedResult(ctx) is SaveResult.Saved
+
+    /**
+     * The typed form of [autoSaveVerified]. The size limits now live in [writeZip] itself, so a backup
+     * that a restore would reject can never be written, labeled "saved and checked", and then used to
+     * gate a delete: the delete flow hears the refusal instead. The read-back below still proves the
+     * saved bytes are complete.
+     */
+    fun autoSaveVerifiedResult(ctx: Context): SaveResult {
+        val a = autoSaveAttempt(ctx)
+        a.failure?.let { return it }
+        val created = a.uri ?: return SaveResult.Failed("the file would not write")
         val tmp = File(ctx.cacheDir, "verify-backup.zip")
         return try {
-            ctx.contentResolver.openInputStream(created)?.use { ins -> tmp.outputStream().use { ins.copyTo(it) } } ?: return false
+            ctx.contentResolver.openInputStream(created)?.use { ins -> tmp.outputStream().use { ins.copyTo(it) } }
+                ?: return SaveResult.Failed("the saved file would not read back")
             java.util.zip.ZipFile(tmp).use { z ->
                 val names = z.entries().toList().map { it.name }
-                if ("backup.json" !in names) return false
+                if ("backup.json" !in names) return SaveResult.Failed("the saved file would not read back")
                 val buf = ByteArray(65536)
                 for (e in z.entries()) { z.getInputStream(e).use { while (it.read(buf) >= 0) { } } }
             }
             prune(ctx, android.net.Uri.parse(Prefs.backupFolder)) // only a backup that read back complete may push older ones out
-            true
-        } catch (e: Exception) { false } finally { tmp.delete() }
+            SaveResult.Saved
+        } catch (e: Exception) { SaveResult.Failed("the saved file would not read back") } finally { tmp.delete() }
     }
 
     /** Keeps the newest backup of each of the last 8 days, and never fewer than the newest 2 files (item 6). Runs only after a new backup wrote cleanly. */
@@ -254,7 +323,7 @@ object Backup {
      * never leaves a partial file that a re-run would mistake for the real thing and skip.
      */
     private fun stageCopy(src: File, dest: File) {
-        val staging = File(dest.parentFile, dest.name + ".restore-tmp")
+        val staging = File(dest.parentFile, dest.name + RESTORE_TMP)
         try {
             copyFileForRestore(src, staging)
             if (!staging.renameTo(dest)) throw java.io.IOException("could not place " + dest.name)
@@ -275,37 +344,50 @@ object Backup {
         val voiceFiles = ArrayList<Pair<String, File>>()
         val tmp = File(ctx.cacheDir, "restore").apply { deleteRecursively(); mkdirs() }
         try {
-        ZipInputStream(ins.buffered()).use { z ->
-            while (true) {
-                val e = z.nextEntry ?: break
-                if (!gate.countEntry()) return RestoreResult.Refused("it has more than 5,000 entries")
-                if (e.isDirectory) continue
+        // A restore killed mid-copy on an earlier run can leave staging files behind in the
+        // damage folders; they are never real photos, so drop them before doing anything.
+        File(ctx.filesDir, "damage").listFiles()?.forEach { d ->
+            d.listFiles()?.forEach { if (it.name.endsWith(RESTORE_TMP)) it.delete() }
+        }
+        // Copy the archive to a temp file and read it by entry name with ZipFile: every entry's
+        // declared size counts toward the one budget up front (spreadsheet export and anything
+        // unrecognized included), and entries restore doesn't know are never opened, so their
+        // bytes are never decompressed at all. The copy itself is plain bounded file I/O.
+        val zipCopy = File(tmp, "in.zip")
+        ins.buffered().use { it.copyTo(zipCopy.outputStream()) }
+        java.util.zip.ZipFile(zipCopy).use { z ->
+            val entries = z.entries().toList().filter { !it.isDirectory }
+            budgetRefusal(entries.map { e -> if (e.size >= 0) e.size else e.compressedSize.coerceAtLeast(0) })
+                ?.let { return RestoreResult.Refused(it) }
+            for (e in entries) {
                 val parts = e.name.split("/")
                 when {
                     e.name == "backup.json" -> {
-                        val b = z.readNBytes(MAX_JSON + 1)
+                        val b = z.getInputStream(e).use { it.readNBytes(MAX_JSON + 1) }
                         if (b.size > MAX_JSON) return RestoreResult.Refused("its report data is over 30 MB")
-                        if (!gate.addBytes(b.size.toLong())) return RestoreResult.Refused("it unpacks to more than 1.5 GB")
                         json = try { JSONObject(String(b)) } catch (x: Exception) { return RestoreResult.NotABackup }
                     }
                     parts.size == 3 && parts[0] == "photos" && safeName.matches(parts[1]) && safeName.matches(parts[2]) -> {
                         val f = File(tmp, "p${photoFiles.size}")
-                        var n = 0L
-                        f.outputStream().use { o -> val buf = ByteArray(65536); while (true) { val r = z.read(buf); if (r < 0) break; n += r; if (n > MAX_ENTRY) return RestoreResult.Refused("a photo is over 60 MB"); if (!gate.addBytes(r.toLong())) return RestoreResult.Refused("it unpacks to more than 1.5 GB"); o.write(buf, 0, r) } }
+                        z.getInputStream(e).use { es ->
+                            var n = 0L
+                            f.outputStream().use { o -> val buf = ByteArray(65536); while (true) { val r = es.read(buf); if (r < 0) break; n += r; if (n > MAX_ENTRY) return RestoreResult.Refused("a photo is over 60 MB"); o.write(buf, 0, r) } }
+                        }
                         photoFiles.add(Triple(parts[1], parts[2], f))
                     }
                     parts.size == 2 && parts[0] == "voice" && parts[1].endsWith(".clip") && Sound.clipPhrases.any { it.first + ".clip" == parts[1] } -> {
-                        val b = z.readNBytes(MAX_VOICE + 1)
+                        val b = z.getInputStream(e).use { it.readNBytes(MAX_VOICE + 1) }
                         if (b.isNotEmpty()) {
                             if (b.size > MAX_VOICE) return RestoreResult.Refused("a voice clip is over 5 MB")
                             if (!gate.admitVoice(parts[1], b.size)) return RestoreResult.Refused("a voice clip appears twice")
-                            if (!gate.addBytes(b.size.toLong())) return RestoreResult.Refused("it unpacks to more than 1.5 GB")
                             val f = File(tmp, "v-" + parts[1]); f.writeBytes(b); voiceFiles.add(parts[1].removeSuffix(".clip") to f)
                         }
                     }
+                    // else: an entry restore doesn't know - never opened, already counted above.
                 }
             }
         }
+        zipCopy.delete()
         val j = json ?: return RestoreResult.NotABackup
         if (j.optString("format") != "BumpLog backup") return RestoreResult.NotABackup
         var nSpots = 0; var nHits = 0; var nDmg = 0; var skipped = 0

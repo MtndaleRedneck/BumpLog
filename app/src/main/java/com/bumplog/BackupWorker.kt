@@ -15,7 +15,16 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         com.bumplog.Prefs.init(applicationContext)
         // No folder picked yet is not a failure: succeed quietly instead of retrying forever.
         if (com.bumplog.Prefs.backupFolder.isBlank()) return Result.success()
-        return if (Backup.autoSave(applicationContext)) Result.success() else Result.retry()
+        return when (val r = Backup.autoSaveResult(applicationContext)) {
+            is Backup.SaveResult.Saved, is Backup.SaveResult.NoFolder -> Result.success()
+            // Too big to ever restore: retrying the same save won't help, so say so once
+            // and stop; the weekly schedule still brings the next regular run.
+            is Backup.SaveResult.TooLarge -> {
+                Notifier.backupFailed(applicationContext, r.reason)
+                Result.success()
+            }
+            is Backup.SaveResult.Failed -> Result.retry()
+        }
     }
 
     companion object {

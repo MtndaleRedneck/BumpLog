@@ -144,3 +144,20 @@ class RestoreGateTest {
         assertTrue("the phase itself ran", ran)
     }
 }
+
+class BackupBudgetTest {
+
+    @Test fun skippedEntriesCountInTheSameBudget() {
+        // The spreadsheet export and any unrecognized entry count toward the one byte
+        // budget even though restore never opens them; exactly at the cap still passes.
+        assertNull(Backup.budgetRefusal(listOf(1_500_000_000L)))
+        assertNull(Backup.budgetRefusal(listOf(100L, 1_499_999_900L)))
+        assertNotNull("one byte past the cap, wherever it lives", Backup.budgetRefusal(listOf(100L, 1_499_999_901L)))
+        assertNotNull(Backup.budgetRefusal(listOf(1_500_000_001L)))
+    }
+
+    @Test fun capsEntryCount() {
+        assertNull(Backup.budgetRefusal(List(5_000) { 1L }))
+        assertNotNull("entry 5001 is past the cap", Backup.budgetRefusal(List(5_001) { 1L }))
+    }
+}

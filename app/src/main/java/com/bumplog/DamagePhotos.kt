@@ -22,7 +22,9 @@ object DamagePhotos {
         return n
     }
 
-    fun files(ctx: Context, reportId: String): List<File> = dir(ctx, reportId).listFiles()?.filter { it.isFile }?.sortedBy { it.name } ?: emptyList()
+    /** Real photos only: a restore's staging copy (killed mid-restore) is never shown or backed up. */
+    fun files(ctx: Context, reportId: String): List<File> =
+        dir(ctx, reportId).listFiles()?.filter { it.isFile && !it.name.endsWith(Backup.RESTORE_TMP) }?.sortedBy { it.name } ?: emptyList()
     fun uris(ctx: Context, reportId: String): List<Uri> = files(ctx, reportId).map { FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", it) }
     fun wipeAll(ctx: Context) { File(ctx.filesDir, "damage").deleteRecursively() }
 }

@@ -268,7 +268,14 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                     // read back complete before it counts; the share sheet is just the sheet - it never confirms a save.
                     TextButton({
                         if (Prefs.backupFolder.isNotBlank()) {
-                            runIo(ctx) { if (Backup.autoSaveVerified(ctx)) "Backup saved and checked." else "Backup failed - nothing was deleted." }
+                            runIo(ctx) {
+                                when (val r = Backup.autoSaveVerifiedResult(ctx)) {
+                                    is Backup.SaveResult.Saved -> "Backup saved and checked."
+                                    is Backup.SaveResult.NoFolder -> "Pick a backup folder first - nothing was deleted."
+                                    is Backup.SaveResult.TooLarge -> "Backup is too big: ${r.reason} Nothing was deleted."
+                                    is Backup.SaveResult.Failed -> "Backup failed: ${r.reason} Nothing was deleted."
+                                }
+                            }
                         } else {
                             runIo(ctx) { ctx.startActivity(Backup.shareIntent(ctx).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)); "Save or share the file yourself. Delete stays here when you're back." }
                         }
@@ -337,7 +344,7 @@ fun SetupScreen(done: () -> Unit) {
 internal fun runIo(ctx: Context, after: () -> Unit = {}, work: () -> String) {
     val h = android.os.Handler(android.os.Looper.getMainLooper())
     Thread {
-        val msg = try { work() } catch (e: Exception) { "That didn't work. Try again." }
+        val msg = try { work() } catch (e: Backup.BackupTooLarge) { "Backup is too big: ${e.reason}" } catch (e: Exception) { "That didn't work. Try again." }
         h.post { if (msg.isNotBlank()) android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show(); after(); Live.bump() }
     }.start()
 }

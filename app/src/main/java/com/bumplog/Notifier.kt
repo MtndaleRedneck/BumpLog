@@ -35,6 +35,7 @@ object Notifier {
     const val ID_LOGGING_STOPPED = 8
     const val ID_LOGGING_PAUSED = 9
     const val ID_PASSENGER = 7
+    private const val ID_BACKUP = 11
     private val main = Handler(Looper.getMainLooper())
     private var overlayView: View? = null
 
@@ -171,6 +172,15 @@ object Notifier {
                 .setContentIntent(PendingIntent.getActivity(ctx, 6000 + driveId.toInt(), i, flags()))
         } else b.setContentText("$hits hits logged. Nothing to send.").setContentIntent(openApp(ctx, 0, "review"))
         nm.notify(ID_DRIVE_DONE, b.build())
+    }
+
+    /** The weekly backup could not be saved and retrying won't change it (e.g. too big to restore). */
+    fun backupFailed(ctx: Context, reason: String) {
+        val nm = ctx.getSystemService(NotificationManager::class.java)
+        nm.notify(ID_BACKUP, NotificationCompat.Builder(ctx, CH_ALERT).setSmallIcon(R.drawable.ic_stat)
+            .setContentTitle("Backup didn't save")
+            .setContentText("$reason Save or share a backup yourself from Settings.")
+            .setAutoCancel(true).setContentIntent(openApp(ctx)).build())
     }
 
     fun damageWaiting(ctx: Context, count: Int) {
