@@ -152,6 +152,15 @@ object Prefs {
     var backupFolder: String get() = s("backup_folder", ""); set(v) = sp.edit().putString("backup_folder", v).apply()
     /** Time of the last automatic backup that wrote, 0 when none. */
     var lastBackupTs: Long get() = l("last_backup", 0L); set(v) = sp.edit().putLong("last_backup", v).apply()
+
+    /** Last automated backup failure, shown in Settings until a backup succeeds. "" = none. */
+    var lastBackupError: String get() = s("last_backup_error", ""); set(v) = sp.edit().putString("last_backup_error", v).apply()
+
+    /** A trip send requested through the internal receiver, waiting for the one-time setup. 0 = none. */
+    var pendingTrip: Long get() = l("pending_trip", 0L); set(v) = sp.edit().putLong("pending_trip", v).apply()
+
+    /** Set by the internal restart action; MainActivity runs its normal start+permission flow. */
+    var restartWanted: Boolean get() = b("restart_wanted", false); set(v) = sp.edit().putBoolean("restart_wanted", v).apply()
     var autoStart: Boolean get() = b("autostart", false); set(v) = sp.edit().putBoolean("autostart", v).apply()
     var carAddress: String get() = s("car_addr", ""); set(v) = sp.edit().putString("car_addr", v).apply()
     var carName: String get() = s("car_name", ""); set(v) = sp.edit().putString("car_name", v).apply()
