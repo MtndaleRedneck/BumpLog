@@ -448,6 +448,9 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     var hits by remember { mutableStateOf(listOf<Hit>()) }
     var queued by remember { mutableStateOf(0) }
     LoadingSpots(tick) { db -> hits = db.hits(60); queued = db.queuedDamages().size }
+    // One sheet session = one draft token (kept across process restore): rebuilds retry the
+    // same row; filing a second, separate report starts a new sheet with a new token.
+    val draftId = androidx.compose.runtime.saveable.rememberSaveable { "draft-" + java.util.UUID.randomUUID().toString() }
     var picked by remember { mutableStateOf(0L) }
     var cat by remember { mutableStateOf("Tire") }
     var note by remember { mutableStateOf("") }
@@ -467,7 +470,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     }
     fun build(): Damage? {
         val h = hits.firstOrNull { it.id == picked } ?: return null
-        val d = Db.get(ctx).addDamage(h.id, h.spotId, cat, note, System.currentTimeMillis())
+        val d = Db.get(ctx).addDamage(h.id, h.spotId, cat, note, System.currentTimeMillis(), draftId)
         if (photos.isNotEmpty()) DamagePhotos.add(ctx, d.reportId, photos)
         return d
     }

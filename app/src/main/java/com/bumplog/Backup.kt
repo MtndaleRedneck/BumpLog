@@ -232,7 +232,7 @@ object Backup {
     fun autoSaveVerifiedResult(ctx: Context): SaveResult {
         val a = autoSaveAttempt(ctx)
         a.failure?.let { return noteOutcome(it) }
-        val created = a.uri ?: return SaveResult.Failed("the file would not write")
+        val created = a.uri ?: return noteOutcome(SaveResult.Failed("the file would not write"))
         val tmp = File(ctx.cacheDir, "verify-backup.zip")
         // The file only counts (timestamp, prune, delete-gate) once it read back complete;
         // a file that fails the read-back is removed again, not left looking like a backup.

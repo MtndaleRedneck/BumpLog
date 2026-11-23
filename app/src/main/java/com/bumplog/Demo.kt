@@ -30,6 +30,6 @@ object Demo {
         add("Demo Hwy 1", 48, 1.34f, 55f, DefectType.FAULTING, 39.5300, -98.3700).also { s -> db.setWarn(s.id, true); db.setType(s.id, DefectType.FAULTING) }
         add("Test Blvd", 70, 0.83f, 29f, DefectType.RUMBLE, 39.4900, -98.3400).also { s -> db.setWarn(s.id, true); db.setType(s.id, DefectType.RUMBLE) }
         Prefs.lastDriveId = drive
-        db.addDamage(db.hits(1).first().id, 0, "Tire", "Demo", now)
+        db.addDamage(db.hits(1).first().id, 0, "Tire", "Demo", now, "demo-$now")
     }
 }
