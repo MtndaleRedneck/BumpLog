@@ -1,3 +1,8 @@
+BumpLog 1.17.1
+
+- A restore that can't finish copying photos, voice clips or settings now says so and asks you to run Restore again, instead of looking done.
+- Restore is stricter about broken backup files: too many entries, oversized voice clips, duplicate clips and archives past the size cap are rejected.
+
 BumpLog 1.17.0
 
 - Logging no longer stops silently when Android restarts it in the background, and the weekly auto backup works even when the app was closed.

@@ -27,6 +27,8 @@ object Backup {
     private const val MAX_JSON = 30_000_000
     private const val MAX_ENTRY = 60_000_000L
     private const val MAX_TOTAL = 1_500_000_000L
+    private const val MAX_VOICE = 5_000_000
+    private const val MAX_ENTRIES = 5_000
     /** No leading dot, so neither "." nor ".." can pass as a name. */
     private val safeName = Regex("[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}")
 
@@ -197,7 +199,25 @@ object Backup {
         }, "Share backup")
     }
 
-    class Restored(val spots: Int, val hits: Int, val damages: Int, val photos: Int, val settings: Int, val skipped: Int)
+    class Restored(val spots: Int, val hits: Int, val damages: Int, val photos: Int, val settings: Int, val skipped: Int, val incomplete: Boolean = false)
+
+    /**
+     * Entry limits on the restore side: a real backup has a handful of entries and stays well under
+     * the byte cap, so an archive past these is not a BumpLog backup. Counts every entry, adds json,
+     * photo and voice bytes up against the one cumulative cap, and allows each voice clip name once.
+     * Pure, unit-tested.
+     */
+    internal class RestoreGate {
+        private var entries = 0
+        var total = 0L; private set
+        private val voiceNames = HashSet<String>()
+        fun countEntry(): Boolean = ++entries <= MAX_ENTRIES
+        fun addBytes(n: Long): Boolean { total += n; return total <= MAX_TOTAL }
+        fun admitVoice(name: String, size: Int): Boolean = size <= MAX_VOICE && voiceNames.add(name)
+    }
+
+    /** One post-commit restore phase: a failure is flagged, not thrown, and never skips the other phases. */
+    internal fun runPhase(phase: () -> Unit): Boolean = try { phase(); true } catch (e: Exception) { false }
 
     private fun okId(s: String?) = s != null && ReportNumbers.isOldId(s)
 
@@ -220,7 +240,8 @@ object Backup {
     fun restoreZip(ctx: Context, ins: InputStream): Restored? {
         val db = Db.get(ctx)
         var json: JSONObject? = null
-        var photos = 0; var total = 0L
+        var photos = 0
+        val gate = RestoreGate()
         val photoFiles = ArrayList<Triple<String, String, File>>()
         val voiceFiles = ArrayList<Pair<String, File>>()
         val tmp = File(ctx.cacheDir, "restore").apply { deleteRecursively(); mkdirs() }
@@ -228,23 +249,29 @@ object Backup {
         ZipInputStream(ins.buffered()).use { z ->
             while (true) {
                 val e = z.nextEntry ?: break
+                if (!gate.countEntry()) return null
                 if (e.isDirectory) continue
                 val parts = e.name.split("/")
                 when {
                     e.name == "backup.json" -> {
                         val b = z.readNBytes(MAX_JSON + 1)
                         if (b.size > MAX_JSON) return null
+                        if (!gate.addBytes(b.size.toLong())) return null
                         json = try { JSONObject(String(b)) } catch (x: Exception) { return null }
                     }
                     parts.size == 3 && parts[0] == "photos" && safeName.matches(parts[1]) && safeName.matches(parts[2]) -> {
                         val f = File(tmp, "p${photoFiles.size}")
                         var n = 0L
-                        f.outputStream().use { o -> val buf = ByteArray(65536); while (true) { val r = z.read(buf); if (r < 0) break; n += r; total += r; if (n > MAX_ENTRY || total > MAX_TOTAL) return null; o.write(buf, 0, r) } }
+                        f.outputStream().use { o -> val buf = ByteArray(65536); while (true) { val r = z.read(buf); if (r < 0) break; n += r; if (n > MAX_ENTRY || !gate.addBytes(r.toLong())) return null; o.write(buf, 0, r) } }
                         photoFiles.add(Triple(parts[1], parts[2], f))
                     }
                     parts.size == 2 && parts[0] == "voice" && parts[1].endsWith(".clip") && Sound.clipPhrases.any { it.first + ".clip" == parts[1] } -> {
-                        val b = z.readNBytes(5_000_000)
-                        if (b.isNotEmpty()) { val f = File(tmp, "v-" + parts[1]); f.writeBytes(b); voiceFiles.add(parts[1].removeSuffix(".clip") to f) }
+                        val b = z.readNBytes(MAX_VOICE + 1)
+                        if (b.isNotEmpty()) {
+                            if (!gate.admitVoice(parts[1], b.size)) return null
+                            if (!gate.addBytes(b.size.toLong())) return null
+                            val f = File(tmp, "v-" + parts[1]); f.writeBytes(b); voiceFiles.add(parts[1].removeSuffix(".clip") to f)
+                        }
                     }
                 }
             }
@@ -314,18 +341,25 @@ object Backup {
         val allowed = HashSet<String>()
         val dj = j.optJSONArray("damage") ?: JSONArray()
         for (i in 0 until dj.length()) dj.optJSONObject(i)?.optString("report_id")?.takeIf { okId(it) }?.let { allowed.add(DamagePhotos.dir(ctx, it).name) }
-        for ((dir, name, f) in photoFiles) {
-            if (dir !in allowed) continue
-            val folder = File(damageRoot, dir)
-            val dest = File(folder, name)
-            if (dest.canonicalFile.parentFile != folder.canonicalFile || folder.canonicalFile.parentFile != damageRoot) continue
-            folder.mkdirs()
-            if (!dest.exists()) { f.copyTo(dest); photos++ }
+        // The DB is already committed, so a failure below must not look like a clean restore:
+        // each phase is wrapped, the result is flagged, and a re-run of the same file finishes it.
+        var complete = runPhase {
+            for ((dir, name, f) in photoFiles) {
+                if (dir !in allowed) continue
+                val folder = File(damageRoot, dir)
+                val dest = File(folder, name)
+                if (dest.canonicalFile.parentFile != folder.canonicalFile || folder.canonicalFile.parentFile != damageRoot) continue
+                folder.mkdirs()
+                if (!dest.exists()) { f.copyTo(dest); photos++ }
+            }
         }
         // Voice clips only fill gaps, so a restore never overwrites recordings made since.
-        for ((key, f) in voiceFiles) if (!Sound.hasClip(ctx, key)) f.copyTo(Sound.clipFile(ctx, key), overwrite = true)
-        val settings = j.optJSONObject("prefs")?.let { Prefs.restoreAll(it) } ?: 0
-        return Restored(nSpots, nHits, nDmg, photos, settings, skipped)
+        complete = runPhase {
+            for ((key, f) in voiceFiles) if (!Sound.hasClip(ctx, key)) f.copyTo(Sound.clipFile(ctx, key), overwrite = true)
+        } && complete
+        var settings = 0
+        complete = runPhase { settings = j.optJSONObject("prefs")?.let { Prefs.restoreAll(it) } ?: 0 } && complete
+        return Restored(nSpots, nHits, nDmg, photos, settings, skipped, incomplete = !complete)
         } finally { tmp.deleteRecursively() }
     }
 }
