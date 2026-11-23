@@ -100,6 +100,9 @@ sleep 1; adb exec-out screencap -p > $OUT/v17-backup-status.png
 shot v17-backup-fail-base --es screen settings --ez mockbackupfail true
 rm -f $OUT/v17-backup-fail-base.png
 scroll_to "Backup failed" v17-backup-failure
+# Boundary evidence: the notification-tap action activity must be non-exported.
+adb shell dumpsys package com.bumplog | grep -A6 "InternalActionActivity" > $OUT/v17-internal-action-not-exported.txt
+cat $OUT/v17-internal-action-not-exported.txt
 ls -la $OUT
 adb shell wm size reset
 adb shell wm density reset

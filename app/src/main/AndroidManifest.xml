@@ -68,6 +68,14 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.BumpLog" />
 
+        <!-- Notification-tap side effects land here; invisible and unreachable from other apps. -->
+        <activity
+            android:name=".InternalActionActivity"
+            android:exported="false"
+            android:noHistory="true"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.NoDisplay" />
+
         <service
             android:name=".DriveService"
             android:exported="false"

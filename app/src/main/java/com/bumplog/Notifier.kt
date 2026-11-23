@@ -77,13 +77,15 @@ object Notifier {
         return PendingIntent.getActivity(ctx, (spotId * 7 + (screen?.hashCode() ?: 0)).toInt(), i, flags())
     }
 
-    // Side-effecting taps target the non-exported ActionReceiver, never the exported
-    // launcher activity: an intent any app can forge cannot start logging or send a trip.
+    // Side-effecting taps target the non-exported InternalActionActivity directly: a receiver
+    // in between is the Android 12+ notification trampoline and is blocked, and an intent any
+    // app can forge cannot reach an exported=false activity. Logging cannot be started nor a
+    // trip sent by a forged intent.
     fun restartApp(ctx: Context): PendingIntent =
-        PendingIntent.getBroadcast(ctx, 71, Intent(ctx, ActionReceiver::class.java).setAction(ActionReceiver.RESTART).setPackage(ctx.packageName), flags())
+        PendingIntent.getActivity(ctx, 71, InternalActionActivity.restartIntent(ctx), flags())
 
     fun sendTrip(ctx: Context, driveId: Long): PendingIntent =
-        PendingIntent.getBroadcast(ctx, 72, Intent(ctx, ActionReceiver::class.java).setAction(ActionReceiver.SENDTRIP).putExtra("drive", driveId).setPackage(ctx.packageName), flags())
+        PendingIntent.getActivity(ctx, 72, InternalActionActivity.sendTripIntent(ctx, driveId), flags())
 
     fun logIt(ctx: Context, spotId: Long): PendingIntent =
         PendingIntent.getActivity(ctx, 5000 + spotId.toInt(), logItIntent(ctx, spotId), flags())

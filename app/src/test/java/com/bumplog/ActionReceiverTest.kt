@@ -13,9 +13,9 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 
 /**
- * The non-exported receiver is the only bearer of notification-tap side effects: a trip
- * send and a logging restart arrive as receiver actions and land in Prefs for the app to
- * apply with its normal screens, never as forgeable extras on the exported activity.
+ * The receiver keeps only notification side effects that do not start an activity. The two
+ * that open the app (restart, send trip) moved to InternalActionActivity: a receiver first in
+ * a notification tap is the Android 12+ trampoline and is blocked.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -30,31 +30,6 @@ class ActionReceiverTest {
         Prefs.detectionEnabled = false
         Prefs.restartWanted = false
         Prefs.pendingTrip = 0L
-    }
-
-    @Test
-    fun restartSetsStateForTheNormalStartFlow() {
-        ActionReceiver().onReceive(ctx, Intent(ctx, ActionReceiver::class.java).setAction(ActionReceiver.RESTART))
-        assertTrue(Prefs.detectionEnabled)
-        assertTrue("MainActivity applies its own start + permission flow", Prefs.restartWanted)
-    }
-
-    @Test
-    fun tripSendWaitsForSetupWhenSetupIsMissing() {
-        Prefs.setupDone = false
-        ActionReceiver().onReceive(ctx, Intent(ctx, ActionReceiver::class.java)
-            .setAction(ActionReceiver.SENDTRIP).putExtra("drive", 42L))
-        assertEquals(42L, Prefs.pendingTrip)
-        assertEquals("nothing is marked sent before the mail handoff", "", Prefs.askSentFor)
-    }
-
-    @Test
-    fun tripSendWithoutReportsMarksNothing() {
-        Prefs.setupDone = true
-        ActionReceiver().onReceive(ctx, Intent(ctx, ActionReceiver::class.java)
-            .setAction(ActionReceiver.SENDTRIP).putExtra("drive", 42L))
-        assertEquals(0L, Prefs.pendingTrip)
-        assertEquals("", Prefs.askSentFor)
     }
 
     @Test

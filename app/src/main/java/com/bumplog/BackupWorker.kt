@@ -17,22 +17,22 @@ class BackupWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx
         if (com.bumplog.Prefs.backupFolder.isBlank()) return Result.success()
         return when (val r = Backup.autoSaveResult(applicationContext)) {
             is Backup.SaveResult.Saved, is Backup.SaveResult.NoFolder -> {
-                Prefs.lastBackupError = ""
+                Live.bump() // noteOutcome already cleared the Settings failure line
                 Result.success()
             }
             // Too big to ever restore: retrying the same save won't help, so say so once
             // and stop; the weekly schedule still brings the next regular run.
             is Backup.SaveResult.TooLarge -> {
-                Prefs.lastBackupError = r.reason
                 Notifier.backupFailed(applicationContext, r.reason)
+                Live.bump()
                 Result.success()
             }
             // An ordinary failure (folder gone, permission revoked) is told once too, not
             // retried silently; the weekly schedule brings the next regular run, and the
             // Settings screen keeps showing the older last-backup day.
             is Backup.SaveResult.Failed -> {
-                Prefs.lastBackupError = r.reason
                 Notifier.backupFailed(applicationContext, r.reason)
+                Live.bump()
                 Result.success()
             }
         }

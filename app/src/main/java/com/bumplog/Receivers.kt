@@ -26,31 +26,6 @@ class ActionReceiver : BroadcastReceiver() {
                 if (System.currentTimeMillis() < Prefs.passengerUndoUntil) { Prefs.passengerUndoUntil = 0L; Prefs.passenger = true; Live.update { it.copy(paused = true) }; if (Live.state.value.running) Notifier.cancelAndRefresh(ctx) }
             }
             STOP -> { Prefs.detectionEnabled = false; Prefs.passenger = false; Notifier.cancel(ctx, Notifier.ID_CAR); ctx.startService(Intent(ctx, DriveService::class.java).setAction(DriveService.ACTION_STOP)) }
-            // This receiver is not exported: only the app's own PendingIntents reach these
-            // two, so they - not intent extras on the exported launcher activity - carry
-            // the side effects. State goes through Prefs; the app opens without commands.
-            RESTART -> {
-                Prefs.detectionEnabled = true
-                Prefs.restartWanted = true // MainActivity applies its usual start + permission flow
-                Notifier.cancel(ctx, Notifier.ID_CAR)
-                ctx.startActivity(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
-            }
-            SENDTRIP -> {
-                val driveId = i.getLongExtra("drive", 0L)
-                if (driveId != 0L) {
-                    if (!Prefs.setupDone) {
-                        // Assistant setup happens once before the first report; the trip waits for it.
-                        Prefs.pendingTrip = driveId
-                    } else {
-                        val list = db.tripSpots(driveId)
-                        if (list.isEmpty()) android.widget.Toast.makeText(ctx, "No confirmed reports left to send.", android.widget.Toast.LENGTH_LONG).show()
-                        else if (handOffMail(ctx, Reports.reportsMail(ctx, list))) {
-                            Prefs.askSentFor = list.joinToString(",") { it.id.toString() }; Prefs.askSentKind = "trip"
-                        }
-                    }
-                    ctx.startActivity(Intent(ctx, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
-                }
-            }
         }
         if (id != 0L) {
             Notifier.cancel(ctx, "hit", id.toInt())
@@ -68,8 +43,6 @@ class ActionReceiver : BroadcastReceiver() {
         const val STILL = "com.bumplog.STILL"
         const val EXTEND = "com.bumplog.EXTEND"
         const val UNDO = "com.bumplog.UNDO"
-        const val RESTART = "com.bumplog.RESTART"
-        const val SENDTRIP = "com.bumplog.SENDTRIP"
     }
 }
 

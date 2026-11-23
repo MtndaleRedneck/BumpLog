@@ -341,4 +341,30 @@ class BackupRestoreTest {
         assertTrue("no folder is not a save, was $r", r !is Backup.SaveResult.Saved)
         assertEquals(0L, Prefs.lastBackupTs)
     }
+
+    @Test
+    fun failedSaveToDeadFolderKeepsTimestampAndNamesTheFailure() {
+        Prefs.lastBackupTs = 1234L
+        Prefs.lastBackupError = ""
+        Prefs.backupFolder = "content://com.example.bogus/tree/dead"
+        val r = Backup.autoSaveResult(ctx)
+        assertTrue("a dead folder is a failure, was $r", r is Backup.SaveResult.Failed)
+        assertEquals("a failed save must not move the backup timestamp", 1234L, Prefs.lastBackupTs)
+        assertTrue("the failure is named for the Settings line", Prefs.lastBackupError.isNotBlank())
+        Prefs.backupFolder = ""
+    }
+
+    @Test
+    fun theOutcomeLineFollowsEveryOutcome() {
+        // The SAF read-back success path is not Robolectric-feasible; the funnel itself is.
+        Prefs.lastBackupError = "older error"
+        Backup.noteOutcome(Backup.SaveResult.Saved)
+        assertEquals("", Prefs.lastBackupError)
+        Backup.noteOutcome(Backup.SaveResult.Failed("folder gone"))
+        assertEquals("folder gone", Prefs.lastBackupError)
+        Backup.noteOutcome(Backup.SaveResult.TooLarge("too big"))
+        assertEquals("too big", Prefs.lastBackupError)
+        Backup.noteOutcome(Backup.SaveResult.NoFolder)
+        assertEquals("a folder deliberately unpicked clears a stale line", "", Prefs.lastBackupError)
+    }
 }
