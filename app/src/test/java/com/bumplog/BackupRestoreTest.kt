@@ -198,10 +198,18 @@ class BackupRestoreTest {
     @Test
     fun duplicatePhotoEntryIsRefusedLikeADuplicateClip() {
         val dir = DamagePhotos.dir(ctx, "BD-20261102-EFGH").name
-        val z = zipWith(backupJson(), listOf(
+        // ZipOutputStream itself refuses duplicate names, so build with a distinct name of
+        // the SAME length, then rewrite both header copies to the duplicated one.
+        val bytes = zipWith(backupJson(), listOf(
             "photos/$dir/p1.jpg" to ByteArray(10) { 1 },
-            "photos/$dir/p1.jpg" to ByteArray(10) { 2 }))
-        assertTrue(Backup.restoreZip(ctx, z) is Backup.RestoreResult.Refused)
+            "photos/$dir/pX.jpg" to ByteArray(10) { 2 })).readBytes()
+        val from = "pX.jpg".toByteArray(); val to = "p1.jpg".toByteArray()
+        var patched = 0
+        for (i in 0..bytes.size - from.size) {
+            if (from.indices.all { bytes[i + it] == from[it] }) { to.copyInto(bytes, i); patched++ }
+        }
+        assertTrue("test setup rewrites the local header and central directory names", patched == 2)
+        assertTrue(Backup.restoreZip(ctx, ByteArrayInputStream(bytes)) is Backup.RestoreResult.Refused)
     }
 
     @Test
@@ -228,7 +236,13 @@ class BackupRestoreTest {
     fun csvWithNewlineInAddressRoundTrips() {
         // The writer quotes address fields; a geocoded address with a newline in it must
         // come back through the importer as one record.
-        done(Backup.restoreZip(ctx, damageZip()))
+        val j = backupJson()
+        j.put("hits", JSONArray().put(JSONObject()
+            .put("_id", 1).put("spot_id", 1).put("ts", 1762000000000L)
+            .put("lat", 40.0).put("lon", -74.0).put("heading", 90.0)
+            .put("speed", 13.4).put("peak_g", 5.0).put("duration", 0).put("peaks", 1)
+            .put("type", "POTHOLE")))
+        done(Backup.restoreZip(ctx, zipWith(j, emptyMap())))
         val db = Db.get(ctx)
         val spotId = db.writableDatabase.let { w ->
             w.execSQL("UPDATE spots SET address=? WHERE report_id='BL-20261101-ABCD'", arrayOf("Main St\nSecond line"))
