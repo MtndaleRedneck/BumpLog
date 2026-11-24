@@ -107,7 +107,7 @@ class ControlledMailDeviceTest {
 
         CaptureMailActivity.latch = CountDownLatch(1)
         CaptureMailActivity.received = null
-        CaptureMailActivity.photoBytes = emptyMap()
+        CaptureMailActivity.photoBytes = java.util.Collections.emptyMap()
         CaptureMailActivity.readFailure = null
 
         fireToControlledHandler(Reports.damageMail(ctx, d, hit, spot))

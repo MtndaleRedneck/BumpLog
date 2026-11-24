@@ -71,11 +71,11 @@ dependencies {
     testImplementation("org.json:json:20240303")
     androidTestImplementation("androidx.test:runner:1.5.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
-    // The test APK packages only its own androidTest dependencies: any test-side call
-    // to a NON-INLINE kotlin-stdlib function (e.g. emptyMap() in CaptureMailActivity's
-    // companion) crashes at class-load with NoClassDefFoundError without this
-    // (CI run 45306846156, logcat: MapsKt missing from the com.bumplog.test dex path).
-    androidTestImplementation(kotlin("stdlib"))
+    // NOTE: androidTest cannot carry kotlin-stdlib even if declared here - AGP dedupes
+    // library classes the tested app already provides out of the test APK (verified:
+    // APK built with an explicit androidTestImplementation(kotlin("stdlib")) contained
+    // zero kotlin classes, and CI run 45309923688 crashed identically). Test-package
+    // process code (CaptureMailActivity) must therefore use java.util only.
 }
 
 val copyAssistantGuide = tasks.register<Copy>("copyAssistantGuide") {
