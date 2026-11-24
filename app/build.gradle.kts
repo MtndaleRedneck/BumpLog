@@ -15,6 +15,7 @@ android {
         targetSdk = 34
         versionCode = 24
         versionName = "1.17.1"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Pins the assistant-guide link in report emails to the exact commit CI built from.
         buildConfigField("String", "GUIDE_REF", "\"${System.getenv("GITHUB_SHA") ?: "v$versionName"}\"")
     }
@@ -68,6 +69,8 @@ dependencies {
     testImplementation("androidx.test:core:1.5.0")
     testImplementation("org.robolectric:robolectric:4.14.1")
     testImplementation("org.json:json:20240303")
+    androidTestImplementation("androidx.test:runner:1.5.2")
+    androidTestImplementation("androidx.test.ext:junit:1.1.5")
 }
 
 val copyAssistantGuide = tasks.register<Copy>("copyAssistantGuide") {
