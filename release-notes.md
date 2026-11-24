@@ -1,8 +1,11 @@
 BumpLog 1.17.2
 
-- When you share a damage report, BumpLog now checks apps the same way it actually hands them the email and photos, so only apps that can really take it show up.
-- A restore now keeps track of exactly which photos it copied. If a restore stops partway (the app closes or the phone restarts), running Restore again keeps the photos already copied and finishes the rest.
-- Photos that only share a name with a restored one are no longer picked up by mistake.
+November 24, 2026. Share-sheet and restore reliability fixes.
+
+Fixed:
+- When you share a damage report, BumpLog now checks apps the same way it actually hands them the email and photos, so only apps that can really take it show up. ([021fb50](https://github.com/MtndaleRedneck/BumpLog/commit/021fb50d6fcd009d1a9e2370435af4f671d4e0d6))
+- A restore now keeps track of exactly which photos it copied. If a restore stops partway (the app closes or the phone restarts), running Restore again keeps the photos already copied and finishes the rest. ([c434fb5](https://github.com/MtndaleRedneck/BumpLog/commit/c434fb5c9349ad6c9afa34dad59c04b32a54065a), [cac8779](https://github.com/MtndaleRedneck/BumpLog/commit/cac87793fc11fd625575e77c2374e3651268d579), [193550d](https://github.com/MtndaleRedneck/BumpLog/commit/193550d4bbe4795172f59e7a546fc29f6b1db662), [ac7a68a](https://github.com/MtndaleRedneck/BumpLog/commit/ac7a68acaf88e919cadfe41abd78ddb0168ad7d6))
+- Photos that only share a name with a restored one are no longer picked up by mistake. ([193550d](https://github.com/MtndaleRedneck/BumpLog/commit/193550d4bbe4795172f59e7a546fc29f6b1db662))
 
 BumpLog 1.17.1
 
