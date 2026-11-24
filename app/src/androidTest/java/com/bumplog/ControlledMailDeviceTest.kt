@@ -1,5 +1,6 @@
 package com.bumplog
 
+import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -17,15 +18,43 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * The damage-report handoff against a controlled mail handler on a real device:
- * the intent the app fires really resolves to a mail-style handler, and the
- * handler really receives the address, subject, body and photos - and can read
- * the photos through the FileProvider grant exactly as a mail app must.
+ * The damage-report handoff against a controlled mail handler on a real device.
+ * Two phases per case: (1) the intent the app builds really matches a mail-style
+ * handler's filters (package-manager resolution), and (2) the handler really
+ * receives the address, subject, body and photos - and can read the photos
+ * through the FileProvider grant exactly as a mail app must. Delivery is pinned
+ * to the controlled handler because an emulator image can carry a second
+ * mail-capable app, and firing the raw intent there would park the system
+ * resolver dialog and deliver nothing; on a real phone that dialog is the
+ * correct production behavior, so it is not what this test verifies.
  */
 @RunWith(AndroidJUnit4::class)
 class ControlledMailDeviceTest {
 
     private val ctx get() = InstrumentationRegistry.getInstrumentation().targetContext
+
+    /** Prove the raw intent resolves to the controlled mail-style handler, then
+     * deliver a component-pinned copy of it through the production handoff so the
+     * received extras, clip data and URI grants are verified deterministically. */
+    private fun fireToControlledHandler(raw: Intent) {
+        val matches = ctx.packageManager.queryIntentActivities(raw, 0)
+        assertTrue(
+            "the intent really resolves to the controlled mail-style handler",
+            matches.any {
+                it.activityInfo.packageName == "com.bumplog.test" &&
+                    it.activityInfo.name == "com.bumplog.CaptureMailActivity"
+            }
+        )
+        assertTrue(
+            "the handoff fires without an exception",
+            handOffMail(
+                ctx,
+                Intent(raw).setComponent(
+                    ComponentName("com.bumplog.test", "com.bumplog.CaptureMailActivity")
+                )
+            )
+        )
+    }
 
     @Before
     fun setUp() {
@@ -65,9 +94,8 @@ class ControlledMailDeviceTest {
         CaptureMailActivity.photoBytes = emptyMap()
         CaptureMailActivity.readFailure = null
 
-        val ok = handOffMail(ctx, Reports.damageMail(ctx, d, hit, spot))
-        assertTrue("the handoff fires without an exception", ok)
-        assertTrue("a mail-style handler really received it",
+        fireToControlledHandler(Reports.damageMail(ctx, d, hit, spot))
+        assertTrue("the controlled handler really received it",
             CaptureMailActivity.latch!!.await(15, TimeUnit.SECONDS))
 
         val got = CaptureMailActivity.received!!
@@ -102,8 +130,7 @@ class ControlledMailDeviceTest {
         CaptureMailActivity.latch = CountDownLatch(1)
         CaptureMailActivity.received = null
 
-        val ok = handOffMail(ctx, Reports.damageMail(ctx, d, hit, db.spot(1)))
-        assertTrue(ok)
+        fireToControlledHandler(Reports.damageMail(ctx, d, hit, db.spot(1)))
         assertTrue(CaptureMailActivity.latch!!.await(15, TimeUnit.SECONDS))
         val got = CaptureMailActivity.received!!
         assertEquals(Intent.ACTION_SENDTO, got.action)
