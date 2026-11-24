@@ -37,6 +37,7 @@ class BackupRestoreTest {
         Backup.rawCapForTests = null
         Backup.gateLimitForTests = null
         Backup.copyFileForRestore = { src, dst -> src.copyTo(dst, overwrite = true) }
+        Backup.hashForReconcile = { Backup.sha256Hex(it) }
     }
 
     private fun backupJson(): JSONObject = JSONObject()
@@ -190,6 +191,39 @@ class BackupRestoreTest {
         val r2 = done(Backup.restoreZip(ctx, ByteArrayInputStream(zipBytes)))
         assertFalse(r2.incomplete)
         assertEquals(listOf("p1.jpg"), File(folder, "selected.txt").readLines())
+    }
+
+    @Test
+    fun transientJournalHashReadFailureKeepsJournalAndHealsOnRetry() {
+        val dirName = DamagePhotos.dir(ctx, "BD-20261102-EFGH").name
+        val folder = DamagePhotos.dir(ctx, "BD-20261102-EFGH")
+        folder.mkdirs()
+        File(folder, "p1.jpg").writeBytes(ByteArray(100) { 1 })
+        File(folder, "selected.txt").writeText("p1.jpg")
+        val zipBytes = zipWith(backupJson(), mapOf(
+            "photos/$dirName/p1.jpg" to ByteArray(100) { 1 },
+            "photos/$dirName/p2.jpg" to ByteArray(100) { 2 },
+            "photos/$dirName/p3.jpg" to ByteArray(100) { 3 })).readBytes()
+        // Run 1: p2 copies, p3's copy fails; the journal holds p2 (written) and p3 (intended).
+        Backup.copyFileForRestore = { src, dst -> if (dst.name.startsWith("p3")) throw java.io.IOException("injected") else src.copyTo(dst, overwrite = true) }
+        val r1 = done(Backup.restoreZip(ctx, ByteArrayInputStream(zipBytes)))
+        assertTrue(r1.incomplete)
+        val journal = File(File(ctx.filesDir, "damage"), ".restore-journal")
+        assertTrue(journal.isFile)
+        // Run 2: p3 copies now, but the reconcile's hash read fails transiently. That is not a
+        // mismatch: the restore must report incomplete and keep the journal for a retry.
+        Backup.copyFileForRestore = { src, dst -> src.copyTo(dst, overwrite = true) }
+        Backup.hashForReconcile = { throw java.io.IOException("transient read failure") }
+        val r2 = done(Backup.restoreZip(ctx, ByteArrayInputStream(zipBytes)))
+        assertTrue("a hash read failure is retryable, not foreign bytes", r2.incomplete)
+        assertTrue("the journal survives a transient hash read failure", journal.isFile)
+        assertEquals(listOf("p1.jpg"), File(folder, "selected.txt").readLines())
+        // Run 3: reads work again; membership heals in order and the journal is consumed.
+        Backup.hashForReconcile = { Backup.sha256Hex(it) }
+        val r3 = done(Backup.restoreZip(ctx, ByteArrayInputStream(zipBytes)))
+        assertFalse(r3.incomplete)
+        assertEquals(listOf("p1.jpg", "p2.jpg", "p3.jpg"), File(folder, "selected.txt").readLines())
+        assertFalse("a consumed journal is deleted", journal.exists())
     }
 
     @Test

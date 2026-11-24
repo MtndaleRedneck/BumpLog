@@ -319,6 +319,9 @@ object Backup {
     /** Test seam: the copy used by the restore's post-commit phases. Production never overrides this. */
     internal var copyFileForRestore: (File, File) -> Unit = { src, dst -> src.copyTo(dst, overwrite = true) }
 
+    /** Test seam: the content hash the reconcile reads for journaled files. Production never overrides this. */
+    internal var hashForReconcile: (File) -> String = { sha256Hex(it) }
+
     /** The restore photo phase's positive-provenance journal: one dir<TAB>name<TAB>sha256 line
      *  per photo the restore sets out to write, recorded before the copy. It lives directly under the
      *  damage root - never inside a report folder - so no photo listing, backup or staging
@@ -326,7 +329,7 @@ object Backup {
     private fun restoreJournal(ctx: Context) = File(File(ctx.filesDir, "damage"), ".restore-journal")
 
     /** Hex SHA-256 of a file's bytes, streamed so big photos do not sit in memory twice. */
-    private fun sha256Hex(f: File): String {
+    internal fun sha256Hex(f: File): String {
         val md = java.security.MessageDigest.getInstance("SHA-256")
         f.inputStream().use { ins ->
             val buf = ByteArray(64 * 1024)
@@ -555,6 +558,11 @@ object Backup {
                 // A journaled name is trusted only when the file on disk is the exact content
                 // this restore journaled: a stale line whose same-named file now holds different
                 // bytes (an unrelated later write reusing the name) must not claim membership.
+                // A hash READ failure is not a mismatch: the bytes may be the restore's own, so
+                // the entry keeps its provenance - the reconcile fails, the journal survives,
+                // and a later run retries (reruns skip existing files, so discarding the line
+                // here would lose that membership forever).
+                var hashReadFailed = false
                 val byFolder = HashMap<String, MutableList<String>>()
                 for (line in jf.readLines()) {
                     val parts = line.split('\t')
@@ -565,7 +573,8 @@ object Backup {
                     val onDisk = File(folder, name)
                     if (onDisk.canonicalFile.parentFile != folder.canonicalFile) continue
                     if (!onDisk.isFile) continue
-                    if (runCatching { sha256Hex(onDisk) }.getOrNull() != hash) continue
+                    val onDiskHash = try { hashForReconcile(onDisk) } catch (e: Exception) { hashReadFailed = true; continue }
+                    if (onDiskHash != hash) continue
                     byFolder.getOrPut(dirName) { ArrayList() }.add(name)
                 }
                 for ((dirName, names) in byFolder) {
@@ -573,6 +582,7 @@ object Backup {
                     if (folder.canonicalFile.parentFile != damageRoot) continue
                     DamagePhotos.addRestoredToManifest(folder, names)
                 }
+                if (hashReadFailed) throw java.io.IOException("a journaled photo could not be hashed; keeping the journal for the next run")
                 jf.delete()
             }
         } && complete
