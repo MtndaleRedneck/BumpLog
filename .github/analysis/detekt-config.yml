@@ -1,0 +1,11 @@
+style:
+  MagicNumber:
+    active: false
+  MaxLineLength:
+    active: false
+  NewLineAtEndOfFile:
+    active: false
+naming:
+  FunctionNaming:
+    active: true
+    ignoreAnnotated: ['Composable', 'Preview', 'Test']

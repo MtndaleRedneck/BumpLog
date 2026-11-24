@@ -1,0 +1,22 @@
+// Report-only Android Lint SARIF enablement - applied with `gradle -I <this file> lint`.
+// Zero product-file changes. abortOnError=false: findings never fail the build.
+// Handles app modules, library modules, and app-at-root layouts (WrenBoard).
+gradle.projectsLoaded {
+    rootProject {
+        allprojects { p ->
+            ['com.android.application', 'com.android.library'].each { pluginId ->
+                p.plugins.withId(pluginId) {
+                    def android = p.extensions.findByName('android')
+                    if (android != null) {
+                        android.lint {
+                            sarifReport = true
+                            htmlReport = true
+                            abortOnError = false
+                            checkReleaseBuilds = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
