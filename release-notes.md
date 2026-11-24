@@ -1,3 +1,9 @@
+BumpLog 1.17.2
+
+- When you share a damage report, BumpLog now checks apps the same way it actually hands them the email and photos, so only apps that can really take it show up.
+- A restore now keeps track of exactly which photos it copied. If a restore stops partway (the app closes or the phone restarts), running Restore again keeps the photos already copied and finishes the rest.
+- Photos that only share a name with a restored one are no longer picked up by mistake.
+
 BumpLog 1.17.1
 
 - A restore that can't finish copying photos, voice clips or settings now says so and asks you to run Restore again, instead of looking done.
