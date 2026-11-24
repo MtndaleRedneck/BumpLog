@@ -33,17 +33,33 @@ class ControlledMailDeviceTest {
 
     private val ctx get() = InstrumentationRegistry.getInstrumentation().targetContext
 
-    /** Prove the raw intent resolves to the controlled mail-style handler, then
-     * deliver a component-pinned copy of it through the production handoff so the
-     * received extras, clip data and URI grants are verified deterministically. */
+    /** Prove the raw intent matches the controlled mail-style handler's filters,
+     * then deliver a component-pinned copy of it through the production handoff so
+     * the received extras, clip data and URI grants are verified deterministically.
+     *
+     * Package visibility (target 34) filters query results by CALLER: the
+     * instrumentation package always sees its own CaptureMailActivity, while the
+     * app package's view depends on its <queries> declaration (SENDTO/mailto
+     * only). Both views are LOGGED verbatim so a gap is direct evidence, and the
+     * assertion runs on the visibility-independent instrumentation view. The
+     * system-side resolver used by startActivity is not visibility-filtered, so
+     * neither view speaks for actual delivery - phase 2 covers delivery. */
     private fun fireToControlledHandler(raw: Intent) {
-        val matches = ctx.packageManager.queryIntentActivities(raw, 0)
+        fun view(pm: android.content.pm.PackageManager, who: String): List<String> {
+            val names = pm.queryIntentActivities(raw, 0)
+                .map { it.activityInfo.packageName + "/" + it.activityInfo.name }
+            System.out.println("ControlledMailDeviceTest: $who query view for " +
+                raw.action + " " + raw.type + " " + raw.data + " -> " + names)
+            return names
+        }
+        view(ctx.packageManager, "app-context")
+        val testView = view(
+            InstrumentationRegistry.getInstrumentation().context.packageManager,
+            "instrumentation-context"
+        )
         assertTrue(
-            "the intent really resolves to the controlled mail-style handler",
-            matches.any {
-                it.activityInfo.packageName == "com.bumplog.test" &&
-                    it.activityInfo.name == "com.bumplog.CaptureMailActivity"
-            }
+            "the intent really matches the controlled mail-style handler's filters",
+            testView.contains("com.bumplog.test/com.bumplog.CaptureMailActivity")
         )
         assertTrue(
             "the handoff fires without an exception",
