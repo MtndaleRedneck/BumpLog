@@ -158,7 +158,7 @@ class BackupRestoreTest {
         assertEquals(1, r1.photos)
         assertEquals(listOf("p1.jpg"), File(folder, "selected.txt").readLines())
         val journal = File(File(ctx.filesDir, "damage"), ".restore-journal")
-        assertTrue("the interrupted run journals what it positively wrote", journal.readLines().any { it.endsWith("\tp2.jpg") })
+        assertTrue("the interrupted run journals what it positively wrote", journal.readLines().any { it.contains("\tp2.jpg\t") })
         // Run 2 without the failure: p2 already exists so it is NOT copied again - only the
         // journal still knows it belongs. The heal run must list both p2 and p3, in order.
         Backup.copyFileForRestore = { src, dst -> src.copyTo(dst, overwrite = true) }
@@ -166,6 +166,30 @@ class BackupRestoreTest {
         assertFalse(r2.incomplete)
         assertEquals(listOf("p1.jpg", "p2.jpg", "p3.jpg"), File(folder, "selected.txt").readLines())
         assertFalse("a consumed journal is deleted", journal.exists())
+    }
+
+    @Test
+    fun staleJournalNameWithDifferentContentIsNotReconciled() {
+        val dirName = DamagePhotos.dir(ctx, "BD-20261102-EFGH").name
+        val folder = DamagePhotos.dir(ctx, "BD-20261102-EFGH")
+        folder.mkdirs()
+        File(folder, "p1.jpg").writeBytes(ByteArray(100) { 1 })
+        File(folder, "selected.txt").writeText("p1.jpg")
+        val zipBytes = zipWith(backupJson(), mapOf(
+            "photos/$dirName/p1.jpg" to ByteArray(100) { 1 },
+            "photos/$dirName/p2.jpg" to ByteArray(100) { 2 })).readBytes()
+        // Run 1: p2's copy fails after its journal line is written; the restore is incomplete.
+        Backup.copyFileForRestore = { src, dst -> if (dst.name.startsWith("p2")) throw java.io.IOException("injected") else src.copyTo(dst, overwrite = true) }
+        val r1 = done(Backup.restoreZip(ctx, ByteArrayInputStream(zipBytes)))
+        assertTrue(r1.incomplete)
+        // An unrelated later write reuses the same destination name with different content.
+        File(folder, "p2.jpg").writeBytes(ByteArray(100) { 9 })
+        // Run 2: p2 already exists so the restore skips it; the stale journal line must NOT
+        // pull this different-content file into the manifest.
+        Backup.copyFileForRestore = { src, dst -> src.copyTo(dst, overwrite = true) }
+        val r2 = done(Backup.restoreZip(ctx, ByteArrayInputStream(zipBytes)))
+        assertFalse(r2.incomplete)
+        assertEquals(listOf("p1.jpg"), File(folder, "selected.txt").readLines())
     }
 
     @Test

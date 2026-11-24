@@ -319,11 +319,21 @@ object Backup {
     /** Test seam: the copy used by the restore's post-commit phases. Production never overrides this. */
     internal var copyFileForRestore: (File, File) -> Unit = { src, dst -> src.copyTo(dst, overwrite = true) }
 
-    /** The restore photo phase's positive-provenance journal: one dir<TAB>name line per photo
-     *  the restore sets out to write, recorded before the copy. It lives directly under the
+    /** The restore photo phase's positive-provenance journal: one dir<TAB>name<TAB>sha256 line
+     *  per photo the restore sets out to write, recorded before the copy. It lives directly under the
      *  damage root - never inside a report folder - so no photo listing, backup or staging
      *  cleanup can mistake it for a photo or a partial copy. */
     private fun restoreJournal(ctx: Context) = File(File(ctx.filesDir, "damage"), ".restore-journal")
+
+    /** Hex SHA-256 of a file's bytes, streamed so big photos do not sit in memory twice. */
+    private fun sha256Hex(f: File): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        f.inputStream().use { ins ->
+            val buf = ByteArray(64 * 1024)
+            while (true) { val n = ins.read(buf); if (n < 0) break; md.update(buf, 0, n) }
+        }
+        return md.digest().joinToString("") { "%02x".format(it) }
+    }
 
     /** What a restore attempt came back with. */
     sealed class RestoreResult {
@@ -527,7 +537,7 @@ object Backup {
                     // phase or a process death can never lose the membership of a file already
                     // written. The reconcile trusts a journal line only for a file that is
                     // actually on disk, so a line whose copy never landed is inert.
-                    restoreJournal(ctx).appendText(dir + "\t" + name + "\n")
+                    restoreJournal(ctx).appendText(dir + "\t" + name + "\t" + sha256Hex(f) + "\n")
                     try { stageCopy(f, dest); photos++ } catch (e: Exception) { complete = false }
                 }
             }
@@ -542,11 +552,21 @@ object Backup {
         if (complete) complete = runPhase {
             val jf = restoreJournal(ctx)
             if (jf.isFile) {
+                // A journaled name is trusted only when the file on disk is the exact content
+                // this restore journaled: a stale line whose same-named file now holds different
+                // bytes (an unrelated later write reusing the name) must not claim membership.
                 val byFolder = HashMap<String, MutableList<String>>()
                 for (line in jf.readLines()) {
-                    val tab = line.indexOf('\t')
-                    if (tab <= 0) continue
-                    byFolder.getOrPut(line.substring(0, tab)) { ArrayList() }.add(line.substring(tab + 1))
+                    val parts = line.split('\t')
+                    if (parts.size != 3) continue
+                    val (dirName, name, hash) = parts
+                    val folder = File(damageRoot, dirName)
+                    if (folder.canonicalFile.parentFile != damageRoot) continue
+                    val onDisk = File(folder, name)
+                    if (onDisk.canonicalFile.parentFile != folder.canonicalFile) continue
+                    if (!onDisk.isFile) continue
+                    if (runCatching { sha256Hex(onDisk) }.getOrNull() != hash) continue
+                    byFolder.getOrPut(dirName) { ArrayList() }.add(name)
                 }
                 for ((dirName, names) in byFolder) {
                     val folder = File(damageRoot, dirName)
