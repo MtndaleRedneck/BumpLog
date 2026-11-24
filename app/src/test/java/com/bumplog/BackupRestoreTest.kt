@@ -139,6 +139,36 @@ class BackupRestoreTest {
     }
 
     @Test
+    fun partialPhotoPhaseKeepsPositiveMembershipAcrossTheHealRerun() {
+        val dirName = DamagePhotos.dir(ctx, "BD-20261102-EFGH").name
+        val folder = DamagePhotos.dir(ctx, "BD-20261102-EFGH")
+        // Manifest predates the backup's photos: it lists only p1.jpg, which is on disk.
+        folder.mkdirs()
+        File(folder, "p1.jpg").writeBytes(ByteArray(100) { 1 })
+        File(folder, "selected.txt").writeText("p1.jpg")
+        val zipBytes = zipWith(backupJson(), mapOf(
+            "photos/$dirName/p1.jpg" to ByteArray(100) { 1 },
+            "photos/$dirName/p2.jpg" to ByteArray(100) { 2 },
+            "photos/$dirName/p3.jpg" to ByteArray(100) { 3 })).readBytes()
+        // Run 1: p2 copies, then p3's copy fails. The phase is incomplete, so nothing
+        // reconciles yet - but p2's membership must survive in the journal.
+        Backup.copyFileForRestore = { src, dst -> if (dst.name.startsWith("p3")) throw java.io.IOException("injected") else src.copyTo(dst, overwrite = true) }
+        val r1 = done(Backup.restoreZip(ctx, ByteArrayInputStream(zipBytes)))
+        assertTrue("a failed copy flags the restore incomplete", r1.incomplete)
+        assertEquals(1, r1.photos)
+        assertEquals(listOf("p1.jpg"), File(folder, "selected.txt").readLines())
+        val journal = File(File(ctx.filesDir, "damage"), ".restore-journal")
+        assertTrue("the interrupted run journals what it positively wrote", journal.readLines().any { it.endsWith("\tp2.jpg") })
+        // Run 2 without the failure: p2 already exists so it is NOT copied again - only the
+        // journal still knows it belongs. The heal run must list both p2 and p3, in order.
+        Backup.copyFileForRestore = { src, dst -> src.copyTo(dst, overwrite = true) }
+        val r2 = done(Backup.restoreZip(ctx, ByteArrayInputStream(zipBytes)))
+        assertFalse(r2.incomplete)
+        assertEquals(listOf("p1.jpg", "p2.jpg", "p3.jpg"), File(folder, "selected.txt").readLines())
+        assertFalse("a consumed journal is deleted", journal.exists())
+    }
+
+    @Test
     fun failedCopyIsFlaggedAndRerunHeals() {
         Backup.copyFileForRestore = { _, _ -> throw java.io.IOException("disk full") }
         val r1 = done(Backup.restoreZip(ctx, damageZip()))

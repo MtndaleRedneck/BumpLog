@@ -319,6 +319,12 @@ object Backup {
     /** Test seam: the copy used by the restore's post-commit phases. Production never overrides this. */
     internal var copyFileForRestore: (File, File) -> Unit = { src, dst -> src.copyTo(dst, overwrite = true) }
 
+    /** The restore photo phase's positive-provenance journal: one dir<TAB>name line per photo
+     *  the restore sets out to write, recorded before the copy. It lives directly under the
+     *  damage root - never inside a report folder - so no photo listing, backup or staging
+     *  cleanup can mistake it for a photo or a partial copy. */
+    private fun restoreJournal(ctx: Context) = File(File(ctx.filesDir, "damage"), ".restore-journal")
+
     /** What a restore attempt came back with. */
     sealed class RestoreResult {
         /** The restore ran; check [Restored.incomplete] for post-commit copy trouble. */
@@ -509,7 +515,6 @@ object Backup {
         // each phase is wrapped, the result is flagged, and a re-run of the same file finishes it.
         // One bad file never stops the rest of the phase: it is flagged and the re-run finishes it.
         var complete = true
-        val restoredPhotos = HashMap<String, MutableList<String>>()
         complete = runPhase {
             for ((dir, name, f) in photoFiles) {
                 if (dir !in allowed) continue
@@ -518,18 +523,38 @@ object Backup {
                 if (dest.canonicalFile.parentFile != folder.canonicalFile || folder.canonicalFile.parentFile != damageRoot) continue
                 folder.mkdirs()
                 if (!dest.exists()) {
-                    try { stageCopy(f, dest); photos++; restoredPhotos.getOrPut(dir) { ArrayList() }.add(name) } catch (e: Exception) { complete = false }
+                    // Positive provenance is journaled BEFORE the copy: a failure later in the
+                    // phase or a process death can never lose the membership of a file already
+                    // written. The reconcile trusts a journal line only for a file that is
+                    // actually on disk, so a line whose copy never landed is inert.
+                    restoreJournal(ctx).appendText(dir + "\t" + name + "\n")
+                    try { stageCopy(f, dest); photos++ } catch (e: Exception) { complete = false }
                 }
             }
         } && complete
         // A photo this restore positively wrote into a folder whose manifest predates it is
         // invisible to the report: the manifest decides the attachment set. Reconcile only the
-        // files this run restored - never other disk files, which include deliberately removed
-        // picks syncDraft keeps on disk - and only after a clean photo phase (an interrupted
-        // restore's re-run reconciles when it finishes). Existing picks and their order are
-        // kept; folders without a manifest already attach every file.
+        // journaled files - never other disk files, which include deliberately removed picks
+        // syncDraft keeps on disk - and only after a clean photo phase. The journal carries
+        // membership across an interrupted run: the heal re-run skips files already on disk,
+        // so without it a photo copied before the interruption would stay invisible forever.
+        // A consumed journal is deleted; a failed reconcile keeps it for the next run.
         if (complete) complete = runPhase {
-            for ((dirName, names) in restoredPhotos) DamagePhotos.addRestoredToManifest(File(damageRoot, dirName), names)
+            val jf = restoreJournal(ctx)
+            if (jf.isFile) {
+                val byFolder = HashMap<String, MutableList<String>>()
+                for (line in jf.readLines()) {
+                    val tab = line.indexOf('\t')
+                    if (tab <= 0) continue
+                    byFolder.getOrPut(line.substring(0, tab)) { ArrayList() }.add(line.substring(tab + 1))
+                }
+                for ((dirName, names) in byFolder) {
+                    val folder = File(damageRoot, dirName)
+                    if (folder.canonicalFile.parentFile != damageRoot) continue
+                    DamagePhotos.addRestoredToManifest(folder, names)
+                }
+                jf.delete()
+            }
         } && complete
         // Voice clips only fill gaps, so a restore never overwrites recordings made since.
         complete = runPhase {
