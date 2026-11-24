@@ -1,4 +1,4 @@
 -- resumed activity after tapping the notification (MainActivity = the direct-activity path worked) --
-      topResumedActivity=ActivityRecord{825c0b u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}
+      topResumedActivity=ActivityRecord{4348bfe u0 com.google.android.apps.nexuslauncher/.NexusLauncherActivity t7}
 -- prefs after the tap (detection_enabled true = the start flow consumed restart_wanted) --
 (run-as unavailable)
