@@ -55,7 +55,7 @@ object Backup {
 
     private fun dump(db: SQLiteDatabase, table: String, where: String?): JSONArray {
         val arr = JSONArray()
-        db.query(table, null, where, null, null, null, "id ASC").use { c ->
+        db.query(table, null, where, null, null, null, if (table == "meta") "k ASC" else "id ASC").use { c ->
             while (c.moveToNext()) {
                 val o = JSONObject()
                 for (i in 0 until c.columnCount) {

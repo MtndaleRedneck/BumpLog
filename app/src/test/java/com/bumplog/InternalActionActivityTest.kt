@@ -41,7 +41,7 @@ class InternalActionActivityTest {
         Robolectric.buildActivity(InternalActionActivity::class.java, InternalActionActivity.restartIntent(ctx)).create()
         assertTrue(Prefs.detectionEnabled)
         assertTrue("MainActivity applies its own start + permission flow", Prefs.restartWanted)
-        val next = Shadows.shadowOf(ctx).nextStartedActivity
+        val next = Shadows.shadowOf(ctx as android.app.Application).nextStartedActivity
         assertEquals(MainActivity::class.java.name, next?.component?.className)
         assertNull("the app opens without command extras", next?.getStringExtra("do"))
     }

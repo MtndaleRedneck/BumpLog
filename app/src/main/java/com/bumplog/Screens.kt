@@ -471,7 +471,9 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     fun build(): Damage? {
         val h = hits.firstOrNull { it.id == picked } ?: return null
         val d = Db.get(ctx).addDamage(h.id, h.spotId, cat, note, System.currentTimeMillis(), draftId)
-        if (photos.isNotEmpty()) DamagePhotos.addOnce(ctx, d.reportId, photos) // retry-safe: rebuilds add nothing twice
+        // Even an empty pick list syncs: clearing every photo must empty the outgoing set.
+        // An unreadable pick throws, so the report is never sent with a shortened set.
+        DamagePhotos.syncDraft(ctx, d.reportId, photos) // retry-safe: content identity, no duplicates, no orphan attaches
         return d
     }
     Column(Modifier.fillMaxSize().pane("File damage report").verticalScroll(ScrollMemory.get("Damage:$preSpot")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -486,21 +488,21 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
         Txt("Photos", 16, FontWeight.Bold)
         Muted(if (photos.isEmpty()) "Optional. Add them now, or choose to send at the end of the drive and add them then." else "${photos.size} photo(s) added.", 13)
         PhotoButtons { photos = photos + it }
-        // If a handoff fails after the row was built, the SAME row is resent on the next
-        // tap: retry can never duplicate the row, burn a second number or copy photos twice.
-        var builtDamage by androidx.compose.runtime.remember(picked) { mutableStateOf<Damage?>(null) }
+        // Retry is idempotent by draft token, so every tap builds FRESH: a failed mail
+        // handoff followed by edits (hit, category, note, photos) retries with the edits,
+        // never a stale row or a stale photo set. No duplicates: same token, same row.
         BigButton("Send now", Icons.Default.Send, enabled = picked != 0L) {
             // Check before build(): a failed mail handoff after the insert would leave a
             // duplicate row, burned report number and copied photos behind on every retry.
             if (Prefs.activeAddress.isBlank()) { toast(ctx, "Set your assistant address first (Settings > Assistant)."); return@BigButton }
             if (!mailAppAvailable(ctx)) { toast(ctx, "No mail app found."); return@BigButton }
-            val d = builtDamage ?: build()?.also { builtDamage = it } ?: return@BigButton
+            val d = try { build() } catch (e: java.io.IOException) { toast(ctx, "A photo could not be saved - the report was not sent. Try again."); return@BigButton } ?: return@BigButton
             val db = Db.get(ctx)
             val h = hits.firstOrNull { it.id == picked }
             if (handOffMail(ctx, Reports.damageMail(ctx, d, h, db.spot(d.spotId)))) { db.markDamageSent(d.id); toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() }
         }
         BigButton("Send at end of drive", Icons.Default.Check, filled = false, enabled = picked != 0L) {
-            val d = build() ?: return@BigButton
+            val d = try { build() } catch (e: java.io.IOException) { toast(ctx, "A photo could not be saved - the report was not queued. Try again."); return@BigButton } ?: return@BigButton
             Db.get(ctx).setDamageStatus(d.id, "QUEUED"); Live.bump()
             toast(ctx, "Confirmed. ${d.ref(hits.firstOrNull { it.id == picked })}. You'll get a reminder when the drive ends to add photos and send."); back()
         }
