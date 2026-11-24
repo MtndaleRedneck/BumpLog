@@ -350,7 +350,7 @@ object Backup {
      * Copies through a staging file in the destination folder, then renames: an interrupted copy
      * never leaves a partial file that a re-run would mistake for the real thing and skip.
      */
-    private fun stageCopy(src: File, dest: File) {
+    internal fun stageCopy(src: File, dest: File) {
         val staging = File(dest.parentFile, dest.name + RESTORE_TMP)
         try {
             copyFileForRestore(src, staging)
@@ -520,6 +520,13 @@ object Backup {
                     try { stageCopy(f, dest); photos++ } catch (e: Exception) { complete = false }
                 }
             }
+        } && complete
+        // A photo restored into a folder whose manifest predates it is invisible to the
+        // report: the manifest decides the attachment set. Reconcile only after a clean photo
+        // phase (an interrupted restore's re-run reconciles when it finishes), keeping every
+        // existing pick and its order; folders without a manifest already attach every file.
+        if (complete) complete = runPhase {
+            for (dirName in allowed) DamagePhotos.addRestoredToManifest(File(damageRoot, dirName))
         } && complete
         // Voice clips only fill gaps, so a restore never overwrites recordings made since.
         complete = runPhase {

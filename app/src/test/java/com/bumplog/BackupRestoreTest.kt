@@ -381,4 +381,19 @@ class BackupRestoreTest {
         Backup.noteOutcome(Backup.SaveResult.NoFolder)
         assertEquals("a folder deliberately unpicked clears a stale line", "", Prefs.lastBackupError)
     }
+
+    @Test
+    fun failedRenameIsFlaggedAndLeavesNoStaging() {
+        // The rename half of stageCopy: a destination the rename cannot take (a non-empty
+        // directory stands in for a locked or cross-mount target) throws, and the staging
+        // file is cleaned up either way so a re-run never mistakes it for the real thing.
+        val dir = File(ctx.filesDir, "rename-test").apply { mkdirs() }
+        try {
+            val src = File(dir, "src.jpg").apply { writeBytes(ByteArray(8) { 3 }) }
+            val dest = File(dir, "dest.jpg").apply { mkdirs(); File(this, "blocker").writeBytes(ByteArray(1)) }
+            assertThrows(java.io.IOException::class.java) { Backup.stageCopy(src, dest) }
+            assertFalse("no staging file survives a failed rename", File(dir, "dest.jpg" + Backup.RESTORE_TMP).exists())
+            assertTrue("the blocking destination is untouched", dest.isDirectory)
+        } finally { dir.deleteRecursively() }
+    }
 }

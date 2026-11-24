@@ -165,4 +165,29 @@ class DamageDraftTest {
         assertEquals("done", b.note)
         assertEquals(1, db.damages().count { it.hitId == 9L })
     }
+
+    @Test
+    fun restoreReconcileAddsUnlistedPhotosToTheManifest() {
+        val folder = java.io.File(ctx.filesDir, "damage/reconcile-test").apply { mkdirs() }
+        try {
+            java.io.File(folder, "photo-aa.jpg").writeBytes(ByteArray(4) { 1 })
+            java.io.File(folder, "photo-bb.jpg").writeBytes(ByteArray(4) { 2 })
+            val manifest = java.io.File(folder, "selected.txt")
+            manifest.writeText("photo-aa.jpg")
+            // A restored photo the manifest predates joins the selection; the existing
+            // entry keeps its place and the restored one appends after it.
+            assertEquals(1, DamagePhotos.addRestoredToManifest(folder))
+            assertEquals(listOf("photo-aa.jpg", "photo-bb.jpg"), manifest.readLines())
+            // Already reconciled: nothing changes on a re-run (an interrupted restore's
+            // second pass is safe).
+            assertEquals(0, DamagePhotos.addRestoredToManifest(folder))
+            assertEquals(listOf("photo-aa.jpg", "photo-bb.jpg"), manifest.readLines())
+            // No manifest: the folder attaches every file already, nothing to reconcile.
+            manifest.delete()
+            assertEquals(0, DamagePhotos.addRestoredToManifest(folder))
+            org.junit.Assert.assertFalse(manifest.exists())
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
 }
