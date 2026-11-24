@@ -509,6 +509,7 @@ object Backup {
         // each phase is wrapped, the result is flagged, and a re-run of the same file finishes it.
         // One bad file never stops the rest of the phase: it is flagged and the re-run finishes it.
         var complete = true
+        val restoredPhotos = HashMap<String, MutableList<String>>()
         complete = runPhase {
             for ((dir, name, f) in photoFiles) {
                 if (dir !in allowed) continue
@@ -517,16 +518,18 @@ object Backup {
                 if (dest.canonicalFile.parentFile != folder.canonicalFile || folder.canonicalFile.parentFile != damageRoot) continue
                 folder.mkdirs()
                 if (!dest.exists()) {
-                    try { stageCopy(f, dest); photos++ } catch (e: Exception) { complete = false }
+                    try { stageCopy(f, dest); photos++; restoredPhotos.getOrPut(dir) { ArrayList() }.add(name) } catch (e: Exception) { complete = false }
                 }
             }
         } && complete
-        // A photo restored into a folder whose manifest predates it is invisible to the
-        // report: the manifest decides the attachment set. Reconcile only after a clean photo
-        // phase (an interrupted restore's re-run reconciles when it finishes), keeping every
-        // existing pick and its order; folders without a manifest already attach every file.
+        // A photo this restore positively wrote into a folder whose manifest predates it is
+        // invisible to the report: the manifest decides the attachment set. Reconcile only the
+        // files this run restored - never other disk files, which include deliberately removed
+        // picks syncDraft keeps on disk - and only after a clean photo phase (an interrupted
+        // restore's re-run reconciles when it finishes). Existing picks and their order are
+        // kept; folders without a manifest already attach every file.
         if (complete) complete = runPhase {
-            for (dirName in allowed) DamagePhotos.addRestoredToManifest(File(damageRoot, dirName))
+            for ((dirName, names) in restoredPhotos) DamagePhotos.addRestoredToManifest(File(damageRoot, dirName), names)
         } && complete
         // Voice clips only fill gaps, so a restore never overwrites recordings made since.
         complete = runPhase {

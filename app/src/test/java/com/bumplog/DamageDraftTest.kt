@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -174,18 +175,54 @@ class DamageDraftTest {
             java.io.File(folder, "photo-bb.jpg").writeBytes(ByteArray(4) { 2 })
             val manifest = java.io.File(folder, "selected.txt")
             manifest.writeText("photo-aa.jpg")
-            // A restored photo the manifest predates joins the selection; the existing
-            // entry keeps its place and the restored one appends after it.
-            assertEquals(1, DamagePhotos.addRestoredToManifest(folder))
+            // A photo the restore positively wrote, which the manifest predates, joins the
+            // selection; the existing entry keeps its place and the restored one appends after it.
+            assertEquals(1, DamagePhotos.addRestoredToManifest(folder, listOf("photo-bb.jpg")))
             assertEquals(listOf("photo-aa.jpg", "photo-bb.jpg"), manifest.readLines())
             // Already reconciled: nothing changes on a re-run (an interrupted restore's
             // second pass is safe).
-            assertEquals(0, DamagePhotos.addRestoredToManifest(folder))
+            assertEquals(0, DamagePhotos.addRestoredToManifest(folder, listOf("photo-bb.jpg")))
             assertEquals(listOf("photo-aa.jpg", "photo-bb.jpg"), manifest.readLines())
             // No manifest: the folder attaches every file already, nothing to reconcile.
             manifest.delete()
-            assertEquals(0, DamagePhotos.addRestoredToManifest(folder))
+            assertEquals(0, DamagePhotos.addRestoredToManifest(folder, listOf("photo-cc.jpg")))
             org.junit.Assert.assertFalse(manifest.exists())
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @org.junit.Test
+    fun restoreReconcileNeverResurrectsRemovedPicks() {
+        val folder = java.io.File(ctx.filesDir, "damage/reconcile-removed").apply { mkdirs() }
+        try {
+            // The user removed photo-bb from the selection; syncDraft keeps its file on disk
+            // by design. A restore that wrote nothing new must not re-list it.
+            java.io.File(folder, "photo-aa.jpg").writeBytes(ByteArray(4) { 1 })
+            java.io.File(folder, "photo-bb.jpg").writeBytes(ByteArray(4) { 2 })
+            val manifest = java.io.File(folder, "selected.txt")
+            manifest.writeText("photo-aa.jpg")
+            assertEquals(0, DamagePhotos.addRestoredToManifest(folder, emptyList()))
+            assertEquals(listOf("photo-aa.jpg"), manifest.readLines())
+            // A claimed-restored name that never landed on disk is ignored too.
+            assertEquals(0, DamagePhotos.addRestoredToManifest(folder, listOf("photo-zz.jpg")))
+            assertEquals(listOf("photo-aa.jpg"), manifest.readLines())
+        } finally {
+            folder.deleteRecursively()
+        }
+    }
+
+    @org.junit.Test
+    fun restoreReconcileLeavesAnEmptiedManifestEmpty() {
+        val folder = java.io.File(ctx.filesDir, "damage/reconcile-emptied").apply { mkdirs() }
+        try {
+            // The user removed every pick; the leftover files stay on disk. An empty manifest
+            // is a real selection (of nothing), and a restore must not refill it from disk.
+            java.io.File(folder, "photo-aa.jpg").writeBytes(ByteArray(4) { 1 })
+            val manifest = java.io.File(folder, "selected.txt")
+            manifest.writeText("")
+            assertEquals(0, DamagePhotos.addRestoredToManifest(folder, emptyList()))
+            assertTrue("the emptied manifest stays in force, unread and unfilled", manifest.exists() && manifest.readLines().isEmpty())
         } finally {
             folder.deleteRecursively()
         }

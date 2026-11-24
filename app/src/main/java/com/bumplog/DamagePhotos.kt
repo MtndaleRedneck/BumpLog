@@ -77,18 +77,18 @@ object DamagePhotos {
     }
     fun uris(ctx: Context, reportId: String): List<Uri> = files(ctx, reportId).map { FileProvider.getUriForFile(ctx, "${ctx.packageName}.files", it) }
 
-    /** Restore-time reconcile: a photo file restored into a folder whose manifest predates
-     *  it is invisible to files(), because the manifest decides the attachment set. Appends
-     *  restored files the manifest does not list, keeping every existing entry and its order
-     *  (a pick the user removed stays removed only if its file is gone too - a restored file
-     *  means the pick belonged to the report). A folder without a manifest already attaches
-     *  every file, so it needs nothing. */
-    fun addRestoredToManifest(folder: File): Int {
+    /** Restore-time reconcile: a photo file this restore positively wrote into a folder whose
+     *  manifest predates it is invisible to files(), because the manifest decides the attachment
+     *  set. Appends exactly [restoredNames] the manifest does not list - never other disk files:
+     *  a pick the user removed leaves its file on disk by design (see syncDraft), so scanning the
+     *  folder would resurrect removed picks, and an emptied manifest would refill itself. Every
+     *  existing entry and its order are kept; restored names append in the order restore wrote
+     *  them. A folder without a manifest already attaches every file, so it needs nothing. */
+    fun addRestoredToManifest(folder: File, restoredNames: Collection<String>): Int {
         val manifest = File(folder, MANIFEST)
-        if (!manifest.isFile) return 0
+        if (!manifest.isFile || restoredNames.isEmpty()) return 0
         val listed = manifest.readLines().filter { it.isNotBlank() }
-        val onDisk = folder.listFiles()?.filter { it.isFile && !it.name.endsWith(Backup.RESTORE_TMP) && it.name != MANIFEST && it.name != MANIFEST_TMP && it.name != INCOMING }?.map { it.name } ?: return 0
-        val missing = onDisk.filter { it !in listed }.sorted()
+        val missing = restoredNames.distinct().filter { it !in listed && File(folder, it).isFile }
         if (missing.isEmpty()) return 0
         manifest.appendText("\n" + missing.joinToString("\n"))
         return missing.size

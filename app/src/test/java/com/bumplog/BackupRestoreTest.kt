@@ -101,6 +101,44 @@ class BackupRestoreTest {
     }
 
     @Test
+    fun restoreReconcilesOnlyPhotosItActuallyWrote() {
+        val dirName = DamagePhotos.dir(ctx, "BD-20261102-EFGH").name
+        val folder = DamagePhotos.dir(ctx, "BD-20261102-EFGH")
+        // Pre-existing folder state: the manifest lists only p1.jpg, p1.jpg is already on
+        // disk, and p-stale.jpg is a removed pick whose file syncDraft kept by design.
+        folder.mkdirs()
+        File(folder, "p1.jpg").writeBytes(ByteArray(100) { 1 })
+        File(folder, "p-stale.jpg").writeBytes(ByteArray(50) { 3 })
+        File(folder, "selected.txt").writeText("p1.jpg")
+        // The backup carries p1.jpg (already on disk: not copied) and p2.jpg (new: copied).
+        val zip = zipWith(backupJson(), mapOf(
+            "photos/$dirName/p1.jpg" to ByteArray(100) { 1 },
+            "photos/$dirName/p2.jpg" to ByteArray(100) { 2 }))
+        val r = done(Backup.restoreZip(ctx, zip))
+        assertEquals("only the photo restore positively wrote counts", 1, r.photos)
+        // p2.jpg joins the manifest in place; the unlisted leftover is NOT resurrected.
+        assertEquals(listOf("p1.jpg", "p2.jpg"), File(folder, "selected.txt").readLines())
+        assertFalse(r.incomplete)
+    }
+
+    @Test
+    fun restoreLeavesEmptiedManifestAloneWhenNothingNewWritten() {
+        val dirName = DamagePhotos.dir(ctx, "BD-20261102-EFGH").name
+        val folder = DamagePhotos.dir(ctx, "BD-20261102-EFGH")
+        // The user removed every pick: the manifest exists and is empty, while the backup
+        // still carries p1.jpg and its file was kept on disk. Restore copies nothing, so
+        // the emptied selection must stay empty - an existing file is not a restored file.
+        folder.mkdirs()
+        File(folder, "p1.jpg").writeBytes(ByteArray(100) { 1 })
+        File(folder, "selected.txt").writeText("")
+        val zip = zipWith(backupJson(), mapOf("photos/$dirName/p1.jpg" to ByteArray(100) { 1 }))
+        val r = done(Backup.restoreZip(ctx, zip))
+        assertEquals(0, r.photos)
+        assertTrue("the emptied manifest stays in force, unread and unfilled", File(folder, "selected.txt").let { it.exists() && it.readLines().isEmpty() })
+        assertFalse(r.incomplete)
+    }
+
+    @Test
     fun failedCopyIsFlaggedAndRerunHeals() {
         Backup.copyFileForRestore = { _, _ -> throw java.io.IOException("disk full") }
         val r1 = done(Backup.restoreZip(ctx, damageZip()))
