@@ -10,15 +10,18 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
-import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
  * The damage-report handoff against a controlled mail handler on a real device.
+ * The handler (CaptureMailActivity) runs in the TEST package's own process while
+ * these tests run in the target app's process, so what it received comes back
+ * over Binder through CaptureProvider; static fields cannot cross processes.
  * Two phases per case: (1) the intent the app builds really matches a mail-style
  * handler's filters (package-manager resolution), and (2) the handler really
  * receives the address, subject, body and photos - and can read the photos
@@ -72,6 +75,47 @@ class ControlledMailDeviceTest {
         )
     }
 
+
+    /**
+     * Clear the handler's recorded observations (cross-process, via provider call).
+     * Fail closed: a null return means the provider did not acknowledge the reset,
+     * so a later record could be a STALE previous-case one - refuse to continue.
+     * (Each case also asserts its own action/ref content, so a stale record of a
+     * different case would fail loudly rather than pass, but never rely on that.)
+     */
+    private fun resetCapture() {
+        val ack = InstrumentationRegistry.getInstrumentation().context.contentResolver
+            .call(Uri.parse("content://" + CaptureProvider.AUTHORITY), "reset", null, null)
+        assertTrue("the capture provider acknowledged the observation reset", ack != null)
+    }
+
+    /**
+     * Wait for the handler's observation record over Binder. The poll only bounds
+     * cross-process propagation; the proof is the returned CONTENT. Two distinct
+     * failure lines separate "provider unreachable" from "handler never recorded".
+     */
+    private fun awaitCapture(): Map<String, String?> {
+        val resolver = InstrumentationRegistry.getInstrumentation().context.contentResolver
+        val uri = Uri.parse("content://" + CaptureProvider.AUTHORITY + "/obs")
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(15)
+        var answered = false
+        while (System.nanoTime() < deadline) {
+            resolver.query(uri, null, null, null, null)?.use { c ->
+                answered = true
+                if (c.moveToLast()) {
+                    val row = HashMap<String, String?>()
+                    for (n in c.columnNames) row[n] = c.getString(c.getColumnIndexOrThrow(n))
+                    return row
+                }
+            }
+            Thread.sleep(250)
+        }
+        val why = if (answered) "the controlled handler recorded no observation within 15s"
+            else "the capture provider never answered within 15s"
+        fail(why)
+        throw AssertionError(why)
+    }
+
     @Before
     fun setUp() {
         Db.closeForTests()
@@ -105,26 +149,23 @@ class ControlledMailDeviceTest {
         val hit = db.hits().first { it.id == 1L }
         val spot = db.spot(1)
 
-        CaptureMailActivity.latch = CountDownLatch(1)
-        CaptureMailActivity.received = null
-        CaptureMailActivity.photoBytes = java.util.Collections.emptyMap()
-        CaptureMailActivity.readFailure = null
-
+        resetCapture()
         fireToControlledHandler(Reports.damageMail(ctx, d, hit, spot))
-        assertTrue("the controlled handler really received it",
-            CaptureMailActivity.latch!!.await(15, TimeUnit.SECONDS))
+        val got = awaitCapture()
+        // Two-PID evidence: the record crossed processes over Binder.
+        System.out.println("ControlledMailDeviceTest: test-process pid=" + android.os.Process.myPid() +
+            " handler pid=" + got["handlerPid"])
 
-        val got = CaptureMailActivity.received!!
-        assertEquals(Intent.ACTION_SEND_MULTIPLE, got.action)
-        assertEquals(listOf("assistant@example.com"), got.getStringArrayExtra(Intent.EXTRA_EMAIL)!!.toList())
-        assertTrue("subject carries the report ref",
-            got.getStringExtra(Intent.EXTRA_SUBJECT)!!.contains(d.ref(hit)))
-        val body = got.getStringExtra(Intent.EXTRA_TEXT)!!
+        assertEquals(Intent.ACTION_SEND_MULTIPLE, got["action"])
+        assertEquals(listOf("assistant@example.com"), got["email"]!!.split("\n"))
+        assertTrue("subject carries the report ref", got["subject"]!!.contains(d.ref(hit)))
+        val body = got["body"]!!
         assertTrue(body.contains("Damage: RIM"))
         assertTrue(body.contains("Notes: bent"))
         assertTrue("body carries the map link", body.contains("40.700000"))
-        assertNull("the photo grant worked end to end", CaptureMailActivity.readFailure)
-        assertEquals("the one photo arrived and read fully", setOf(2048), CaptureMailActivity.photoBytes.values.toSet())
+        assertNull("the photo grant worked end to end", got["readFailure"])
+        assertEquals("the one photo arrived and read fully",
+            setOf(2048), got["photoBytes"]!!.split("\n").map { it.substringAfterLast('=').toInt() }.toSet())
     }
 
     @Test
@@ -143,18 +184,22 @@ class ControlledMailDeviceTest {
         val d = db.addDamage(1, 1, "WHEEL", "scuffed", 3000, "draft-mailto-test")
         val hit = db.hits().first { it.id == 1L }
 
-        CaptureMailActivity.latch = CountDownLatch(1)
-        CaptureMailActivity.received = null
-
+        resetCapture()
         fireToControlledHandler(Reports.damageMail(ctx, d, hit, db.spot(1)))
-        assertTrue(CaptureMailActivity.latch!!.await(15, TimeUnit.SECONDS))
-        val got = CaptureMailActivity.received!!
-        assertEquals(Intent.ACTION_SENDTO, got.action)
+        val got = awaitCapture()
+
+        assertEquals(Intent.ACTION_SENDTO, got["action"])
         // RFC 6068: subject and body ride in the mailto query (the 1.16.0 bug class).
-        val data = got.dataString!!
+        val data = got["data"]!!
         assertTrue(data.startsWith("mailto:"))
         assertTrue("subject rides in the query", data.contains("subject="))
+        // Unique per-case damage words (RFC 3986-unreserved, so they survive the
+        // mailto query encoding verbatim): a delayed record from the other case
+        // (RIM/bent) can never satisfy these, so cross-case contamination fails
+        // loudly. The encoded subject's exact ref form is production output and
+        // is NOT asserted from an invented shape here.
+        assertTrue("body carries THIS case's damage", data.contains("WHEEL") && data.contains("scuffed"))
         assertTrue("body rides in the query, %20-encoded", data.contains("body=") && !data.contains("+"))
-        assertNotNull(got.getStringExtra(Intent.EXTRA_TEXT))
+        assertNotNull(got["body"])
     }
 }

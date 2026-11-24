@@ -19,5 +19,12 @@
                 <data android:mimeType="message/rfc822" />
             </intent-filter>
         </activity>
+        <!-- The handler runs in a different process from the tests; observations
+             come back over Binder through this provider. Exported so the target
+             app process (where the instrumented tests run) can query it. -->
+        <provider
+            android:name="com.bumplog.CaptureProvider"
+            android:authorities="com.bumplog.test.capture"
+            android:exported="true" />
     </application>
 </manifest>
