@@ -71,7 +71,23 @@ class BackupRestoreTest {
     }
 
     @Test
+    fun bottomBarStyleRoundTripsAndRejectsUnknown() {
+        val found = Prefs.navStyle
+        try {
+            Prefs.navStyle = "pill"
+            val dump = Prefs.dumpAll()
+            assertTrue(dump.has("nav_style"))
+            Prefs.navStyle = "flat"
+            assertTrue(Prefs.restoreAll(dump) >= 1)
+            assertEquals("pill", Prefs.navStyle)
+            assertEquals(0, Prefs.restoreAll(JSONObject().put("nav_style", JSONObject().put("t", "s").put("v", "glass"))))
+            assertEquals("pill", Prefs.navStyle)
+        } finally { Prefs.navStyle = found }
+    }
+
+    @Test
     fun pressDefaultsAreOnAndMonochrome() {
+        assertEquals("flat", Prefs.navStyle)
         assertTrue(Prefs.haptics)
         assertEquals("mono", Prefs.reportIcon)
     }

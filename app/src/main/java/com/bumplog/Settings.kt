@@ -71,6 +71,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     var autoOff by remember { mutableStateOf(Prefs.autoOffMin) }
     var accent by remember { mutableStateOf(Prefs.accent) }
     var reportIcon by remember { mutableStateOf(Prefs.reportIcon) }
+    var navStyle by remember { mutableStateOf(Prefs.navStyle) }
     var haptics by remember { mutableStateOf(Prefs.haptics) }
     var assistant by remember { mutableStateOf(Prefs.assistant) }
     var address by remember { mutableStateOf(Prefs.rawActiveAddress) }
@@ -124,6 +125,8 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             }
             Spacer(Modifier.height(10.dp))
             Dropdown("Report icon", reportIcon, listOf("mono" to "Monochrome", "color" to "Full color")) { reportIcon = it; Prefs.reportIcon = it; Live.bump() }
+            Spacer(Modifier.height(10.dp))
+            Dropdown("Bottom bar", navStyle, listOf("flat" to "Current", "pill" to "Compact pill")) { navStyle = it; Prefs.navStyle = it; Live.bump() }
         }
         SettingsCard {
             Txt("Feel", 18, FontWeight.Bold, modifier = Modifier.asHeading())

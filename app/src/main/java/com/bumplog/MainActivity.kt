@@ -253,6 +253,8 @@ class MainActivity : ComponentActivity() {
         }
         if (BuildConfig.DEBUG && i.hasExtra("theme")) { Prefs.theme = i.getStringExtra("theme")!!; Live.bump() }
         // Debug builds only, for the CI screenshot run: pick the bottom bar style and stub an up-to-date result.
+        if (BuildConfig.DEBUG && i.hasExtra("accentidx")) { Prefs.accent = i.getIntExtra("accentidx", 0).coerceIn(0, Swatches.lastIndex); Live.bump() }
+        if (BuildConfig.DEBUG && i.hasExtra("navstyle")) { Prefs.navStyle = i.getStringExtra("navstyle").orEmpty(); Live.bump() }
         if (BuildConfig.DEBUG && i.hasExtra("reporticon")) { Prefs.reportIcon = i.getStringExtra("reporticon").orEmpty(); Live.bump() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("fakeuptodate", false)) Testing.fakeUpToDateCount = 2
         if (BuildConfig.DEBUG && i.hasExtra("drv")) { Prefs.passenger = false; Live.update { it.copy(paused = false) }; Live.bump() }
@@ -443,23 +445,26 @@ class MainActivity : ComponentActivity() {
                 Row(Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     // Selected tint: against card2, which is stricter than the solid nav strip.
                     val selTint = p.accentText(p.card2)
-                    NavItem("Home", Icons.Default.Home, tab == "home" && top == null, selTint, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
-                    NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, selTint, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
-                    NavItem("Reported", StatsIcons.plane, tab == "reported" && top == null, selTint, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }
-                    NavItem("Stats", StatsIcons.bar, tab == "stats" && top == null, selTint, Modifier.weight(1f)) { tab = "stats"; stack = emptyList() }
-                    NavItem("Settings", Icons.Default.Settings, tab == "settings" && top == null, selTint, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }
+                    val pillOn = Prefs.navStyle == "pill"
+                    NavItem(pillOn, "Home", Icons.Default.Home, tab == "home" && top == null, selTint, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
+                    NavItem(pillOn, "Review", Icons.Default.CheckCircle, tab == "review" && top == null, selTint, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
+                    NavItem(pillOn, "Reported", StatsIcons.plane, tab == "reported" && top == null, selTint, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }
+                    NavItem(pillOn, "Stats", StatsIcons.bar, tab == "stats" && top == null, selTint, Modifier.weight(1f)) { tab = "stats"; stack = emptyList() }
+                    NavItem(pillOn, "Settings", Icons.Default.Settings, tab == "settings" && top == null, selTint, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }
                 }
             }
         }
     }
 
     @Composable
-    private fun NavItem(label: String, icon: ImageVector, sel: Boolean, selTint: Color, m: Modifier, onClick: () -> Unit) {
+    private fun NavItem(pill: Boolean, label: String, icon: ImageVector, sel: Boolean, selTint: Color, m: Modifier, onClick: () -> Unit) {
         // A tab role and selected state so TalkBack announces what is active; at least 48dp of touch height.
         // The tab sinks and ticks on press like every other button.
         Column(m.pressFeel(role = Role.Tab, selected = sel, onPress = onClick).heightIn(min = 48.dp).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Box(Modifier.height(26.dp), contentAlignment = Alignment.Center) {
-                Icon(icon, null, tint = if (sel) selTint else LocalPal.current.muted, modifier = Modifier.size(26.dp))
+                // Compact pill (Settings > Bottom bar): same bar height as flat, a slim capsule behind the selected icon.
+                if (pill && sel) Box(Modifier.size(52.dp, 26.dp).clip(RoundedCornerShape(13.dp)).background(LocalPal.current.accent.copy(alpha = 0.17f)))
+                Icon(icon, null, tint = if (sel) selTint else LocalPal.current.muted, modifier = Modifier.size(if (pill) 22.dp else 26.dp))
             }
             Txt(label, 12, FontWeight.Medium, if (sel) selTint else LocalPal.current.muted)
         }

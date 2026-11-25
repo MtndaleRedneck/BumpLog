@@ -38,7 +38,10 @@ object Prefs {
     var haptics: Boolean get() = b("haptics", true); set(v) = sp.edit().putBoolean("haptics", v).apply()
     /** The mark on Home's Report last hit button: "mono" (the button's own ink) or "color" (the full-colour app-icon mark). */
     var reportIcon: String get() = s("report_icon", "mono").takeIf { it in REPORT_ICONS } ?: "mono"; set(v) = sp.edit().putString("report_icon", v).apply()
+    /** The bottom bar's selected cue: "flat" (green icon and label only, the default) or "pill" (a slim capsule behind the icon, same bar height). */
+    var navStyle: String get() = s("nav_style", "flat").takeIf { it in NAV_STYLES } ?: "flat"; set(v) = sp.edit().putString("nav_style", v).apply()
     private val REPORT_ICONS = setOf("mono", "color")
+    private val NAV_STYLES = setOf("flat", "pill")
     /**
      * The accent as a position in [Swatches]. It is saved as the colour (key "accent_rgb"), not the position, so the picker order can change.
      * An old position-based "accent" is converted once, using the frozen older list.
@@ -91,7 +94,7 @@ object Prefs {
     }
 
     private val SETTING_KEYS = setOf("detection", "cutoff", "severe", "minspeed", "accent_rgb", "accent", "assistant", "addr_instinct", "addr_tab", "addr_custom",
-        "setup_done", "setup_email_sent", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons", "autooff", "haptics", "report_icon")
+        "setup_done", "setup_email_sent", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons", "autooff", "haptics", "report_icon", "nav_style")
 
     /** Checks one restored value against the type and range its setting expects. Returns the clean value or null to skip it. */
     private fun checked(k: String, t: String, x: org.json.JSONObject): Any? {
@@ -113,6 +116,7 @@ object Prefs {
             "audio_mode" -> str(10)?.takeIf { it in listOf("BOTH", "TONE", "VOICE", "OFF") }
             "tone" -> str(10)?.takeIf { it in listOf("CHIME", "ALARM", "BEEP", "DOUBLE") }
             "report_icon" -> str(10)?.takeIf { it in REPORT_ICONS }
+            "nav_style" -> str(10)?.takeIf { it in NAV_STYLES }
             "voice" -> str(200)
             "car_addr", "car_name" -> str(64)
             "addr_instinct", "addr_tab", "addr_custom" -> str(254)?.let { cleanEmail(it) }?.takeIf { it.isEmpty() || isValidEmail(it) }

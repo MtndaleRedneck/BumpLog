@@ -374,7 +374,7 @@ TS_RE='^[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}$'
 # Each helper prints ONE value on stdout and returns nonzero (message on stderr, never on stdout) on any failure, so a
 # caller that writes X=$(helper) || exit 1 can never carry an error string into a comparison.
 dev_now() {
-  local t; t=$(adb shell date '+%m-%d %H:%M:%S.000' | tr -d '\r') || { echo "device clock unreadable" >&2; return 1; }
+  local t; t=$(adb shell "date '+%m-%d %H:%M:%S.000'" | tr -d '\r') || { echo "device clock unreadable" >&2; return 1; }
   [[ "$t" =~ $TS_RE ]] || { echo "device clock not a timestamp" >&2; return 1; }
   printf '%s' "$t"
 }
@@ -445,6 +445,27 @@ V2=$(vibrate_checked) || exit 1; echo "Vibrate on press restored: $V2"
 # app tick was recorded, and the log says so. The positive proof is the haptics-on step above.
 if click_after "$E2" "$M2"; then echo "FAIL: an app tick fired after the marker with Vibrate on press off"; exit 1; fi
 echo "haptics off: no app tick recorded after the marker (observed absence; key activation itself not separately asserted)"
+# Bottom bar setting: Compact pill, then back to the default flat bar.
+shot v24-pill-home --ez demo true --es screen home --es navstyle pill
+shot v24-pill-stats --es screen stats
+shot v24-pill-settings --es screen settings
+# The pill on the lightest, a mid and the darkest swatch (dusty blue, mauve, burnt orange), then sage again.
+shot v24-pill-blue --ez demo true --es screen home --es navstyle pill --ei accentidx 2
+shot v24-pill-mauve --ez demo true --es screen home --es navstyle pill --ei accentidx 5
+shot v24-pill-orange --ez demo true --es screen home --es navstyle pill --ei accentidx 1
+shot v24-flat-restore --es screen settings --es navstyle flat --ei accentidx 0
+# Launcher proof: the real BumpLog icon as the device launcher draws it, on the home screen or in the app drawer.
+# Never fatal (the other artifacts must still upload), but it says plainly whether the icon was found.
+adb shell am force-stop com.bumplog; adb shell input keyevent KEYCODE_HOME; sleep 3
+adb exec-out screencap -p > $OUT/v24-launcher-home.png
+adb shell input swipe 540 2000 540 500 300; sleep 3
+adb exec-out screencap -p > $OUT/v24-launcher-drawer.png
+if dump_ui_soft && printf '%s' "$UI_XML" | grep -F 'BumpLog' | head -1 | grep -q .; then
+  echo "launcher: a node labelled BumpLog is on the drawer screen: $(printf '%s' "$UI_XML" | tr '<' '\n' | grep -F 'BumpLog' | head -1 | grep -o 'bounds="[^"]*"')"
+else
+  echo "launcher: NO node labelled BumpLog found on the drawer screen; v24-launcher-drawer.png must be inspected by eye"
+fi
+adb shell input keyevent KEYCODE_HOME; sleep 1
 ls -la $OUT
 adb shell wm size reset
 adb shell wm density reset
