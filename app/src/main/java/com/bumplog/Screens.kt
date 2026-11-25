@@ -22,6 +22,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
@@ -604,7 +605,7 @@ fun PowerButton(detOn: Boolean, onClick: () -> Unit) {
     val pressed by src.collectIsPressedAsState()
     // The button is focusable through clickable (Enter or D-pad center are expected to click and set pressed; unproven until
     // the emulator script runs). Indication is off, so draw a ring when it holds focus.
-    val focused by androidx.compose.foundation.interaction.collectIsFocusedAsState(src)
+    val focused by src.collectIsFocusedAsState()
     // Same light tick on touch-down as every other button; the existing sink-in depth stays. A key press goes through the same
     // clickable press interaction (pressed); that it ticks once is checked by the emulator script, not assumed.
     val view = androidx.compose.ui.platform.LocalView.current
