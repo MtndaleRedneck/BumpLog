@@ -5,6 +5,8 @@ November 25, 2026. A freshened Settings and a modernized app.
 New:
 - Settings has a new layout. A Feedback & bugs row (with a clearer arrow) opens the screen for sending feedback, reporting a bug or suggesting a feature, and a version card has a "Check for updates" button - the answer ("You're up to date.") shows next to the version and fades away after 5 seconds.
 - Settings keeps your place when you open a screen and come back; leaving Settings fully starts you back at the top.
+- Appearance has a Bottom bar setting so you can try three bar looks (Current, Pill, Glass).
+- The accent colours are a new muted set. A colour you picked before that is no longer offered becomes sage.
 - Notifications use a white version of the BumpLog logo.
 
 Under the hood:
