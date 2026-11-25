@@ -32,6 +32,9 @@ val Swatches = listOf(
     0xFFA89A8C, // taupe
 ).map { Color(it) }
 
+/** Spoken names for [Swatches], same order, so a screen reader can tell the colors apart. */
+val SwatchNames = listOf("Sage", "Burnt orange", "Dusty blue", "Gray-green", "Terracotta", "Mauve", "Indigo", "Taupe")
+
 /** The accent list in the order it had when accents were saved by position. Frozen: it only exists to read old saved choices. */
 val LegacySwatchArgb: List<Long> = listOf(
     0xFFFF5228, 0xFFFFB020, 0xFF3CC878, 0xFF3C9BFF, 0xFFA064FF,

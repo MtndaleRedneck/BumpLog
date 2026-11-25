@@ -26,6 +26,10 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -107,6 +111,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                         val idx = r * 5 + c
                         Box(Modifier.size(46.dp).clip(CircleShape).background(col)
                             .let { if (accent == idx) it.border(3.dp, p.text, CircleShape) else it }
+                            .semantics { contentDescription = "Accent color, ${SwatchNames[idx]}"; role = androidx.compose.ui.semantics.Role.RadioButton; selected = accent == idx }
                             .clickable { accent = idx; Prefs.accent = idx; Live.bump() })
                     }
                 }

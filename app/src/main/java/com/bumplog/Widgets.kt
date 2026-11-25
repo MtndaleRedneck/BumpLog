@@ -12,7 +12,15 @@ import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.foundation.focusable
 import androidx.compose.ui.composed
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
@@ -88,6 +96,11 @@ fun Modifier.pressFeel(
     val dim by animateFloatAsState(if (pressed) 0.15f else 0f, tween(if (pressed) 90 else 120), label = "dim")
     val view = LocalView.current
     val tap by rememberUpdatedState(onPress)
+    // Keyboard and D-pad: the button stays focusable with a visible ring, and Enter fires it on release, but only after
+    // its own key-down, so focus moving mid-press can never fire a different button.
+    var focused by remember(enabled) { mutableStateOf(false) }
+    var keyArmed by remember(enabled) { mutableStateOf(false) }
+    val ring = LocalPal.current.text
     this
         .semantics(mergeDescendants = true) {
             this.role = role
@@ -96,6 +109,31 @@ fun Modifier.pressFeel(
             onClick { if (enabled) { tap(); true } else false }
         }
         .graphicsLayer { scaleX = scale; scaleY = scale; alpha = 1f - dim }
+        .onFocusChanged { focused = it.isFocused; if (!it.isFocused) keyArmed = false }
+        .focusable(enabled)
+        .onKeyEvent { e ->
+            val k = e.key
+            if (!enabled || !(k == Key.Enter || k == Key.NumPadEnter || k == Key.DirectionCenter)) false
+            else when (e.type) {
+                KeyEventType.KeyDown -> { keyArmed = true; true }
+                KeyEventType.KeyUp -> {
+                    if (keyArmed) {
+                        keyArmed = false
+                        if (Prefs.haptics) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                        tap()
+                    }
+                    true
+                }
+                else -> false
+            }
+        }
+        .drawWithContent {
+            drawContent()
+            if (focused) {
+                val r = minOf(size.minDimension / 2f, 32.dp.toPx())
+                drawRoundRect(ring, cornerRadius = androidx.compose.ui.geometry.CornerRadius(r, r), style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+            }
+        }
         .pointerInput(enabled) {
             if (!enabled) return@pointerInput
             awaitEachGesture {

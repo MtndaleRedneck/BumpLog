@@ -61,6 +61,8 @@ class TypesTest {
 class AppearanceTest {
     @Test fun sageLeadsItsRowAndIsTheDefault() {
         assertEquals(8, Swatches.size)
+        assertEquals("every swatch has a spoken name", Swatches.size, SwatchNames.size)
+        assertEquals(SwatchNames.size, SwatchNames.toSet().size)
         // BingeMote's bright orange is not offered.
         assertFalse(Swatches.any { it.toArgb() == 0xFFF97C02.toInt() })
         assertEquals(SAGE_ARGB.toInt(), AccentStore.resolve(0xFFF97C02.toInt(), null))
