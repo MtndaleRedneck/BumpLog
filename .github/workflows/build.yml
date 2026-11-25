@@ -240,10 +240,13 @@ jobs:
           disable-animations: true
           script: ./scripts/shots.sh
       - name: Commit screenshots
+        env:
+          # Never interpolate github.ref_name into shell: pass it through the environment and quote it.
+          REF_NAME: ${{ github.ref_name }}
         run: |
           git config user.name "MtndaleRedneck"
           git config user.email "117659952+MtndaleRedneck@users.noreply.github.com"
           git add docs/screenshots
           git commit -m "Add app screenshots from emulator" || exit 0
-          git pull --rebase origin ${{ github.ref_name }}
-          git push origin HEAD:${{ github.ref_name }}
+          git pull --rebase origin "$REF_NAME"
+          git push origin "HEAD:$REF_NAME"

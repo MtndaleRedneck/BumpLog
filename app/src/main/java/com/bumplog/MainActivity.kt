@@ -34,6 +34,7 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -453,28 +454,30 @@ class MainActivity : ComponentActivity() {
                     Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp)
                 Row(barMod, verticalAlignment = Alignment.CenterVertically) {
                     val pill = barStyle != "flat"
-                    NavItem("Home", Icons.Default.Home, tab == "home" && top == null, pill, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
-                    NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, pill, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
-                    NavItem("Reported", StatsIcons.plane, tab == "reported" && top == null, pill, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }
-                    NavItem("Stats", StatsIcons.bar, tab == "stats" && top == null, pill, Modifier.weight(1f)) { tab = "stats"; stack = emptyList() }
-                    NavItem("Settings", Icons.Default.Settings, tab == "settings" && top == null, pill, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }
+                    // Selected tint: on glass, against the worst-case composite pill (frosted card over white
+                    // content); on pill/flat, against card2, which is stricter than the solid nav strip.
+                    val selTint = if (glass) p.accentText(p.glassPillSurface()) else p.accentText(p.card2)
+                    NavItem("Home", Icons.Default.Home, tab == "home" && top == null, pill, selTint, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
+                    NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, pill, selTint, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
+                    NavItem("Reported", StatsIcons.plane, tab == "reported" && top == null, pill, selTint, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }
+                    NavItem("Stats", StatsIcons.bar, tab == "stats" && top == null, pill, selTint, Modifier.weight(1f)) { tab = "stats"; stack = emptyList() }
+                    NavItem("Settings", Icons.Default.Settings, tab == "settings" && top == null, pill, selTint, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }
                 }
             }
         }
     }
 
     @Composable
-    private fun NavItem(label: String, icon: ImageVector, sel: Boolean, pill: Boolean, m: Modifier, onClick: () -> Unit) {
+    private fun NavItem(label: String, icon: ImageVector, sel: Boolean, pill: Boolean, selTint: Color, m: Modifier, onClick: () -> Unit) {
         val p = LocalPal.current
         // A tab role and selected state so TalkBack announces what is active; at least 48dp of touch height.
         Column(m.selectable(selected = sel, role = Role.Tab, onClick = onClick).heightIn(min = 48.dp).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             // Fixed icon slot per bar mode so the selected pill never pushes its label below its neighbors'.
             Box(Modifier.height(if (pill) 32.dp else 26.dp), contentAlignment = Alignment.Center) {
                 if (pill && sel) Box(Modifier.size(64.dp, 32.dp).clip(RoundedCornerShape(16.dp)).background(p.accent.copy(alpha = 0.17f)))
-                // Selected tint is checked against card2 so the label also reads on the glass bar's composite surface.
-                Icon(icon, null, tint = if (sel) p.accentText(p.card2) else p.muted, modifier = Modifier.size(26.dp))
+                Icon(icon, null, tint = if (sel) selTint else p.muted, modifier = Modifier.size(26.dp))
             }
-            Txt(label, 12, FontWeight.Medium, if (sel) p.accentText(p.card2) else p.muted)
+            Txt(label, 12, FontWeight.Medium, if (sel) selTint else p.muted)
         }
     }
 }

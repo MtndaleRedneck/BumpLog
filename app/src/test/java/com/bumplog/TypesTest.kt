@@ -34,6 +34,18 @@ class TypesTest {
         }
     }
 
+    @Test fun accentTextStaysReadableOnGlassPill() {
+        // Glass bar: the selected label sits on a 17% accent pill over frosted card, and content of any
+        // brightness can scroll beneath. Check against the worst-case composite (white underlay).
+        Swatches.forEachIndexed { i, _ ->
+            val p = palette(true, i)
+            val surface = p.glassPillSurface()
+            val chosen = p.accentText(surface)
+            assertTrue("swatch $i accent text must reach 4.5:1 on the worst-case glass pill, got " + contrastRatio(chosen, surface),
+                contrastRatio(chosen, surface) >= 4.5f)
+        }
+    }
+
     @Test fun plainLabelsAndTechnicalTerms() {
         assertEquals("Broken pavement (lip)", DefectType.FAULTING.label)
         assertEquals("Rough stretch", DefectType.RUMBLE.label)

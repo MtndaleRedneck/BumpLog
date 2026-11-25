@@ -133,6 +133,17 @@ fi
 cat $OUT/v17-restart-tap-lifecycle.txt
 # --- Redesign runtime proof: bar styles, feedback row, updates timer, settings scroll rule ---
 has_text() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb shell cat /sdcard/ui.xml | grep -q "$1"; }
+# tap_now <text>: tap without the settle sleep, for measured-clock probes. Exact text match first, substring fallback.
+tap_now() {
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+  B=$(adb shell cat /sdcard/ui.xml | grep -o "text=\"$1\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
+  if [ -z "$B" ]; then
+    B=$(adb shell cat /sdcard/ui.xml | grep -o "text=\"[^\"]*$1[^\"]*\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
+  fi
+  if [ -z "$B" ]; then echo "FAIL: tap target '$1' not on screen"; exit 1; fi
+  read X1 Y1 X2 Y2 <<< $(echo "$B" | tr -d '[]' | tr ',' ' ' | awk '{print $1, $2, $3, $4}')
+  adb shell input tap $(( (X1+X2)/2 )) $(( (Y1+Y2)/2 ))
+}
 tap_text() {
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
   B=$(adb shell cat /sdcard/ui.xml | grep -o "text=\"[^\"]*$1[^\"]*\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
@@ -153,20 +164,31 @@ scroll_to "Send feedback" v21-feedback-row
 shot v21-feedback --es screen feedback
 
 # Updates card: the fake up-to-date stub exercises the real result text and 5s hide timer.
-# A second identical tap must restart the timer: still visible 3s after it, gone 6s after it.
+# Measured-clock probe: the second tap must land BEFORE the first 5s deadline (that is what makes
+# it a restart check), the visible assertion lands between the two deadlines, and the hidden
+# assertion lands after the second deadline with a 2s margin for uiautomator dump latency.
+# If the emulator is so slow the second tap misses the window, the restart claim is skipped with a
+# WARN (never a false red) and the repeat still verifies shown-then-hidden against its own deadline.
 adb shell am force-stop com.bumplog; sleep 1
 adb shell am start -n com.bumplog/.MainActivity --es screen settings --ez fakeuptodate true; sleep 4
 scroll_to "Check for updates" v21-updates-card
-tap_text "Check for updates"; sleep 1
+tap_now "Check for updates"; T1=$(date +%s)
+for i in $(seq 1 8); do has_text "up to date" && break; sleep 1; done
 has_text "up to date" || { echo "FAIL: up-to-date result not shown after tap"; exit 1; }
 adb exec-out screencap -p > $OUT/v21-uptodate-shown.png
-sleep 3
-adb shell am start -n com.bumplog/.MainActivity --ez fakeuptodate true >/dev/null; sleep 1
-tap_text "Check for updates"; sleep 1
-sleep 3
-has_text "up to date" && echo "timer restart OK: identical result still visible 3s after the repeat" || { echo "FAIL: identical result did not restart the 5s timer"; exit 1; }
-sleep 3
-has_text "up to date" && { echo "FAIL: up-to-date still visible 6s after the repeat tap"; exit 1; } || echo "hide OK: result cleared 5s after the last check"
+tap_now "Check for updates"; T2=$(date +%s)
+GAP=$((T2 - T1))
+if [ "$GAP" -ge 5 ]; then echo "WARN: repeat tap landed ${GAP}s after the first; restart window missed, checking fresh-timer behavior only"; fi
+# Visible assertion: past the FIRST tap's deadline (proves the restart extended it), before the second's.
+TARGET=$((T1 + 6)); NOW=$(date +%s); [ $TARGET -gt $NOW ] && sleep $((TARGET - NOW))
+if [ "$GAP" -lt 5 ]; then
+  has_text "up to date" && echo "timer restart OK: result visible past the first tap's 5s deadline" || { echo "FAIL: identical result did not restart the 5s timer"; exit 1; }
+else
+  has_text "up to date" || { echo "FAIL: up-to-date result missing after the repeat tap"; exit 1; }
+fi
+# Hidden assertion: past the SECOND tap's deadline plus margin.
+TARGET=$((T2 + 7)); NOW=$(date +%s); [ $TARGET -gt $NOW ] && sleep $((TARGET - NOW))
+has_text "up to date" && { echo "FAIL: up-to-date still visible past the repeat tap's 5s deadline"; exit 1; } || echo "hide OK: result cleared after the last check's deadline"
 adb exec-out screencap -p > $OUT/v21-uptodate-hidden.png
 
 # Settings scroll rule: child screens keep the place; leaving Settings entirely resets to the top.

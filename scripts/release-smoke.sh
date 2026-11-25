@@ -9,16 +9,21 @@ mkdir -p $OUT
 [ -f "$APK" ] || { echo "FAIL: $APK missing"; exit 1; }
 adb shell settings put global hide_error_dialogs 1
 adb install -r $APK
+has_text() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb shell cat /sdcard/ui.xml | grep -q "$1"; }
 adb shell am force-stop com.bumplog; sleep 1
 adb logcat -c
 adb shell am start -n com.bumplog/.MainActivity; sleep 6
 PID=$(adb shell pidof com.bumplog | tr -d '\r')
 if [ -z "$PID" ]; then echo "FAIL: release app not running after launch"; adb logcat -d | tail -80; exit 1; fi
+# Real screen assertions, not just process liveness: each key screen must render its own content.
+has_text "Detection" || { echo "FAIL: home screen content not rendered"; exit 1; }
 adb exec-out screencap -p > $OUT/release-home.png
 # Settings and its child feedback screen exercise the minified Compose graph and resources.
 adb shell am start -n com.bumplog/.MainActivity --es screen settings; sleep 3
+has_text "Sensitivity" || { echo "FAIL: settings screen content not rendered"; exit 1; }
 adb exec-out screencap -p > $OUT/release-settings.png
 adb shell am start -n com.bumplog/.MainActivity --es screen feedback; sleep 3
+has_text "What will be sent" || { echo "FAIL: feedback screen content not rendered"; exit 1; }
 adb exec-out screencap -p > $OUT/release-feedback.png
 if adb logcat -d | grep -q "FATAL EXCEPTION"; then
   echo "FAIL: FATAL EXCEPTION in logcat"

@@ -7,6 +7,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toArgb
 
 data class Pal(
@@ -106,14 +107,21 @@ private fun chan(x: Float): Float = if (x <= 0.03928f) x / 12.92f else Math.pow(
 private fun lum(c: Color): Float = 0.2126f * chan(c.red) + 0.7152f * chan(c.green) + 0.0722f * chan(c.blue)
 fun contrastRatio(a: Color, b: Color): Float { val x = maxOf(lum(a), lum(b)); val y = minOf(lum(a), lum(b)); return (x + 0.05f) / (y + 0.05f) }
 /** The accent as a text color: itself when it already reads at 4.5:1 on the surface, otherwise lightened
- * in small steps until it does (hue kept), falling back to plain text only past a 40% lift. */
+ * in small steps until it does (hue kept), falling back to plain text only past a 48% lift. The 48% cap
+ * is what burnt orange needs on the glass bar's worst-case pill (about 44%). */
 fun Pal.accentText(bg: Color): Color {
     if (contrastRatio(accent, bg) >= 4.5f) return accent
     var f = 0.04f
-    while (f <= 0.40f) {
+    while (f <= 0.48f) {
         val c = lighten(accent, f)
         if (contrastRatio(c, bg) >= 4.5f) return c
         f += 0.04f
     }
     return text
 }
+
+/** Worst-case surface under the glass bar's selected pill: the frosted card (92%) over the lightest
+ * content that can scroll beneath it (white), with the 17% accent pill on top. Selected tints check
+ * against this so the label reads no matter what is under the bar. */
+fun Pal.glassPillSurface(): Color =
+    accent.copy(alpha = 0.17f).compositeOver(card.copy(alpha = 0.92f).compositeOver(Color.White))
