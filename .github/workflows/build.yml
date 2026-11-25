@@ -31,7 +31,9 @@ jobs:
       - uses: actions/checkout@v4
 
       # A source.tgz in the repo root is a bundle of changes: unpack it, commit it, then build.
+      # Main-context only: this step pushes to main, so it must never run on a review-branch trigger.
       - name: Unpack source bundle
+        if: github.ref_name == 'main'
         run: |
           F=$(ls ./*source.tgz 2>/dev/null | head -1)
           if [ -n "$F" ]; then
