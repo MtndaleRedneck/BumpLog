@@ -30,6 +30,8 @@ object Prefs {
     var severeG: Float get() = f("severe", 1.30f); set(v) = sp.edit().putFloat("severe", v).apply()
     var minSpeedMph: Int get() = i("minspeed", 15); set(v) = sp.edit().putInt("minspeed", v).apply()
     var theme: String get() = s("theme", "DARK"); set(v) = sp.edit().putString("theme", v).apply()
+    /** Bottom bar style: "flat" (the current strip), "pill" (strip + accent pill on the active tab), "glass" (floating frosted bar + pill). Trying the styles is owner-approved Nov 2026; the permanent choice comes in a later update. */
+    var barStyle: String get() = s("barstyle", "flat"); set(v) = sp.edit().putString("barstyle", v).apply()
     /**
      * The accent as a position in [Swatches]. It is saved as the colour (key "accent_rgb"), not the position, so the picker order can change.
      * An old position-based "accent" is converted once, using the frozen older list.

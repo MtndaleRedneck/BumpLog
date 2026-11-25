@@ -25,6 +25,10 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.draw.alpha
+import androidx.compose.foundation.border
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.Modifier
@@ -427,21 +431,39 @@ class MainActivity : ComponentActivity() {
                     }
                 }
             }
-            if (top == null || top is Screen.Spot) Row(Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp)) {
-                NavItem("Home", Icons.Default.Home, tab == "home" && top == null, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
-                NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
-                NavItem("Reported", StatsIcons.plane, tab == "reported" && top == null, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }
-                NavItem("Stats", StatsIcons.bar, tab == "stats" && top == null, Modifier.weight(1f)) { tab = "stats"; stack = emptyList() }
-                NavItem("Settings", Icons.Default.Settings, tab == "settings" && top == null, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }
+            if (top == null || top is Screen.Spot) {
+                // Bar styles (owner-approved trial, Nov 2026): "flat" is the current strip, "pill" adds an
+                // accent pill behind the active tab, "glass" floats a frosted bar with the pill. The
+                // permanent style is chosen in a later update; "flat" stays the default until then.
+                val barStyle = remember(live.tick) { Prefs.barStyle }
+                val glass = barStyle == "glass"
+                val barShape = RoundedCornerShape(26.dp)
+                val barMod = if (glass)
+                    Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)
+                        .shadow(6.dp, barShape).clip(barShape).background(p.card.copy(alpha = 0.92f))
+                        .border(1.dp, p.card2, barShape).padding(vertical = 8.dp)
+                else
+                    Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp)
+                Row(barMod) {
+                    val pill = barStyle != "flat"
+                    NavItem("Home", Icons.Default.Home, tab == "home" && top == null, pill, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
+                    NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, pill, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
+                    NavItem("Reported", StatsIcons.plane, tab == "reported" && top == null, pill, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }
+                    NavItem("Stats", StatsIcons.bar, tab == "stats" && top == null, pill, Modifier.weight(1f)) { tab = "stats"; stack = emptyList() }
+                    NavItem("Settings", Icons.Default.Settings, tab == "settings" && top == null, pill, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }
+                }
             }
         }
     }
 
     @Composable
-    private fun NavItem(label: String, icon: ImageVector, sel: Boolean, m: Modifier, onClick: () -> Unit) {
+    private fun NavItem(label: String, icon: ImageVector, sel: Boolean, pill: Boolean, m: Modifier, onClick: () -> Unit) {
         val p = LocalPal.current
         Column(m.clickable(onClick = onClick).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-            Icon(icon, null, tint = if (sel) p.accent else p.muted, modifier = Modifier.size(26.dp))
+            Box(contentAlignment = Alignment.Center) {
+                if (pill && sel) Box(Modifier.size(64.dp, 32.dp).clip(RoundedCornerShape(16.dp)).background(p.accent.copy(alpha = 0.17f)))
+                Icon(icon, null, tint = if (sel) p.accent else p.muted, modifier = Modifier.size(26.dp))
+            }
             Txt(label, 12, FontWeight.Medium, if (sel) p.accent else p.muted)
         }
     }

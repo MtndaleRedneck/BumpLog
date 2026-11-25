@@ -65,6 +65,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     var minSpeed by remember { mutableStateOf(Prefs.minSpeedMph) }
     var autoOff by remember { mutableStateOf(Prefs.autoOffMin) }
     var accent by remember { mutableStateOf(Prefs.accent) }
+    var barStyle by remember { mutableStateOf(Prefs.barStyle) }
     var assistant by remember { mutableStateOf(Prefs.assistant) }
     var address by remember { mutableStateOf(Prefs.rawActiveAddress) }
     var auto by remember { mutableStateOf(Prefs.autoStart) }
@@ -109,6 +110,9 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                     }
                 }
             }
+            Spacer(Modifier.height(10.dp))
+            // Try-out switch for the three bar looks (owner-approved trial, Nov 2026); the permanent style is picked in a later update.
+            Dropdown("Bottom bar", barStyle, listOf("flat" to "Current", "pill" to "Pill", "glass" to "Glass")) { barStyle = it; Prefs.barStyle = it; Live.bump() }
         }
 
 
