@@ -24,6 +24,33 @@ done
 adb install -r $APK
 for p in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION POST_NOTIFICATIONS BLUETOOTH_CONNECT; do adb shell pm grant com.bumplog android.permission.$p; done
 shot() { adb shell am force-stop com.bumplog; sleep 1; adb shell am start -n com.bumplog/.MainActivity "${@:2}"; sleep 5; adb exec-out screencap -p > $OUT/$1.png; }
+# dump_ui: fresh UI hierarchy into $UI_XML, fail-closed: a failed dump exits the script, so no
+# assertion, scroll or tap can ever read a stale or missing /sdcard/ui.xml. Always called
+# directly (never in a subshell or pipeline) so the exit really exits.
+dump_ui() {
+  adb shell rm -f /sdcard/ui.xml
+  if ! adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; then echo "FAIL: uiautomator dump failed"; exit 1; fi
+  UI_XML=$(adb shell cat /sdcard/ui.xml) || { echo "FAIL: could not read the UI dump"; exit 1; }
+  # A successful dump with an empty or invalid read must never pass an absence assertion:
+  # require a non-empty hierarchy document before any grep sees it.
+  case "$UI_XML" in *"<hierarchy"*) ;; *) echo "FAIL: UI dump has no hierarchy root"; exit 1 ;; esac
+}
+# has_text <fixed string>: 0 present, 1 absent; a failed dump exits before the grep, so a
+# negative assertion can never read a failed dump as absence.
+has_text() { dump_ui; printf '%s\n' "$UI_XML" | grep -qF "$1"; }
+# tap_now <text>: tap the node's center with no settle sleep, for measured-clock probes.
+# Fixed-string exact text match first, fixed-string substring fallback; missing target fails closed.
+tap_now() {
+  dump_ui
+  LINE=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F "text=\"$1\"" | head -1)
+  if [ -z "$LINE" ]; then LINE=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'text="' | grep -F "$1" | head -1); fi
+  B=$(printf '%s\n' "$LINE" | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1)
+  if [ -z "$B" ]; then echo "FAIL: tap target '$1' not on screen"; exit 1; fi
+  read X1 Y1 X2 Y2 <<< $(echo "$B" | tr -d '[]' | tr ',' ' ' | awk '{print $1, $2, $3, $4}')
+  adb shell input tap $(( (X1+X2)/2 )) $(( (Y1+Y2)/2 ))
+}
+# tap_text <text>: tap, then settle 2s.
+tap_text() { tap_now "$1"; sleep 2; }
 # First launch after install needs longer: it seeds the demo data and warms up. Captured, then discarded.
 shot warmup --ez demo true --es screen home
 sleep 5
@@ -38,13 +65,17 @@ adb shell input swipe 540 1800 540 400 300; sleep 1; adb exec-out screencap -p >
 adb shell input swipe 540 1800 540 400 300; sleep 1; adb exec-out screencap -p > $OUT/settings-3.png
 for n in 4 5 6 7 8; do adb shell input swipe 540 1800 540 400 300; sleep 1; adb exec-out screencap -p > $OUT/settings-$n.png; done
 shot v11-scorecard --es screen score
-# scroll_to <text> <out>: swipe until the text is on screen, then nudge it up and capture
+# scroll_to <text> <out>: swipe until the text is on screen, then nudge it up and capture.
+# 20 swipes covers the full settings list (the Feedback/Updates cards sit below the tall Testing
+# card, past 12); fail-closed when the text never appears so a miss can never capture silently.
 scroll_to() {
-  for i in 1 2 3 4 5 6 7 8 9 10 11 12; do
-    adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
-    if adb shell cat /sdcard/ui.xml | grep -q "$1"; then break; fi
+  FOUND=""
+  for i in $(seq 1 20); do
+    dump_ui
+    if printf '%s\n' "$UI_XML" | grep -qF "$1"; then FOUND=1; break; fi
     adb shell input swipe 540 1800 540 900 300; sleep 1
   done
+  if [ -z "$FOUND" ]; then echo "FAIL: '$1' never appeared after 20 swipes"; exit 1; fi
   adb shell input swipe 540 1500 540 1100 300; sleep 1
   adb exec-out screencap -p > $OUT/$2.png
 }
@@ -90,8 +121,8 @@ adb shell am start -n com.bumplog/.MainActivity --es screen settings; sleep 3
 read DW DH < <(adb shell wm size | grep -o '[0-9][0-9]*x[0-9][0-9]*' | tail -1 | tr 'x' ' ')
 SX=$((DW/2)); SY1=$((DH*3/4)); SY2=$((DH/3)); LIM=$((DH*63/100))
 for i in $(seq 1 16); do
-  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
-  TOP=$(adb shell cat /sdcard/ui.xml | grep -o 'text="Auto backup: off"[^>]*' | grep -o 'bounds="\[[0-9]*,[0-9]*' | grep -o '[0-9]*$')
+  dump_ui
+  TOP=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'text="Auto backup: off"' | grep -o 'bounds="\[[0-9]*,[0-9]*' | grep -o '[0-9]*$')
   if [ -n "$TOP" ] && [ "$TOP" -gt 100 ] && [ "$TOP" -lt "$LIM" ]; then break; fi
   adb shell input swipe $SX $SY1 $SX $SY2 300; sleep 1
 done
@@ -115,8 +146,8 @@ adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home 
 sleep 2
 adb shell input keyevent KEYCODE_HOME; sleep 1
 adb shell cmd statusbar expand-notifications; sleep 2
-adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
-B=$(adb shell cat /sdcard/ui.xml | grep -o 'text="Logging paused"[^>]*bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
+dump_ui
+B=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'text="Logging paused"' | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
 if [ -n "$B" ]; then
   read X1 Y1 X2 Y2 <<< $(echo "$B" | tr -d '[]' | tr ',' ' ' | awk '{print $1, $2, $3, $4}')
   adb shell input tap $(( (X1+X2)/2 )) $(( (Y1+Y2)/2 ))
@@ -132,27 +163,6 @@ fi
 } > $OUT/v17-restart-tap-lifecycle.txt
 cat $OUT/v17-restart-tap-lifecycle.txt
 # --- Redesign runtime proof: bar styles, feedback row, updates timer, settings scroll rule ---
-has_text() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb shell cat /sdcard/ui.xml | grep -q "$1"; }
-# tap_now <text>: tap without the settle sleep, for measured-clock probes. Exact text match first, substring fallback.
-tap_now() {
-  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
-  B=$(adb shell cat /sdcard/ui.xml | grep -o "text=\"$1\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
-  if [ -z "$B" ]; then
-    B=$(adb shell cat /sdcard/ui.xml | grep -o "text=\"[^\"]*$1[^\"]*\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
-  fi
-  if [ -z "$B" ]; then echo "FAIL: tap target '$1' not on screen"; exit 1; fi
-  read X1 Y1 X2 Y2 <<< $(echo "$B" | tr -d '[]' | tr ',' ' ' | awk '{print $1, $2, $3, $4}')
-  adb shell input tap $(( (X1+X2)/2 )) $(( (Y1+Y2)/2 ))
-}
-tap_text() {
-  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
-  B=$(adb shell cat /sdcard/ui.xml | grep -o "text=\"[^\"]*$1[^\"]*\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
-  if [ -z "$B" ]; then echo "FAIL: tap target '$1' not on screen"; exit 1; fi
-  read X1 Y1 X2 Y2 <<< $(echo "$B" | tr -d '[]' | tr ',' ' ' | awk '{print $1, $2, $3, $4}')
-  adb shell input tap $(( (X1+X2)/2 )) $(( (Y1+Y2)/2 ))
-  sleep 2
-}
-
 # Bottom bar styles (owner-approved trial): same Home screen under all three.
 shot v21-bar-pill --ez demo true --es screen home --es barstyle pill
 shot v21-bar-glass --ez demo true --es screen home --es barstyle glass

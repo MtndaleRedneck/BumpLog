@@ -241,6 +241,13 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: ./scripts/shots.sh
+      # Pixel evidence survives a failed run: the captures upload even when an assertion fails,
+      # so a red job still shows exactly what was on screen.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bumplog-screenshots-run
+          path: docs/screenshots/**
       - name: Commit screenshots
         env:
           # Never interpolate github.ref_name into shell: pass it through the environment and quote it.
