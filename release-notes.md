@@ -8,7 +8,7 @@ New:
 
 Changed:
 - The bright orange accent is gone from the color picker. Anyone who had it picked is back on sage.
-- The Current bottom bar is the only bar. The Pill and Glass trials are removed.
+- The bottom bar stays flat by default, and Glass is gone. Settings has a Bottom bar choice for a Compact pill look if you prefer it.
 - The Updates card now matches the other apps: the button first, then the version with "You're up to date." beside it for 5 seconds.
 - The Feedback & bugs screen no longer ends with a Done button.
 
