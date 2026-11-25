@@ -1,6 +1,6 @@
 -- notification tap route (tramp-no-record: tramp-ok = the tap goes through the non-exported trampoline that sets restart_wanted) --
 -- resumed activity after tapping the notification (MainActivity = the direct-activity path worked) --
-    topResumedActivity=ActivityRecord{92fc707 u0 com.bumplog/.MainActivity t34}
+    topResumedActivity=ActivityRecord{d400514 u0 com.bumplog/.MainActivity t34}
 -- prefs after the tap + consumption verdict (restart_wanted=false proves consumption ONLY if the pre-tap route was tramp-ok; otherwise the default is also false and nothing is distinguished) --
 name="detection" value="true" 
 name="restart_wanted" value="false" 
