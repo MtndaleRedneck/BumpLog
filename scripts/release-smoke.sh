@@ -9,36 +9,42 @@ mkdir -p $OUT
 [ -f "$APK" ] || { echo "FAIL: $APK missing"; exit 1; }
 adb shell settings put global hide_error_dialogs 1
 adb install -r $APK
-# dump_ui: fresh UI hierarchy into $UI_XML, fail-closed: a failed dump exits the script, so an
-# assertion can never read a stale or missing /sdcard/ui.xml. Called directly so exit really exits.
-dump_ui() {
-  adb shell rm -f /sdcard/ui.xml
-  if ! adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; then echo "FAIL: uiautomator dump failed"; exit 1; fi
-  UI_XML=$(adb shell cat /sdcard/ui.xml) || { echo "FAIL: could not read the UI dump"; exit 1; }
-  # A successful dump with an empty or invalid read must never pass an absence assertion:
-  # require a non-empty hierarchy document before any grep sees it.
-  case "$UI_XML" in *"<hierarchy"*) ;; *) echo "FAIL: UI dump has no hierarchy root"; exit 1 ;; esac
+# dump_ui_soft: one dump attempt. 0 = fresh hierarchy in $UI_XML; 1 = no fresh dump. It always
+# clears $UI_XML first, so a failed attempt can never leave a stale document for a grep to read.
+dump_ui_soft() {
+  UI_XML=""
+  adb shell rm -f /sdcard/ui.xml 2>/dev/null
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || return 1
+  local X
+  X=$(adb shell cat /sdcard/ui.xml 2>/dev/null) || return 1
+  # A successful dump with an empty or invalid read must never pass an absence assertion.
+  case "$X" in *"<hierarchy"*) UI_XML="$X"; return 0 ;; *) return 1 ;; esac
 }
+# dump_ui: hard fail-closed form for direct assertions: a failed dump exits the script, so an
+# absence assertion can never pass on a missing or stale /sdcard/ui.xml.
+dump_ui() { dump_ui_soft || { echo "FAIL: could not obtain a fresh UI dump"; exit 1; }; }
 # has_text <fixed string>: 0 present, 1 absent; a failed dump exits before the grep.
 has_text() { dump_ui; printf '%s\n' "$UI_XML" | grep -qF "$1"; }
 # wait_text <fixed> <timeout-s>: poll until the text renders (bounded), so slow first-frame or
-# warm-route timing can never false-red a working screen.
+# warm-route timing can never false-red a working screen. Uses soft dumps: one failed attempt is
+# a not-yet poll, not a script kill - the evidence capture at fail() must always get to run.
 wait_text() {
   DEADLINE=$(( $(date +%s) + $2 ))
   while [ $(date +%s) -lt $DEADLINE ]; do
-    dump_ui
-    if printf '%s\n' "$UI_XML" | grep -qF "$1"; then return 0; fi
+    if dump_ui_soft && printf '%s\n' "$UI_XML" | grep -qF "$1"; then return 0; fi
     sleep 1
   done
   return 1
 }
-# fail <name> <message>: capture what IS on screen (pixels, visible texts, any crash) before dying,
-# so the next failure is diagnosable from the artifact alone.
+# fail <name> <message>: print the original failure FIRST, then capture what IS on screen
+# (pixels, visible texts, any crash) before dying, so the failure is diagnosable from the
+# artifact alone. Captures are best-effort (|| true): a failed capture must never kill the
+# fail path or mask the original failure line.
 fail() {
   echo "FAIL: $2"
-  adb exec-out screencap -p > $OUT/fail-$1.png 2>/dev/null
-  adb shell uiautomator dump /sdcard/ui-fail.xml >/dev/null 2>&1 && adb shell cat /sdcard/ui-fail.xml | tr '<' '\n' | grep -o 'text="[^"]*"' | head -20 | tee $OUT/fail-$1-texts.txt
-  adb logcat -d | grep -A25 'FATAL EXCEPTION' | head -40
+  adb exec-out screencap -p > $OUT/fail-$1.png 2>/dev/null || true
+  adb shell uiautomator dump /sdcard/ui-fail.xml >/dev/null 2>&1 && adb shell cat /sdcard/ui-fail.xml 2>/dev/null | tr '<' '\n' | grep -o 'text="[^"]*"' | head -20 | tee $OUT/fail-$1-texts.txt || true
+  adb logcat -d 2>/dev/null | grep -A25 'FATAL EXCEPTION' | head -40 || true
   exit 1
 }
 adb shell am force-stop com.bumplog; sleep 1

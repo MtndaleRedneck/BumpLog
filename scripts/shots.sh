@@ -29,6 +29,17 @@ shot() { adb shell cmd statusbar collapse; adb shell am force-stop com.bumplog; 
 # dump_ui: fresh UI hierarchy into $UI_XML, fail-closed: a failed dump exits the script, so no
 # assertion, scroll or tap can ever read a stale or missing /sdcard/ui.xml. Always called
 # directly (never in a subshell or pipeline) so the exit really exits.
+# dump_ui_soft: one dump attempt. 0 = fresh hierarchy in $UI_XML; 1 = no fresh dump. It clears
+# $UI_XML first, so a failed attempt can never leave a stale document for a grep to read.
+dump_ui_soft() {
+  UI_XML=""
+  adb shell rm -f /sdcard/ui.xml 2>/dev/null
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || return 1
+  local X
+  X=$(adb shell cat /sdcard/ui.xml 2>/dev/null) || return 1
+  # A successful dump with an empty or invalid read must never pass an absence assertion.
+  case "$X" in *"<hierarchy"*) UI_XML="$X"; return 0 ;; *) return 1 ;; esac
+}
 dump_ui() {
   adb shell rm -f /sdcard/ui.xml
   if ! adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; then echo "FAIL: uiautomator dump failed"; exit 1; fi
@@ -48,8 +59,12 @@ tap_now() {
   if [ -z "$LINE" ]; then LINE=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'text="' | grep -F "$1" | head -1); fi
   B=$(printf '%s\n' "$LINE" | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1)
   if [ -z "$B" ]; then echo "FAIL: tap target '$1' not on screen"; exit 1; fi
-  read X1 Y1 X2 Y2 <<< $(echo "$B" | tr -d '[]' | tr ',' ' ' | awk '{print $1, $2, $3, $4}')
-  adb shell input tap $(( (X1+X2)/2 )) $(( (Y1+Y2)/2 ))
+  # Numbers-only extraction: string edits on the bracket form can silently join coordinates.
+  read X1 Y1 X2 Y2 <<< $(echo "$B" | grep -o '[0-9]\+' | tr '\n' ' ')
+  TX=$(( (X1+X2)/2 )); TY=$(( (Y1+Y2)/2 ))
+  # Sanity: an off-screen tap point means the parse lied - die instead of tapping the void.
+  if [ -z "$Y2" ] || [ "$TX" -lt 0 ] || [ "$TX" -gt 1080 ] || [ "$TY" -lt 0 ] || [ "$TY" -gt 2310 ]; then echo "FAIL: bogus tap point $TX,$TY for '$1' (bounds $B)"; exit 1; fi
+  adb shell input tap $TX $TY
 }
 # tap_text <text>: tap, then settle 2s.
 tap_text() { tap_now "$1"; sleep 2; }
@@ -151,8 +166,10 @@ adb shell cmd statusbar expand-notifications; sleep 2
 dump_ui
 B=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'text="Logging paused"' | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
 if [ -n "$B" ]; then
-  read X1 Y1 X2 Y2 <<< $(echo "$B" | tr -d '[]' | tr ',' ' ' | awk '{print $1, $2, $3, $4}')
-  adb shell input tap $(( (X1+X2)/2 )) $(( (Y1+Y2)/2 ))
+  read X1 Y1 X2 Y2 <<< $(echo "$B" | grep -o '[0-9]\+' | tr '\n' ' ')
+  TX=$(( (X1+X2)/2 )); TY=$(( (Y1+Y2)/2 ))
+  if [ -z "$Y2" ] || [ "$TY" -lt 0 ] || [ "$TY" -gt 2310 ]; then echo "FAIL: bogus notification tap point $TX,$TY (bounds $B)"; exit 1; fi
+  adb shell input tap $TX $TY
   sleep 3
 else
   echo "WARN: 'Logging paused' notification not found in shade"
@@ -161,7 +178,7 @@ fi
   echo "-- resumed activity after tapping the notification (MainActivity = the direct-activity path worked) --"
   adb shell dumpsys activity activities | grep -iE "mResumedActivity|topResumedActivity" | head -2
   echo "-- prefs after the tap (detection_enabled true = the start flow consumed restart_wanted) --"
-  adb shell run-as com.bumplog cat shared_prefs/spotter.xml 2>/dev/null | grep -oE 'name="(restart_wanted|detection_enabled)"[^/]*' || echo "(run-as unavailable)"
+  RA=$(adb shell run-as com.bumplog cat shared_prefs/spotter.xml 2>&1); echo "$RA" | grep -oE 'name="(restart_wanted|detection_enabled)"[^/]*' || echo "(run-as unavailable: $(echo "$RA" | head -1))"
 } > $OUT/v17-restart-tap-lifecycle.txt
 cat $OUT/v17-restart-tap-lifecycle.txt
 # Never let the shade leak into the redesign captures below, whatever the tap outcome was.
@@ -188,8 +205,9 @@ adb shell am force-stop com.bumplog; sleep 1
 adb shell am start -n com.bumplog/.MainActivity --es screen settings --ez fakeuptodate true; sleep 4
 scroll_to "Check for updates" v21-updates-card
 tap_now "Check for updates"; T1=$(date +%s)
-for i in $(seq 1 8); do has_text "up to date" && break; sleep 1; done
-has_text "up to date" || { echo "FAIL: up-to-date result not shown after tap"; exit 1; }
+FOUND=0
+for i in $(seq 1 8); do dump_ui_soft && printf '%s\n' "$UI_XML" | grep -qF "up to date" && { FOUND=1; break; }; sleep 1; done
+[ "$FOUND" = 1 ] || { echo "FAIL: up-to-date result not shown after tap"; exit 1; }
 adb exec-out screencap -p > $OUT/v21-uptodate-shown.png
 tap_now "Check for updates"; T2=$(date +%s)
 GAP=$((T2 - T1))
