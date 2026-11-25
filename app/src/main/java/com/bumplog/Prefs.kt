@@ -9,7 +9,11 @@ object Prefs {
     private lateinit var sp: SharedPreferences
 
     fun init(ctx: Context) {
-        if (!::sp.isInitialized) sp = ctx.applicationContext.getSharedPreferences("spotter", Context.MODE_PRIVATE)
+        if (!::sp.isInitialized) {
+            sp = ctx.applicationContext.getSharedPreferences("spotter", Context.MODE_PRIVATE)
+            // 1.19 removed the pill and Glass bars. The old choice is never read, so drop it; everyone lands on the flat bar.
+            if (sp.contains("barstyle")) sp.edit().remove("barstyle").apply()
+        }
     }
 
     private fun b(k: String, d: Boolean) = sp.getBoolean(k, d)

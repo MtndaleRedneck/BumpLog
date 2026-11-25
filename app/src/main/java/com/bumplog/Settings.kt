@@ -109,10 +109,11 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     row.forEachIndexed { c, col ->
                         val idx = r * 5 + c
-                        Box(Modifier.size(46.dp).clip(CircleShape).background(col)
-                            .let { if (accent == idx) it.border(3.dp, p.text, CircleShape) else it }
-                            .semantics { contentDescription = "Accent color, ${SwatchNames[idx]}"; role = androidx.compose.ui.semantics.Role.RadioButton; selected = accent == idx }
-                            .clickable { accent = idx; Prefs.accent = idx; Live.bump() })
+                        Box(Modifier.size(46.dp)
+                            .pressFeel(role = androidx.compose.ui.semantics.Role.RadioButton, selected = accent == idx, onPress = { accent = idx; Prefs.accent = idx; Live.bump() })
+                            .semantics { contentDescription = "Accent color, ${SwatchNames.getOrElse(idx) { "custom" }}" }
+                            .clip(CircleShape).background(col)
+                            .let { if (accent == idx) it.border(3.dp, p.text, CircleShape) else it })
                     }
                 }
             }
@@ -260,7 +261,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                 val n = Db.get(ctx).clearTestData(); Live.bump(); toast(ctx, if (n == 0) "No test data." else "Cleared $n test spot(s).")
             }
         }
-        Card(Modifier.clickable { confirmWipe = true }, pad = 16.dp) { Txt("Delete all logged data", 16, color = p.muted) }
+        Card(Modifier.pressFeel(onPress = { confirmWipe = true }), pad = 16.dp) { Txt("Delete all logged data", 16, color = p.muted) }
         // Same locked card design as the other apps: Feedback & bugs, then Updates last.
         Card(Modifier.pressFeel(onPress = openBug), pad = 16.dp) {
             Txt("Feedback & bugs", 18, FontWeight.Bold)

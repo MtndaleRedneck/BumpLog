@@ -24,6 +24,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.role
@@ -213,7 +214,7 @@ fun Dropdown(label: String, selected: String, options: List<Pair<String, String>
     var open by remember { mutableStateOf(false) }
     val shown = options.firstOrNull { it.first == selected }?.second ?: selected
     Box(modifier) {
-        Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(p.card2).clickable { open = true }.padding(14.dp),
+        Row(Modifier.fillMaxWidth().pressFeel(onPress = { open = true }).clip(RoundedCornerShape(14.dp)).background(p.card2).padding(14.dp),
             verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { if (label.isNotBlank()) Muted(label, 11); Txt(shown, 16, FontWeight.Medium) }
             Muted("v", 14)
@@ -232,9 +233,9 @@ fun StepperRow(label: String, value: String, onMinus: () -> Unit, onPlus: () -> 
     val p = LocalPal.current
     Row(verticalAlignment = Alignment.CenterVertically) {
         Txt(label, 17, FontWeight.Bold, modifier = Modifier.weight(1f))
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(p.card2).clickable(onClick = onMinus), contentAlignment = Alignment.Center) { Txt("-", 22, FontWeight.Bold, p.accent) }
+        Box(Modifier.size(48.dp).pressFeel(onPress = onMinus).clip(RoundedCornerShape(12.dp)).background(p.card2), contentAlignment = Alignment.Center) { Txt("-", 22, FontWeight.Bold, p.accent) }
         Txt(value, 17, FontWeight.Bold, modifier = Modifier.padding(horizontal = 12.dp))
-        Box(Modifier.size(48.dp).clip(RoundedCornerShape(12.dp)).background(p.card2).clickable(onClick = onPlus), contentAlignment = Alignment.Center) { Txt("+", 22, FontWeight.Bold, p.accent) }
+        Box(Modifier.size(48.dp).pressFeel(onPress = onPlus).clip(RoundedCornerShape(12.dp)).background(p.card2), contentAlignment = Alignment.Center) { Txt("+", 22, FontWeight.Bold, p.accent) }
     }
 }
 
@@ -391,7 +392,8 @@ fun Modifier.asHeading(): Modifier = this.semantics { heading() }
 fun BackRow(title: String, back: () -> Unit) {
     val p = LocalPal.current
     Row(Modifier.fillMaxWidth().height(48.dp)
-        .clickable(onClickLabel = "Back", role = androidx.compose.ui.semantics.Role.Button, onClick = back),
+        .pressFeel(onPress = back)
+        .semantics { contentDescription = "Back" },
         verticalAlignment = Alignment.CenterVertically) {
         androidx.compose.material3.Icon(Icons.Default.ArrowBack, null, tint = p.text, modifier = Modifier.size(24.dp))
         Spacer(Modifier.width(8.dp))
