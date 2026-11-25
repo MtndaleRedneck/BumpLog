@@ -257,10 +257,40 @@ cat $OUT/v17-restart-tap-lifecycle.txt
 adb shell cmd statusbar collapse
 sleep 1
 # --- Redesign runtime proof: bar styles, feedback row, updates timer, settings scroll rule ---
-# Bottom bar styles (owner-approved trial): same Home screen under all three.
-shot v21-bar-pill --ez demo true --es screen home --es barstyle pill
-shot v21-bar-glass --ez demo true --es screen home --es barstyle glass
-shot v21-bar-flat --ez demo true --es screen home --es barstyle flat
+# 1.19: Home with the app-icon mark on Report last hit, both looks. The old triangle is gone.
+shot v22-home-mono --ez demo true --es screen home --es reporticon mono
+shot v22-home-color --ez demo true --es screen home --es reporticon color
+shot v22-home-rest --ez demo true --es screen home --es reporticon mono
+
+# Press feel: hold a finger on Report last hit and capture mid-press. The button must be visibly smaller and
+# dimmer than in v22-home-rest. The vibrator service log before and after shows whether the tick fired.
+hold_capture() {
+  # hold_capture <text> <out> : press-and-hold the node centre for 3s, capture at ~1.2s.
+  dump_ui
+  LINE=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'text="' | grep -F "$1" | head -1)
+  B=$(printf '%s\n' "$LINE" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1)
+  read X1 Y1 X2 Y2 <<< $(echo "$B" | grep -o '[0-9]\+' | tr '\n' ' ')
+  if [ -z "$X1" ] || [ -z "$Y2" ]; then echo "FAIL: hold target '$1' not on screen"; exit 1; fi
+  HX=$(( (X1+X2)/2 )); HY=$(( (Y1+Y2)/2 - 30 ))
+  adb shell dumpsys vibrator_manager > $OUT/$2-vibrator-before.txt 2>&1 || true
+  adb shell input swipe $HX $HY $HX $HY 3000 &
+  sleep 1.2
+  adb exec-out screencap -p > $OUT/$2.png
+  wait
+  adb shell dumpsys vibrator_manager > $OUT/$2-vibrator-after.txt 2>&1 || true
+}
+adb shell am force-stop com.bumplog; sleep 1
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --es reporticon mono; sleep 5
+hold_capture "Report last hit" v22-press-report
+# Same hold on a bottom tab.
+adb shell am force-stop com.bumplog; sleep 1
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --es reporticon mono; sleep 5
+hold_capture "Stats" v22-press-tab
+# Vibrate on press switch and the Report icon setting, plus the colour picker without the bright orange.
+shot v22-settings-appearance --es screen settings
+has_text "Report icon" || { echo "FAIL: Report icon setting missing"; exit 1; }
+has_text "Vibrate on press" || { echo "FAIL: Vibrate on press switch missing"; exit 1; }
+has_text "Bottom bar" && { echo "FAIL: Bottom bar setting should be gone"; exit 1; }
 
 # The feedback row with the more prominent chevron, and the feedback screen itself.
 shot v21-settings-top --es screen settings

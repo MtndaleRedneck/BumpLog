@@ -4,7 +4,22 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import android.view.HapticFeedbackConstants
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.ui.composed
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -57,15 +72,68 @@ fun Txt(s: String, size: Int = 16, weight: FontWeight = FontWeight.Normal, color
 fun Muted(s: String, size: Int = 13, modifier: Modifier = Modifier, align: TextAlign? = null, maxLines: Int = Int.MAX_VALUE) =
     Txt(s, size, color = LocalPal.current.muted, modifier = modifier, align = align, maxLines = maxLines)
 
+/**
+ * BingeMote's press feel, shared by every button: the button sinks to 94% and dims about 15% while a finger is down
+ * (90 ms in, 120 ms out), with a light tick on touch-down when Vibrate on press is on. The tap fires on release.
+ * Put it before clip and background so the whole button shrinks, not just its label.
+ */
+fun Modifier.pressFeel(
+    enabled: Boolean = true,
+    role: androidx.compose.ui.semantics.Role = androidx.compose.ui.semantics.Role.Button,
+    selected: Boolean? = null,
+    onPress: () -> Unit,
+): Modifier = composed {
+    var pressed by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, tween(if (pressed) 90 else 120), label = "sink")
+    val dim by animateFloatAsState(if (pressed) 0.15f else 0f, tween(if (pressed) 90 else 120), label = "dim")
+    val view = LocalView.current
+    val tap by rememberUpdatedState(onPress)
+    this
+        .semantics(mergeDescendants = true) {
+            this.role = role
+            if (selected != null) this.selected = selected
+            if (!enabled) disabled()
+            onClick { if (enabled) { tap(); true } else false }
+        }
+        .graphicsLayer { scaleX = scale; scaleY = scale; alpha = 1f - dim }
+        .pointerInput(enabled) {
+            if (!enabled) return@pointerInput
+            awaitEachGesture {
+                awaitFirstDown()
+                if (Prefs.haptics) view.performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                pressed = true
+                try {
+                    val up = waitForUpOrCancellation()
+                    if (up != null) tap()
+                } finally {
+                    // Also runs when the gesture is cancelled (a scroll took over), so the button never stays sunk.
+                    pressed = false
+                }
+            }
+        }
+}
+
+/** The custom report mark from the app icon. Monochrome takes the button's own ink; full colour is the shipped coral mark. */
 @Composable
-fun BigButton(label: String, icon: ImageVector? = null, filled: Boolean = true, modifier: Modifier = Modifier, enabled: Boolean = true, onClick: () -> Unit) {
+fun ReportMark(tint: Color, modifier: Modifier = Modifier) {
+    val mono = Prefs.reportIcon == "mono"
+    val painter = androidx.compose.ui.res.painterResource(if (mono) R.drawable.report_mark_mono else R.drawable.report_mark_color)
+    // The mark is about 9:8; this keeps its proportions in a 30dp-tall slot.
+    val size = modifier.size(width = 34.dp, height = 30.dp)
+    if (mono) androidx.compose.material3.Icon(painter, null, tint = tint, modifier = size)
+    else androidx.compose.foundation.Image(painter, null, modifier = size)
+}
+
+@Composable
+fun BigButton(label: String, icon: ImageVector? = null, filled: Boolean = true, modifier: Modifier = Modifier, enabled: Boolean = true,
+              iconContent: (@Composable () -> Unit)? = null, onClick: () -> Unit) {
     val p = LocalPal.current
     val shape = RoundedCornerShape(32.dp)
-    val m = modifier.fillMaxWidth().heightIn(min = 60.dp).clip(shape)
+    val m = modifier.fillMaxWidth().heightIn(min = 60.dp).pressFeel(enabled, onPress = onClick).clip(shape)
         .let { if (filled) { if (enabled) it.background(p.accentGradient) else it.background(p.card2) } else it.background(p.card2).border(BorderStroke(2.dp, p.accent), shape) }
-        .clickable(enabled = enabled, onClick = onClick)
     Row(m, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-        if (icon != null) { Icon(icon, null, tint = if (filled) p.onAccent else p.text, modifier = Modifier.size(26.dp)); Spacer(Modifier.width(10.dp)) }
+        if (iconContent != null) { iconContent(); Spacer(Modifier.width(10.dp)) }
+        else if (icon != null) { Icon(icon, null, tint = if (filled) p.onAccent else p.text, modifier = Modifier.size(26.dp)); Spacer(Modifier.width(10.dp)) }
         Txt(label, 20, FontWeight.Bold, if (filled) p.onAccent else p.text)
     }
 }
@@ -74,8 +142,8 @@ fun BigButton(label: String, icon: ImageVector? = null, filled: Boolean = true, 
 fun SmallButton(label: String, modifier: Modifier = Modifier, outline: Boolean = true, onClick: () -> Unit) {
     val p = LocalPal.current
     val shape = RoundedCornerShape(26.dp)
-    Box(modifier.heightIn(min = 52.dp).clip(shape).let { if (outline) it.background(p.card2) else it.background(p.accentGradient) }
-        .let { if (outline) it.border(BorderStroke(2.dp, p.accent), shape) else it }.clickable(onClick = onClick),
+    Box(modifier.heightIn(min = 52.dp).pressFeel(onPress = onClick).clip(shape).let { if (outline) it.background(p.card2) else it.background(p.accentGradient) }
+        .let { if (outline) it.border(BorderStroke(2.dp, p.accent), shape) else it },
         contentAlignment = Alignment.Center) {
         Txt(label, 16, FontWeight.Bold, if (outline) p.text else p.onAccent)
     }
@@ -192,14 +260,14 @@ fun PillButton(label: String, kind: PillKind, modifier: Modifier = Modifier, onC
     val p = LocalPal.current
     val shape = RoundedCornerShape(24.dp)
     val red = dangerColor(p.dark)
-    val m = modifier.heightIn(min = 48.dp).clip(shape)
+    val m = modifier.heightIn(min = 48.dp).pressFeel(onPress = onClick).clip(shape)
         .let {
             when (kind) {
                 PillKind.Fill -> it.background(p.accent)
                 PillKind.Outline -> it.background(p.card2).border(BorderStroke(2.dp, p.accent), shape)
                 PillKind.Danger -> it.background(p.card2).border(BorderStroke(2.dp, red), shape)
             }
-        }.clickable(onClick = onClick)
+        }
     Box(m, contentAlignment = Alignment.Center) {
         Text(label, fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1, softWrap = false,
             color = when (kind) { PillKind.Fill -> p.onAccent; PillKind.Outline -> p.text; PillKind.Danger -> red },
@@ -295,29 +363,29 @@ fun BackRow(title: String, back: () -> Unit) {
 
 /** Two equal buttons side by side, with the icon above the label. Falls back to stacked full-width buttons on narrow screens or large text. */
 @Composable
-fun ActionButtonPair(primaryLabel: String, primaryIcon: ImageVector, onPrimary: () -> Unit, secondaryLabel: String, onSecondary: () -> Unit) {
+fun ActionButtonPair(primaryLabel: String, primaryIcon: @Composable () -> Unit, onPrimary: () -> Unit, secondaryLabel: String, onSecondary: () -> Unit) {
     val fontScale = LocalDensity.current.fontScale
     // The rule is about the screen width, not the content width inside the page padding.
     val screenWidthDp = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         if (!sideBySide(screenWidthDp.toFloat(), fontScale)) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                BigButton(primaryLabel, primaryIcon, onClick = onPrimary)
+                BigButton(primaryLabel, iconContent = primaryIcon, onClick = onPrimary)
                 SmallButton(secondaryLabel, Modifier.fillMaxWidth(), onClick = onSecondary)
             }
         } else {
             val p = LocalPal.current
             val shape = RoundedCornerShape(32.dp)
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f).fillMaxHeight().heightIn(min = 76.dp).clip(shape).background(p.accentGradient)
-                    .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onPrimary).padding(horizontal = 12.dp, vertical = 8.dp),
+                Column(Modifier.weight(1f).fillMaxHeight().heightIn(min = 76.dp).pressFeel(onPress = onPrimary).clip(shape).background(p.accentGradient)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                    androidx.compose.material3.Icon(primaryIcon, null, tint = p.onAccent, modifier = Modifier.size(26.dp))
+                    primaryIcon()
                     Txt(primaryLabel, 17, FontWeight.Bold, p.onAccent, align = TextAlign.Center)
                 }
-                Column(Modifier.weight(1f).fillMaxHeight().heightIn(min = 76.dp).clip(shape).background(p.card2)
+                Column(Modifier.weight(1f).fillMaxHeight().heightIn(min = 76.dp).pressFeel(onPress = onSecondary).clip(shape).background(p.card2)
                     .border(BorderStroke(2.dp, p.accent), shape)
-                    .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onSecondary).padding(horizontal = 12.dp, vertical = 8.dp),
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     Txt(secondaryLabel, 17, FontWeight.Bold, p.text, align = TextAlign.Center)
                 }

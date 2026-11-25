@@ -146,9 +146,8 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
                 val (mode, title) = k.first
                 val on = isPassenger == mode
                 Column(
-                    mod.fillMaxHeight().alpha(if (detOn) 1f else 0.35f).clip(RoundedCornerShape(20.dp))
-                        .background(if (on) p.accentGradient else p.tileGradient)
-                        .clickable(enabled = detOn, indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { if (!on) togglePassenger() },
+                    mod.fillMaxHeight().alpha(if (detOn) 1f else 0.35f).pressFeel(detOn, onPress = { if (!on) togglePassenger() }).clip(RoundedCornerShape(20.dp))
+                        .background(if (on) p.accentGradient else p.tileGradient),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                 ) {
                     Txt(title, 20, FontWeight.Bold, if (on) p.onAccent else p.text)
@@ -191,7 +190,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
             Tile(homeDriveLabel(live.running), "$today", null, Modifier.weight(1f))
             Tile(homeHardestHitLabel(live.running), "%.2f".format(live.hardestHitG), "g", Modifier.weight(1f))
         }
-        Box(Modifier.padding(top = extraAct)) { ActionButtonPair("Report last hit", Icons.Default.Warning, {
+        Box(Modifier.padding(top = extraAct)) { ActionButtonPair("Report last hit", { ReportMark(p.onAccent) }, {
             val s = Db.get(ctx).reportableSpots(1).firstOrNull(); if (s == null) toast(ctx, "No hits logged yet.") else openSpot(s.id)
         }, "File a damage report", openDamage) }
       }

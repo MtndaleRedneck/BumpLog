@@ -30,10 +30,11 @@ object Prefs {
     var severeG: Float get() = f("severe", 1.30f); set(v) = sp.edit().putFloat("severe", v).apply()
     var minSpeedMph: Int get() = i("minspeed", 15); set(v) = sp.edit().putInt("minspeed", v).apply()
     var theme: String get() = s("theme", "DARK"); set(v) = sp.edit().putString("theme", v).apply()
-    /** Bottom bar style: "flat" (the current strip), "pill" (strip + accent pill on the active tab), "glass" (floating frosted bar + pill). Trying the styles is owner-approved Nov 2026; the permanent choice comes in a later update. */
-    /** Bottom bar styles the picker offers. Anything stored outside this list reads as the default. */
-    private val BAR_STYLES = setOf("flat", "pill", "glass")
-    var barStyle: String get() = s("barstyle", "flat").takeIf { it in BAR_STYLES } ?: "flat"; set(v) = sp.edit().putString("barstyle", v).apply()
+    /** Light tick on press, like BingeMote's Vibrate switch. On by default. */
+    var haptics: Boolean get() = b("haptics", true); set(v) = sp.edit().putBoolean("haptics", v).apply()
+    /** The mark on Home's Report last hit button: "mono" (the button's own ink) or "color" (the full-colour app-icon mark). */
+    var reportIcon: String get() = s("report_icon", "mono").takeIf { it in REPORT_ICONS } ?: "mono"; set(v) = sp.edit().putString("report_icon", v).apply()
+    private val REPORT_ICONS = setOf("mono", "color")
     /**
      * The accent as a position in [Swatches]. It is saved as the colour (key "accent_rgb"), not the position, so the picker order can change.
      * An old position-based "accent" is converted once, using the frozen older list.
@@ -86,7 +87,7 @@ object Prefs {
     }
 
     private val SETTING_KEYS = setOf("detection", "cutoff", "severe", "minspeed", "accent_rgb", "accent", "assistant", "addr_instinct", "addr_tab", "addr_custom",
-        "setup_done", "setup_email_sent", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons", "autooff", "barstyle")
+        "setup_done", "setup_email_sent", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons", "autooff", "haptics", "report_icon")
 
     /** Checks one restored value against the type and range its setting expects. Returns the clean value or null to skip it. */
     private fun checked(k: String, t: String, x: org.json.JSONObject): Any? {
@@ -94,7 +95,7 @@ object Prefs {
         fun int(lo: Int, hi: Int): Int? = if (t == "i") x.getInt("v").takeIf { it in lo..hi } else null
         fun flt(lo: Float, hi: Float): Float? = if (t == "f") x.getDouble("v").toFloat().takeIf { it.isFinite() && it in lo..hi } else null
         return when (k) {
-            "detection", "setup_done", "setup_email_sent", "autostart", "lock_buttons" -> if (t == "b") x.getBoolean("v") else null
+            "detection", "setup_done", "setup_email_sent", "autostart", "lock_buttons", "haptics" -> if (t == "b") x.getBoolean("v") else null
             "guide_seen" -> int(0, 1000000)
             "cutoff" -> flt(0.1f, 5f); "severe" -> flt(0.1f, 10f)
             "minspeed" -> int(0, 100)
@@ -107,7 +108,7 @@ object Prefs {
             "assistant" -> str(10)?.takeIf { it in listOf("INSTINCT", "TAB", "CUSTOM") }
             "audio_mode" -> str(10)?.takeIf { it in listOf("BOTH", "TONE", "VOICE", "OFF") }
             "tone" -> str(10)?.takeIf { it in listOf("CHIME", "ALARM", "BEEP", "DOUBLE") }
-            "barstyle" -> str(10)?.takeIf { it in BAR_STYLES }
+            "report_icon" -> str(10)?.takeIf { it in REPORT_ICONS }
             "voice" -> str(200)
             "car_addr", "car_name" -> str(64)
             "addr_instinct", "addr_tab", "addr_custom" -> str(254)?.let { cleanEmail(it) }?.takeIf { it.isEmpty() || isValidEmail(it) }

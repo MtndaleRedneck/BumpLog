@@ -49,22 +49,36 @@ class BackupRestoreTest {
     }
 
     @Test
-    fun barStyleRoundTripsThroughBackup() {
-        Prefs.barStyle = "glass"
+    fun pressAndIconSettingsRoundTripThroughBackup() {
+        Prefs.haptics = false
+        Prefs.reportIcon = "color"
         val dump = Prefs.dumpAll()
-        assertTrue("barstyle must be part of a settings backup", dump.has("barstyle"))
-        Prefs.barStyle = "flat"
-        val applied = Prefs.restoreAll(dump)
-        assertTrue(applied >= 1)
-        assertEquals("glass", Prefs.barStyle)
+        assertTrue(dump.has("haptics"))
+        assertTrue(dump.has("report_icon"))
+        Prefs.haptics = true
+        Prefs.reportIcon = "mono"
+        assertTrue(Prefs.restoreAll(dump) >= 2)
+        assertFalse(Prefs.haptics)
+        assertEquals("color", Prefs.reportIcon)
     }
 
     @Test
-    fun barStyleRestoreRejectsUnknownValue() {
-        Prefs.barStyle = "pill"
-        val applied = Prefs.restoreAll(JSONObject().put("barstyle", JSONObject().put("t", "s").put("v", "neon")))
+    fun reportIconRestoreRejectsUnknownValue() {
+        Prefs.reportIcon = "color"
+        val applied = Prefs.restoreAll(JSONObject().put("report_icon", JSONObject().put("t", "s").put("v", "neon")))
         assertEquals(0, applied)
-        assertEquals("pill", Prefs.barStyle)
+        assertEquals("color", Prefs.reportIcon)
+    }
+
+    @Test
+    fun pressDefaultsAreOnAndMonochrome() {
+        assertTrue(Prefs.haptics)
+        assertEquals("mono", Prefs.reportIcon)
+    }
+
+    @Test
+    fun retiredBarStyleInOldBackupIsIgnored() {
+        assertEquals(0, Prefs.restoreAll(JSONObject().put("barstyle", JSONObject().put("t", "s").put("v", "glass"))))
     }
 
     private fun backupJson(): JSONObject = JSONObject()

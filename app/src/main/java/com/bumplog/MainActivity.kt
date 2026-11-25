@@ -253,7 +253,7 @@ class MainActivity : ComponentActivity() {
         }
         if (BuildConfig.DEBUG && i.hasExtra("theme")) { Prefs.theme = i.getStringExtra("theme")!!; Live.bump() }
         // Debug builds only, for the CI screenshot run: pick the bottom bar style and stub an up-to-date result.
-        if (BuildConfig.DEBUG && i.hasExtra("barstyle")) { Prefs.barStyle = i.getStringExtra("barstyle").orEmpty(); Live.bump() }
+        if (BuildConfig.DEBUG && i.hasExtra("reporticon")) { Prefs.reportIcon = i.getStringExtra("reporticon").orEmpty(); Live.bump() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("fakeuptodate", false)) Testing.fakeUpToDateCount = 2
         if (BuildConfig.DEBUG && i.hasExtra("drv")) { Prefs.passenger = false; Live.update { it.copy(paused = false) }; Live.bump() }
         if (BuildConfig.DEBUG && i.hasExtra("pass")) { Prefs.passenger = true; Live.update { it.copy(paused = true) }; Live.bump() }
@@ -440,44 +440,28 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (top == null || top is Screen.Spot) {
-                // Bar styles (owner-approved trial, Nov 2026): "flat" is the current strip, "pill" adds an
-                // accent pill behind the active tab, "glass" floats a frosted bar with the pill. The
-                // permanent style is chosen in a later update; "flat" stays the default until then.
-                val barStyle = remember(live.tick) { Prefs.barStyle }
-                val glass = barStyle == "glass"
-                val barShape = RoundedCornerShape(26.dp)
-                val barMod = if (glass)
-                    Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 12.dp)
-                        .shadow(6.dp, barShape).clip(barShape).background(p.card.copy(alpha = 0.92f))
-                        .border(1.dp, p.card2, barShape).padding(vertical = 8.dp)
-                else
-                    Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp)
-                Row(barMod, verticalAlignment = Alignment.CenterVertically) {
-                    val pill = barStyle != "flat"
-                    // Selected tint: on glass, against the worst-case composite pill (frosted card over white
-                    // content); on pill/flat, against card2, which is stricter than the solid nav strip.
-                    val selTint = if (glass) p.accentText(p.glassPillSurface()) else p.accentText(p.card2)
-                    NavItem("Home", Icons.Default.Home, tab == "home" && top == null, pill, selTint, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
-                    NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, pill, selTint, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
-                    NavItem("Reported", StatsIcons.plane, tab == "reported" && top == null, pill, selTint, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }
-                    NavItem("Stats", StatsIcons.bar, tab == "stats" && top == null, pill, selTint, Modifier.weight(1f)) { tab = "stats"; stack = emptyList() }
-                    NavItem("Settings", Icons.Default.Settings, tab == "settings" && top == null, pill, selTint, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }
+                Row(Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    // Selected tint: against card2, which is stricter than the solid nav strip.
+                    val selTint = p.accentText(p.card2)
+                    NavItem("Home", Icons.Default.Home, tab == "home" && top == null, selTint, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
+                    NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, selTint, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
+                    NavItem("Reported", StatsIcons.plane, tab == "reported" && top == null, selTint, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }
+                    NavItem("Stats", StatsIcons.bar, tab == "stats" && top == null, selTint, Modifier.weight(1f)) { tab = "stats"; stack = emptyList() }
+                    NavItem("Settings", Icons.Default.Settings, tab == "settings" && top == null, selTint, Modifier.weight(1f)) { tab = "settings"; stack = emptyList() }
                 }
             }
         }
     }
 
     @Composable
-    private fun NavItem(label: String, icon: ImageVector, sel: Boolean, pill: Boolean, selTint: Color, m: Modifier, onClick: () -> Unit) {
-        val p = LocalPal.current
+    private fun NavItem(label: String, icon: ImageVector, sel: Boolean, selTint: Color, m: Modifier, onClick: () -> Unit) {
         // A tab role and selected state so TalkBack announces what is active; at least 48dp of touch height.
-        Column(m.selectable(selected = sel, role = Role.Tab, onClick = onClick).heightIn(min = 48.dp).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            // Fixed icon slot per bar mode so the selected pill never pushes its label below its neighbors'.
-            Box(Modifier.height(if (pill) 32.dp else 26.dp), contentAlignment = Alignment.Center) {
-                if (pill && sel) Box(Modifier.size(64.dp, 32.dp).clip(RoundedCornerShape(16.dp)).background(p.accent.copy(alpha = 0.17f)))
-                Icon(icon, null, tint = if (sel) selTint else p.muted, modifier = Modifier.size(26.dp))
+        // The tab sinks and ticks on press like every other button.
+        Column(m.pressFeel(role = Role.Tab, selected = sel, onPress = onClick).heightIn(min = 48.dp).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+            Box(Modifier.height(26.dp), contentAlignment = Alignment.Center) {
+                Icon(icon, null, tint = if (sel) selTint else LocalPal.current.muted, modifier = Modifier.size(26.dp))
             }
-            Txt(label, 12, FontWeight.Medium, if (sel) selTint else p.muted)
+            Txt(label, 12, FontWeight.Medium, if (sel) selTint else LocalPal.current.muted)
         }
     }
 }

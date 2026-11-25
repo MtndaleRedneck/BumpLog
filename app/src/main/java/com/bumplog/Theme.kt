@@ -7,7 +7,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.toArgb
 
 data class Pal(
@@ -28,7 +27,6 @@ val Swatches = listOf(
     0xFF7BAFDB, // dusty blue
     0xFF83A2A4, // gray-green
     0xFFB8735C, // terracotta
-    0xFFF97C02, // BingeMote orange
     0xFFB3838F, // mauve
     0xFF8C8FC0, // indigo
     0xFFA89A8C, // taupe
@@ -61,7 +59,7 @@ object AccentStore {
 
 private fun lighten(c: Color, f: Float) = Color(c.red + (1f - c.red) * f, c.green + (1f - c.green) * f, c.blue + (1f - c.blue) * f)
 
-/** Label color on accent fills. Verified: this dark reads at least 4.5:1 on all nine swatches, flat and
+/** Label color on accent fills. Verified: this dark reads at least 4.5:1 on all eight swatches, flat and
  * lightened gradient end (worst case burnt orange flat, about 4.53:1); white fails every swatch. */
 fun onAccentArgb(accent: Int): Int = 0xFF0C0C0E.toInt()
 
@@ -108,7 +106,7 @@ private fun lum(c: Color): Float = 0.2126f * chan(c.red) + 0.7152f * chan(c.gree
 fun contrastRatio(a: Color, b: Color): Float { val x = maxOf(lum(a), lum(b)); val y = minOf(lum(a), lum(b)); return (x + 0.05f) / (y + 0.05f) }
 /** The accent as a text color: itself when it already reads at 4.5:1 on the surface, otherwise lightened
  * in small steps until it does (hue kept), falling back to plain text only past a 48% lift. The 48% cap
- * is what burnt orange needs on the glass bar's worst-case pill (about 44%). */
+ * leaves room for burnt orange, the darkest swatch. */
 fun Pal.accentText(bg: Color): Color {
     if (contrastRatio(accent, bg) >= 4.5f) return accent
     var f = 0.04f
@@ -119,9 +117,3 @@ fun Pal.accentText(bg: Color): Color {
     }
     return text
 }
-
-/** Worst-case surface under the glass bar's selected pill: the frosted card (92%) over the lightest
- * content that can scroll beneath it (white), with the 17% accent pill on top. Selected tints check
- * against this so the label reads no matter what is under the bar. */
-fun Pal.glassPillSurface(): Color =
-    accent.copy(alpha = 0.17f).compositeOver(card.copy(alpha = 0.92f).compositeOver(Color.White))

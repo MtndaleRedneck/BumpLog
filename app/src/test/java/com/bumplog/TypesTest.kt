@@ -34,18 +34,6 @@ class TypesTest {
         }
     }
 
-    @Test fun accentTextStaysReadableOnGlassPill() {
-        // Glass bar: the selected label sits on a 17% accent pill over frosted card, and content of any
-        // brightness can scroll beneath. Check against the worst-case composite (white underlay).
-        Swatches.forEachIndexed { i, _ ->
-            val p = palette(true, i)
-            val surface = p.glassPillSurface()
-            val chosen = p.accentText(surface)
-            assertTrue("swatch $i accent text must reach 4.5:1 on the worst-case glass pill, got " + contrastRatio(chosen, surface),
-                contrastRatio(chosen, surface) >= 4.5f)
-        }
-    }
-
     @Test fun plainLabelsAndTechnicalTerms() {
         assertEquals("Broken pavement (lip)", DefectType.FAULTING.label)
         assertEquals("Rough stretch", DefectType.RUMBLE.label)
@@ -72,7 +60,10 @@ class TypesTest {
 
 class AppearanceTest {
     @Test fun sageLeadsItsRowAndIsTheDefault() {
-        assertEquals(9, Swatches.size)
+        assertEquals(8, Swatches.size)
+        // BingeMote's bright orange is not offered.
+        assertFalse(Swatches.any { it.toArgb() == 0xFFF97C02.toInt() })
+        assertEquals(SAGE_ARGB.toInt(), AccentStore.resolve(0xFFF97C02.toInt(), null))
         assertEquals(SAGE_ARGB.toInt(), Swatches[0].toArgb())
         assertEquals(0, Swatches.chunked(5).first().indexOfFirst { it.toArgb() == SAGE_ARGB.toInt() })
         // Nothing saved at all gives sage.

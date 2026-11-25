@@ -1,3 +1,17 @@
+BumpLog 1.19.0
+
+November 25, 2026. Buttons that press in, and your own report icon.
+
+New:
+- Buttons and the bottom bar sink in when you press them, with a light vibration tick. A new Vibrate on press switch in Settings turns the tick off.
+- Report last hit now carries the BumpLog mark instead of the warning triangle. A new Report icon setting switches it between Monochrome and Full color.
+
+Changed:
+- The bright orange accent is gone from the color picker. Anyone who had it picked is back on sage.
+- The Current bottom bar is the only bar. The Pill and Glass trials are removed.
+- The Updates card now matches the other apps: the button first, then the version with "You're up to date." beside it for 5 seconds.
+- The Feedback & bugs screen no longer ends with a Done button.
+
 BumpLog 1.18.0
 
 November 25, 2026. A freshened Settings and a modernized app.

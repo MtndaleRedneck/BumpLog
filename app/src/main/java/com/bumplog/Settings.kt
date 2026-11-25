@@ -65,7 +65,8 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     var minSpeed by remember { mutableStateOf(Prefs.minSpeedMph) }
     var autoOff by remember { mutableStateOf(Prefs.autoOffMin) }
     var accent by remember { mutableStateOf(Prefs.accent) }
-    var barStyle by remember { mutableStateOf(Prefs.barStyle) }
+    var reportIcon by remember { mutableStateOf(Prefs.reportIcon) }
+    var haptics by remember { mutableStateOf(Prefs.haptics) }
     var assistant by remember { mutableStateOf(Prefs.assistant) }
     var address by remember { mutableStateOf(Prefs.rawActiveAddress) }
     var auto by remember { mutableStateOf(Prefs.autoStart) }
@@ -111,8 +112,16 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                 }
             }
             Spacer(Modifier.height(10.dp))
-            // Try-out switch for the three bar looks (owner-approved trial, Nov 2026); the permanent style is picked in a later update.
-            Dropdown("Bottom bar", barStyle, listOf("flat" to "Current", "pill" to "Pill", "glass" to "Glass")) { barStyle = it; Prefs.barStyle = it; Live.bump() }
+            Dropdown("Report icon", reportIcon, listOf("mono" to "Monochrome", "color" to "Full color")) { reportIcon = it; Prefs.reportIcon = it; Live.bump() }
+        }
+        SettingsCard {
+            Txt("Feel", 18, FontWeight.Bold, modifier = Modifier.asHeading())
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) { Txt("Vibrate on press", 17, FontWeight.Bold); Muted("A light tick when you press a button or tab.", 12) }
+                Switch(haptics, { haptics = it; Prefs.haptics = it }, colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = p.onAccent,
+                    uncheckedTrackColor = p.card2, uncheckedThumbColor = p.muted, uncheckedBorderColor = p.muted))
+            }
         }
 
 
@@ -248,7 +257,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         }
         Card(Modifier.clickable { confirmWipe = true }, pad = 16.dp) { Txt("Delete all logged data", 16, color = p.muted) }
         // Same locked card design as the other apps: Feedback & bugs, then Updates last.
-        Card(Modifier.clickable { openBug() }, pad = 16.dp) {
+        Card(Modifier.pressFeel(onPress = openBug), pad = 16.dp) {
             Txt("Feedback & bugs", 18, FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -256,21 +265,17 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = p.text, modifier = Modifier.size(28.dp))
             }
         }
-        // Updates: untitled card, BingeMote pattern - result right of the version, "You're up to date." hides after 5 s.
+        // Updates: untitled card, BingeMote's order - button first, then the version with "You're up to date." on the
+        // right, which hides after 5 seconds.
         Card(pad = 16.dp) {
             var checking by remember { mutableStateOf(false) }
             var result by remember { mutableStateOf("") }
             var resultSeq by remember { mutableStateOf(0) } // restarts the hide timer even when the same result repeats
             val scope = rememberCoroutineScope()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Txt("Version ${BuildConfig.VERSION_NAME}", 16, FontWeight.Bold, modifier = Modifier.weight(1f))
-                if (result.isNotEmpty()) Txt(result, 14, FontWeight.Medium, p.accentText(p.card2))
-            }
             LaunchedEffect(resultSeq) { if (result == "You're up to date.") { kotlinx.coroutines.delay(5000); result = "" } }
-            Spacer(Modifier.height(10.dp))
-            Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(26.dp)).background(p.accentGradient)
-                .clickable(enabled = !checking) {
+            Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).pressFeel(!checking) {
                     checking = true
+                    result = ""
                     scope.launch {
                         if (BuildConfig.DEBUG && Testing.fakeUpToDateCount > 0) {
                             Testing.fakeUpToDateCount--
@@ -283,14 +288,24 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                         } catch (e: Exception) { failed = true; null }
                         checking = false
                         when {
-                            failed -> toast(ctx, "Couldn't check for updates right now.")
+                            failed -> result = "Couldn't check right now. Try again later."
                             info == null -> { result = "You're up to date."; resultSeq++ }
                             // The offer pop-up owns the release flow; it shows this already-fetched info and its notes.
                             else -> onCheckUpdates(info)
                         }
                     }
-                }, contentAlignment = Alignment.Center) {
+                }.clip(RoundedCornerShape(26.dp)).background(p.accentGradient), contentAlignment = Alignment.Center) {
                 Txt(if (checking) "Checking..." else "Check for updates", 16, FontWeight.Bold, p.onAccent)
+            }
+            if (result.isNotEmpty() && result != "You're up to date.") {
+                Spacer(Modifier.height(8.dp))
+                Muted(result, 12)
+            }
+            Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Muted("Version ${BuildConfig.VERSION_NAME}", 12)
+                Spacer(Modifier.weight(1f))
+                if (result == "You're up to date.") Muted(result, 12)
             }
         }
         if (confirmWipe) AlertDialog(onDismissRequest = { confirmWipe = false },

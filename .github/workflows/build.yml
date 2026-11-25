@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main, redesign-modernization-1124]
+    branches: [main, redesign-modernization-1124, ui-1.19.0]
     paths-ignore: ['docs/screenshots/**']
   workflow_dispatch:
     inputs:

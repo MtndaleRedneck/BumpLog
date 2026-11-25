@@ -82,6 +82,5 @@ fun BugReportScreen(done: () -> Unit) {
             Spacer(Modifier.height(8.dp))
             SmallButton("Open private form", Modifier.fillMaxWidth(), outline = false) { if (text.isBlank()) toast(ctx, "Write your message first.") else open(BugReport.formUrl(text, c)) }
         }
-        SmallButton("Done", Modifier.fillMaxWidth(), onClick = done)
     }
 }
