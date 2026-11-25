@@ -57,13 +57,17 @@ tap_now() {
   dump_ui
   LINE=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F "text=\"$1\"" | head -1)
   if [ -z "$LINE" ]; then LINE=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'text="' | grep -F "$1" | head -1); fi
-  B=$(printf '%s\n' "$LINE" | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]' | head -1)
+  # Anchor to the bounds= attribute: a bare bracket pattern can match literal "[12,34][56,78]" inside text.
+  B=$(printf '%s\n' "$LINE" | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1 | sed 's/^bounds="//; s/"$//')
   if [ -z "$B" ]; then echo "FAIL: tap target '$1' not on screen"; exit 1; fi
   # Numbers-only extraction: string edits on the bracket form can silently join coordinates.
   read X1 Y1 X2 Y2 <<< $(echo "$B" | grep -o '[0-9]\+' | tr '\n' ' ')
+  # Validate the BOX, not just the midpoint: 4 numeric values, ordered, inside the display.
+  # (Real evidence: joining "1794][751" once produced a valid-looking midpoint from garbage.)
+  if [ -z "$X1" ] || [ -z "$Y1" ] || [ -z "$X2" ] || [ -z "$Y2" ]      || [ "$X1" -ge "$X2" ] || [ "$Y1" -ge "$Y2" ]      || [ "$X1" -lt 0 ] || [ "$X2" -gt 1080 ] || [ "$Y1" -lt 0 ] || [ "$Y2" -gt 2310 ]; then
+    echo "FAIL: invalid bounds $B for '$1'"; exit 1
+  fi
   TX=$(( (X1+X2)/2 )); TY=$(( (Y1+Y2)/2 ))
-  # Sanity: an off-screen tap point means the parse lied - die instead of tapping the void.
-  if [ -z "$Y2" ] || [ "$TX" -lt 0 ] || [ "$TX" -gt 1080 ] || [ "$TY" -lt 0 ] || [ "$TY" -gt 2310 ]; then echo "FAIL: bogus tap point $TX,$TY for '$1' (bounds $B)"; exit 1; fi
   adb shell input tap $TX $TY
 }
 # tap_text <text>: tap, then settle 2s.
@@ -164,11 +168,13 @@ sleep 2
 adb shell input keyevent KEYCODE_HOME; sleep 1
 adb shell cmd statusbar expand-notifications; sleep 2
 dump_ui
-B=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'text="Logging paused"' | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
+B=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'text="Logging paused"' | head -1 | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1 | sed 's/^bounds="//; s/"$//')
 if [ -n "$B" ]; then
   read X1 Y1 X2 Y2 <<< $(echo "$B" | grep -o '[0-9]\+' | tr '\n' ' ')
+  if [ -z "$X1" ] || [ -z "$Y1" ] || [ -z "$X2" ] || [ -z "$Y2" ]      || [ "$X1" -ge "$X2" ] || [ "$Y1" -ge "$Y2" ]      || [ "$X1" -lt 0 ] || [ "$X2" -gt 1080 ] || [ "$Y1" -lt 0 ] || [ "$Y2" -gt 2310 ]; then
+    echo "FAIL: invalid notification bounds $B"; exit 1
+  fi
   TX=$(( (X1+X2)/2 )); TY=$(( (Y1+Y2)/2 ))
-  if [ -z "$Y2" ] || [ "$TY" -lt 0 ] || [ "$TY" -gt 2310 ]; then echo "FAIL: bogus notification tap point $TX,$TY (bounds $B)"; exit 1; fi
   adb shell input tap $TX $TY
   sleep 3
 else
@@ -177,8 +183,20 @@ fi
 {
   echo "-- resumed activity after tapping the notification (MainActivity = the direct-activity path worked) --"
   adb shell dumpsys activity activities | grep -iE "mResumedActivity|topResumedActivity" | head -2
-  echo "-- prefs after the tap (detection_enabled true = the start flow consumed restart_wanted) --"
-  RA=$(adb shell run-as com.bumplog cat shared_prefs/spotter.xml 2>&1); echo "$RA" | grep -oE 'name="(restart_wanted|detection_enabled)"[^/]*' || echo "(run-as unavailable: $(echo "$RA" | head -1))"
+  echo "-- prefs after the tap (detection true = the start flow consumed restart_wanted; default is also true, so presence alone cannot distinguish) --"
+  # The fixture boundary: only the two synthetic keys may leave the device. set +x around the
+  # read so xtrace can never echo the full prefs file into the CI log via the assignment trace.
+  set +x
+  RA=$(adb shell run-as com.bumplog cat shared_prefs/spotter.xml 2>&1); RC=$?
+  # Qualify the outcome: command failure, read-OK-but-keys-absent, and keys-present are three
+  # different findings and must never be reported as each other.
+  if [ $RC -ne 0 ]; then PREFS_OUT="(prefs read FAILED rc=$RC: $(printf '%s\n' "$RA" | head -1))";
+  else
+    KEYS=$(printf '%s\n' "$RA" | grep -oE 'name="(restart_wanted|detection)"[^/]*')
+    if [ -n "$KEYS" ]; then PREFS_OUT="$KEYS"; else PREFS_OUT="(prefs read OK; restart_wanted/detection keys absent)"; fi
+  fi
+  set -x
+  printf '%s\n' "$PREFS_OUT"
 } > $OUT/v17-restart-tap-lifecycle.txt
 cat $OUT/v17-restart-tap-lifecycle.txt
 # Never let the shade leak into the redesign captures below, whatever the tap outcome was.

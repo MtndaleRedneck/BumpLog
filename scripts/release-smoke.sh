@@ -58,7 +58,9 @@ wait_text "Set up your assistant" 12 || fail setup "setup screen not rendered on
 adb exec-out screencap -p > $OUT/release-setup.png
 # Warm route to Home exercises the minified home graph (singleTask: onNewIntent handles the extra).
 adb shell am start -n com.bumplog/.MainActivity --es screen home
-wait_text "Detection" 12 || fail home "home screen content not rendered after warm route"
+# "Logging hits" is the DRIVER segment subtitle on every fresh-install Home (live.running false);
+# "Detection off" can never appear here because detectionEnabled defaults true (Prefs.kt).
+wait_text "Logging hits" 12 || fail home "home screen content not rendered after warm route"
 adb exec-out screencap -p > $OUT/release-home.png
 # Settings and its child feedback screen exercise the minified Compose graph and resources.
 adb shell am start -n com.bumplog/.MainActivity --es screen settings
