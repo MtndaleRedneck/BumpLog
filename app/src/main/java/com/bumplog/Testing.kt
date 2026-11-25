@@ -7,8 +7,8 @@ object Testing {
     /** Debug builds only: the CI screenshot run asks once for the delete dialog to be open. */
     var openWipeOnce = false
 
-    /** Debug builds only: the next manual update check reports up to date without a network call. */
-    var fakeUpToDateOnce = false
+    /** Debug builds only: the next N manual update checks report up to date without a network call. */
+    var fakeUpToDateCount = 0
 
     fun majorHit(ctx: Context) {
         Notifier.channels(ctx)

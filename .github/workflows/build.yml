@@ -29,11 +29,13 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
 
       # A source.tgz in the repo root is a bundle of changes: unpack it, commit it, then build.
       # Main-context only: this step pushes to main, so it must never run on a review-branch trigger.
       - name: Unpack source bundle
-        if: github.ref_name == 'main'
+        if: github.ref == 'refs/heads/main'
         run: |
           F=$(ls ./*source.tgz 2>/dev/null | head -1)
           if [ -n "$F" ]; then
@@ -90,54 +92,19 @@ jobs:
           V=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
           echo "VERSION=$V" >> $GITHUB_ENV
           cp app/build/outputs/apk/release/app-release.apk BumpLog-v$V.apk
+          # Provenance: bind the exact bytes and the exact built commit (a source-bundle unpack
+          # can move HEAD past github.sha before building) so downstream jobs tag and install
+          # what was actually built, never a same-named rebuild.
+          sha256sum BumpLog-v$V.apk | awk '{print $1}' > BumpLog-v$V.apk.sha256
+          git rev-parse HEAD > built-commit.txt
 
       - uses: actions/upload-artifact@v4
         with:
           name: BumpLog-apk
-          path: BumpLog-v*.apk
-
-      - name: Publish release
-        if: github.event_name == 'workflow_dispatch' && inputs.publish
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          TAG=v$VERSION
-          # Releases are published only for a new version number, and the check fails CLOSED:
-          # only a real HTTP 404 means absent. 200 means it exists; any other status
-          # (401/403/5xx) or no status line at all (network/proxy failure) refuses the publish.
-          REF_ST=$(gh api -i "repos/{owner}/{repo}/git/ref/tags/$TAG" 2>&1 | sed -n 's/^HTTP[^ ]* \([0-9][0-9][0-9]\).*/\1/p' | head -1)
-          REL_ST=$(gh api -i "repos/{owner}/{repo}/releases/tags/$TAG" 2>&1 | sed -n 's/^HTTP[^ ]* \([0-9][0-9][0-9]\).*/\1/p' | head -1)
-          if [ "$REF_ST" = "200" ]; then
-            echo "FAIL: tag $TAG already exists (HTTP 200). Resolve the tag before publishing."
-            exit 1
-          fi
-          if [ "$REL_ST" = "200" ]; then
-            echo "FAIL: release $TAG already exists (HTTP 200). Bump versionName to publish a new release."
-            exit 1
-          fi
-          if [ "$REF_ST" != "404" ]; then
-            echo "FAIL: could not verify tag $TAG is absent (status '${REF_ST:-none}'); refusing to publish."
-            exit 1
-          fi
-          if [ "$REL_ST" != "404" ]; then
-            echo "FAIL: could not verify release $TAG is absent (status '${REL_ST:-none}'); refusing to publish."
-            exit 1
-          fi
-          echo "GUARD-PASSED: no tag or release named $TAG (both HTTP 404)."
-          # Release pages show ONLY their own version's notes (owner's standing rule, Oct 2026):
-          # extract the "BumpLog $V" section from the running notes file.
-          awk -v v="BumpLog $VERSION" 'BEGIN{f=0} $0 ~ /^BumpLog / { if($0==v){f=1}else if(f){exit} } f' release-notes.md > /tmp/notes.md
-          if [ -s /tmp/notes.md ]; then
-            gh release create "$TAG" "BumpLog-v$VERSION.apk" \
-              --target "$(git rev-parse HEAD)" \
-              --title "BumpLog $TAG" \
-              --notes-file /tmp/notes.md
-          else
-            gh release create "$TAG" "BumpLog-v$VERSION.apk" \
-              --target "$(git rev-parse HEAD)" \
-              --title "BumpLog $TAG" \
-              --notes "BumpLog $TAG. See the README for setup."
-          fi
+          path: |
+            BumpLog-v*.apk
+            BumpLog-v*.apk.sha256
+            built-commit.txt
 
   # The v6 -> v7 upgrade path runs on a real emulator: the continuity proof must
   # actually open a versioned database, not just compile.
@@ -146,6 +113,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -181,6 +150,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -191,18 +162,17 @@ jobs:
           # sdkmanager install is idempotent: run it unconditionally so a present platform can
           # never mask a missing build-tools package.
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0" >/dev/null
-      - name: Build signed release APK
-        env:
-          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: bumplog
+      - uses: actions/download-artifact@v4
+        with:
+          name: BumpLog-apk
+      - name: Bind the exact build-job APK by digest
         run: |
-          if [ -z "$KEYSTORE_B64" ]; then echo "No signing secrets set"; exit 1; fi
-          trap 'rm -f "$RUNNER_TEMP/release.keystore"' EXIT
-          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
-          export KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
-          ./gradlew --no-daemon assembleRelease
-          rm -f "$RUNNER_TEMP/release.keystore"
+          V=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          WANT=$(cat BumpLog-v$V.apk.sha256); GOT=$(sha256sum BumpLog-v$V.apk | awk '{print $1}')
+          if [ "$WANT" != "$GOT" ]; then echo "FAIL: APK digest mismatch ($GOT != $WANT)"; exit 1; fi
+          mkdir -p app/build/outputs/apk/release
+          cp BumpLog-v$V.apk app/build/outputs/apk/release/app-release.apk
+          echo "release-smoke installs the exact build-job APK (sha256 $GOT)"
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -228,11 +198,11 @@ jobs:
     # Write access: this job commits the new screenshots.
     permissions:
       contents: write
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.sha }}
+          fetch-depth: 0  # the commit step rebases onto the branch tip; shallow would fail
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -276,3 +246,88 @@ jobs:
           git commit -m "Add app screenshots from emulator" || exit 0
           git pull --rebase origin "$REF_NAME"
           git push origin "HEAD:$REF_NAME"
+
+  # Publish is its own job so a release can only go out AFTER the same commit's build,
+  # db-upgrade, release-smoke and screenshots jobs are ALL green - never from inside the
+  # build job while its tests are still running. Publish runs from main only: the reviewed
+  # branch is fast-forwarded first, then the publish dispatch targets that exact commit.
+  publish:
+    if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
+    needs: [build, db-upgrade-test, release-smoke, screenshots]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    concurrency:
+      group: publish-release
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: BumpLog-apk
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          printf '%s' "$V" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL: versionName malformed ('$V')"; exit 1; }
+          TAG=v$V
+          # Bind what we publish to what was built and smoke-verified: exact bytes by digest,
+          # and the exact commit. The other jobs check out and test github.sha, so a build job
+          # whose tree moved (source-bundle unpack) produced an UNTESTED-as-published artifact:
+          # refuse to publish it here; publish only the exact tested commit.
+          WANT=$(cat BumpLog-v$V.apk.sha256); GOT=$(sha256sum BumpLog-v$V.apk | awk '{print $1}')
+          printf '%s' "$WANT" | grep -qE '^[0-9a-f]{64}$' || { echo "FAIL: malformed digest in provenance ('$WANT')"; exit 1; }
+          if [ "$WANT" != "$GOT" ]; then echo "FAIL: APK digest mismatch ($GOT != $WANT)"; exit 1; fi
+          BUILT=$(cat built-commit.txt)
+          printf '%s' "$BUILT" | grep -qE '^[0-9a-f]{40}$' || { echo "FAIL: built-commit.txt malformed ('$BUILT')"; exit 1; }
+          if [ "$BUILT" != "$GITHUB_SHA" ]; then
+            echo "FAIL: built commit $BUILT != dispatched commit $GITHUB_SHA (build tree moved, e.g. source-bundle unpack). This artifact was not the tested tree; refusing to publish."
+            exit 1
+          fi
+          # Releases are published only for a new version number, and the check fails CLOSED:
+          # only a real HTTP 404 means absent. 200 means it exists; any other status
+          # (401/403/5xx) or no status line at all (network/proxy failure) refuses the publish.
+          REF_ST=$(gh api -i "repos/{owner}/{repo}/git/ref/tags/$TAG" 2>&1 | sed -n 's/^HTTP[^ ]* \([0-9][0-9][0-9]\).*/\1/p' | head -1)
+          REL_ST=$(gh api -i "repos/{owner}/{repo}/releases/tags/$TAG" 2>&1 | sed -n 's/^HTTP[^ ]* \([0-9][0-9][0-9]\).*/\1/p' | head -1)
+          if [ "$REF_ST" = "200" ]; then
+            echo "FAIL: tag $TAG already exists (HTTP 200). Resolve the tag before publishing."
+            exit 1
+          fi
+          if [ "$REL_ST" = "200" ]; then
+            echo "FAIL: release $TAG already exists (HTTP 200). Bump versionName to publish a new release."
+            exit 1
+          fi
+          if [ "$REF_ST" != "404" ]; then
+            echo "FAIL: could not verify tag $TAG is absent (status '${REF_ST:-none}'); refusing to publish."
+            exit 1
+          fi
+          if [ "$REL_ST" != "404" ]; then
+            echo "FAIL: could not verify release $TAG is absent (status '${REL_ST:-none}'); refusing to publish."
+            exit 1
+          fi
+          echo "GUARD-PASSED: no tag or release named $TAG (both HTTP 404)."
+          # Release pages show ONLY their own version's notes: extract the "BumpLog $V"
+          # section from the notes file. A missing section FAILS CLOSED - no generic fallback.
+          awk -v v="BumpLog $V" 'BEGIN{f=0} $0 ~ /^BumpLog / { if($0==v){f=1}else if(f){exit} } f' release-notes.md > /tmp/notes.md
+          if [ ! -s /tmp/notes.md ]; then
+            echo "FAIL: release-notes.md has no 'BumpLog $V' section; refusing to publish with fallback notes."
+            exit 1
+          fi
+          gh release create "$TAG" "BumpLog-v$V.apk" \
+            --target "$GITHUB_SHA" \
+            --title "BumpLog $TAG" \
+            --notes-file /tmp/notes.md
+          # Post-create peel: the tag must point at the exact tested commit. gh release create
+          # makes a lightweight tag, so the ref's object is the commit itself. A mismatch does
+          # not undo the release - it is a loud WARN and the release gets verified before sign-off.
+          ACTUAL=$(gh api "repos/{owner}/{repo}/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null) || ACTUAL=''
+          if [ "$ACTUAL" != "$GITHUB_SHA" ]; then
+            echo "WARN: created tag $TAG points at '${ACTUAL:-unknown}', expected $GITHUB_SHA - verify the release target before announcing"
+          else
+            echo "verified: tag $TAG -> $GITHUB_SHA"
+          fi

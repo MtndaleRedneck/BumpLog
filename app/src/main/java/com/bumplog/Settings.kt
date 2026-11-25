@@ -272,8 +272,8 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                 .clickable(enabled = !checking) {
                     checking = true
                     scope.launch {
-                        if (BuildConfig.DEBUG && Testing.fakeUpToDateOnce) {
-                            Testing.fakeUpToDateOnce = false
+                        if (BuildConfig.DEBUG && Testing.fakeUpToDateCount > 0) {
+                            Testing.fakeUpToDateCount--
                             checking = false; result = "You're up to date."; resultSeq++
                             return@launch
                         }

@@ -250,28 +250,45 @@ shot v21-feedback --es screen feedback
 adb shell am force-stop com.bumplog; sleep 1
 adb shell am start -n com.bumplog/.MainActivity --es screen settings --ez fakeuptodate true; sleep 4
 scroll_to "Check for updates" v21-updates-card
-tap_now "Check for updates"; T1=$(date +%s)
+tap_now "Check for updates"; T1=$(date +%s%3N)
 FOUND=0
 for i in $(seq 1 8); do dump_ui_soft && printf '%s\n' "$UI_XML" | grep -qF "up to date" && { FOUND=1; break; }; sleep 1; done
 [ "$FOUND" = 1 ] || { echo "FAIL: up-to-date result not shown after tap"; exit 1; }
 adb exec-out screencap -p > $OUT/v21-uptodate-shown.png
-# Second tap via the cached point: the button cannot have moved - in Settings.kt the result
-# text appears in the version ROW above it, and the button is a separate full-width Box with
-# fixed height; only its label toggles. Skipping the re-dump lands T2 ~2.5s after T1, inside
-# the 5s window. A gap >= 5s stays the WARN/inconclusive branch below, never a failure.
-retap_last; T2=$(date +%s)
-GAP=$((T2 - T1))
-if [ "$GAP" -ge 5 ]; then echo "WARN: repeat tap landed ${GAP}s after the first; restart window missed, checking fresh-timer behavior only"; fi
-# Visible assertion: past the FIRST tap's deadline (proves the restart extended it), before the second's.
-TARGET=$((T1 + 6)); NOW=$(date +%s); [ $TARGET -gt $NOW ] && sleep $((TARGET - NOW))
-if [ "$GAP" -lt 5 ]; then
-  has_text "up to date" && echo "timer restart OK: result visible past the first tap's 5s deadline" || { echo "FAIL: identical result did not restart the 5s timer"; exit 1; }
+# Second tap via a REAL re-find (tap_now re-dumps and re-derives the bounds): no cached-point
+# geometry assumption. Both taps take the deterministic fake path (fakeuptodate arms a count of
+# 2), so no network latency, toast or offer-popup branch can shift what the taps do. Clocks are
+# millisecond. SCOPE: these pixels/assertions prove the result APPEARS and HIDES on its 5s timer.
+# The repeat-tap window below is OBSERVATIONAL evidence about restart behavior, qualified by
+# emulator tap->result latency and dump duration; it is not a controlled virtual-clock proof.
+tap_now "Check for updates"; T2=$(date +%s%3N)
+GAP_MS=$((T2 - T1)); echo "timer clocks (ms): T1=$T1 T2=$T2 gap=${GAP_MS}ms"
+if [ "$GAP_MS" -ge 5000 ]; then echo "WARN: repeat tap landed ${GAP_MS}ms after the first; restart window missed, checking fresh-timer behavior only"; fi
+# Restart observation, banded by the ACTUAL observation clock:
+#   obs <  T2+4000ms            -> clean window: visible = qualified restart evidence, absent = FAIL
+#   T2+4000 <= obs < T2+5000    -> last-1s jitter band: WARN either way (dump latency can straddle the deadline)
+#   obs >= T2+5000              -> past the deadline: WARN INCONCLUSIVE
+TARGET=$((T1 + 6000)); NOW=$(date +%s%3N); [ $TARGET -gt $NOW ] && sleep $(( (TARGET - NOW + 999) / 1000 ))
+if [ "$GAP_MS" -lt 5000 ]; then
+  if has_text "up to date"; then VIS=yes; else VIS=no; fi; OBS=$(date +%s%3N)
+  echo "restart observation: visible=$VIS at obs=${OBS}ms (clean < $((T2 + 4000)); jitter band $((T2 + 4000))-$((T2 + 5000)); past-deadline >= $((T2 + 5000)))"
+  if [ "$OBS" -lt $((T2 + 4000)) ]; then
+    if [ "$VIS" = yes ]; then
+      echo "restart evidence: result still visible past the first tap's 5s deadline (qualified: UI-dump timing, deterministic inputs)"
+    else
+      echo "FAIL: result gone inside the second tap's own 5s window"; exit 1
+    fi
+  elif [ "$OBS" -lt $((T2 + 5000)) ]; then
+    echo "WARN: observation inside the last-1s jitter band; restart check INCONCLUSIVE"
+  else
+    echo "WARN: observation landed past the second tap's deadline; restart check INCONCLUSIVE"
+  fi
 else
   has_text "up to date" || { echo "FAIL: up-to-date result missing after the repeat tap"; exit 1; }
 fi
-# Hidden assertion: past the SECOND tap's deadline plus margin.
-TARGET=$((T2 + 7)); NOW=$(date +%s); [ $TARGET -gt $NOW ] && sleep $((TARGET - NOW))
-has_text "up to date" && { echo "FAIL: up-to-date still visible past the repeat tap's 5s deadline"; exit 1; } || echo "hide OK: result cleared after the last check's deadline"
+# Hidden assertion: past the SECOND tap's deadline plus margin, with the observation clock printed.
+TARGET=$((T2 + 7000)); NOW=$(date +%s%3N); [ $TARGET -gt $NOW ] && sleep $(( (TARGET - NOW + 999) / 1000 ))
+has_text "up to date" && { echo "FAIL: up-to-date still visible past the repeat tap's 5s deadline"; exit 1; } || echo "hide OK: result cleared after the last check's deadline (observed $(date +%s%3N)ms)"
 adb exec-out screencap -p > $OUT/v21-uptodate-hidden.png
 
 # Settings scroll rule: child screens keep the place; leaving Settings entirely resets to the top.
