@@ -38,6 +38,7 @@ object Prefs {
     var haptics: Boolean get() = b("haptics", true); set(v) = sp.edit().putBoolean("haptics", v).apply()
     /** The mark on Home's Report last hit button: "mono" (the button's own ink) or "color" (the full-colour app-icon mark). */
     var reportIcon: String get() = s("report_icon", "mono").takeIf { it in REPORT_ICONS } ?: "mono"; set(v) = sp.edit().putString("report_icon", v).apply()
+    var debugPill: Boolean get() = b("debug_pill", false); set(v) = sp.edit().putBoolean("debug_pill", v).apply()
     private val REPORT_ICONS = setOf("mono", "color")
     /**
      * The accent as a position in [Swatches]. It is saved as the colour (key "accent_rgb"), not the position, so the picker order can change.
