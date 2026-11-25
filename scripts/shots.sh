@@ -369,15 +369,27 @@ adb exec-out screencap -p > $OUT/v21-scroll-reset.png
 # Haptic proof: the newest TOUCH-usage CLICK vibration attributed to com.bumplog, by its own createTime on the device
 # clock. A marker taken from the same device clock just before the action must be older than that event. Dump or clock
 # failures fail the script; nothing is inferred from line counts, so a full history buffer cannot hide an event.
-dev_now() { local t; t=$(adb shell date '+%m-%d %H:%M:%S.000' | tr -d '\r') || { echo "FAIL: device clock unreadable"; exit 1; }; [ -n "$t" ] || { echo "FAIL: empty device clock"; exit 1; }; printf '%s' "$t"; }
-newest_app_click() {
-  local D; D=$(adb shell dumpsys vibrator_manager 2>&1) || { echo "FAIL: vibrator dump failed"; exit 1; }
-  case "$D" in *"createTime"*|*"VibratorController"*) ;; *) echo "FAIL: vibrator dump unreadable"; exit 1 ;; esac
-  printf '%s\n' "$D" | grep -F 'opPkg=com.bumplog' | grep -F 'effect=CLICK' | grep -F 'Usage=TOUCH' \
-    | sed -n 's/.*createTime: \([0-9-]* [0-9:.]*\),.*/\1/p' | sort | tail -1
+TS_RE='^[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}$'
+# Each helper prints ONE value on stdout and returns nonzero (message on stderr, never on stdout) on any failure, so a
+# caller that writes X=$(helper) || exit 1 can never carry an error string into a comparison.
+dev_now() {
+  local t; t=$(adb shell date '+%m-%d %H:%M:%S.000' | tr -d '\r') || { echo "device clock unreadable" >&2; return 1; }
+  [[ "$t" =~ $TS_RE ]] || { echo "device clock not a timestamp" >&2; return 1; }
+  printf '%s' "$t"
 }
+newest_app_click() {
+  local D T; D=$(adb shell dumpsys vibrator_manager 2>&1) || { echo "vibrator dump failed" >&2; return 1; }
+  case "$D" in *"VibratorController"*) ;; *) echo "vibrator dump unreadable" >&2; return 1 ;; esac
+  T=$(printf '%s\n' "$D" | grep -F 'opPkg=com.bumplog' | grep -F 'effect=CLICK' | grep -F 'Usage=TOUCH' \
+    | sed -n 's/.*createTime: \([0-9-]* [0-9:.]*\),.*/\1/p' | sort | tail -1)
+  # No app click at all is a valid, empty answer; anything present must be a well-formed timestamp.
+  if [ -n "$T" ]; then [[ "$T" =~ $TS_RE ]] || { echo "malformed click timestamp" >&2; return 1; }; fi
+  printf '%s' "$T"
+}
+# click_after <click> <marker>: true only when both are well-formed and the click is strictly later.
+click_after() { [[ "$1" =~ $TS_RE && "$2" =~ $TS_RE && "$1" > "$2" ]]; }
 focused_line() { printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'focused="true"' | grep -v 'class="android.widget.FrameLayout"' | head -1; }
-vibrate_checked() { dump_ui; printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'Vibrate on press' | grep -o 'checked="[a-z]*"' | head -1; }
+vibrate_checked() { dump_ui || return 1; printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'Vibrate on press' | grep -o 'checked="[a-z]*"' | head -1; }
 adb shell am force-stop com.bumplog; sleep 1
 adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --es reporticon mono; sleep 5
 adb shell input keyevent KEYCODE_TAB; sleep 1
@@ -387,32 +399,35 @@ FL=$(focused_line)
 echo "focused control after TAB: $(printf '%s' "$FL" | grep -o 'text="[^"]*"\|content-desc="[^"]*"\|class="[^"]*"' | tr '\n' ' ')"
 printf '%s' "$FL" | grep -qE 'text="[^"]+"|content-desc="[^"]+"' || { echo "FAIL: focused node has no text or description, identity unknown"; exit 1; }
 adb exec-out screencap -p > $OUT/v23-key-focus.png
-M1=$(dev_now); sleep 1
+M1=$(dev_now) || exit 1; sleep 1
 adb shell input keyevent KEYCODE_DPAD_CENTER; sleep 1
-E1=$(newest_app_click)
+E1=$(newest_app_click) || exit 1
 adb shell dumpsys vibrator_manager > $OUT/v23-key-enter-vibrator.txt 2>&1 || { echo "FAIL: vibrator dump not saved"; exit 1; }
 echo "key activation: marker=$M1 newest app CLICK=$E1"
-[ -n "$E1" ] && [[ "$E1" > "$M1" ]] || { echo "FAIL: D-pad center on the focused control produced no app tick after the marker (haptics on)"; exit 1; }
+click_after "$E1" "$M1" || { echo "FAIL: D-pad center on the focused control produced no app tick after the marker (haptics on)"; exit 1; }
 adb exec-out screencap -p > $OUT/v23-key-after.png
 shot v23-vibrate-before --es screen settings
-V0=$(vibrate_checked); echo "Vibrate on press before: $V0"
+V0=$(vibrate_checked) || exit 1; echo "Vibrate on press before: $V0"
 [ "$V0" = 'checked="true"' ] || { echo "FAIL: Vibrate on press expected on (default), saw '$V0'"; exit 1; }
 tap_text "Vibrate on press"
-V1=$(vibrate_checked); echo "Vibrate on press after tap: $V1"
+V1=$(vibrate_checked) || exit 1; echo "Vibrate on press after tap: $V1"
 [ "$V1" = 'checked="false"' ] || { echo "FAIL: tapping the Vibrate on press row did not switch it off"; exit 1; }
 adb exec-out screencap -p > $OUT/v23-vibrate-off.png
 adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --es reporticon mono; sleep 5
-M2=$(dev_now); sleep 1
+M2=$(dev_now) || exit 1; sleep 1
 adb shell input keyevent KEYCODE_TAB; sleep 1
 adb shell input keyevent KEYCODE_DPAD_CENTER; sleep 1
-E2=$(newest_app_click)
+E2=$(newest_app_click) || exit 1
 echo "haptics off: marker=$M2 newest app CLICK=$E2"
 # restore the original setting whatever the result, then judge
 shot v23-vibrate-restore --es screen settings
 tap_text "Vibrate on press"
-V2=$(vibrate_checked); echo "Vibrate on press restored: $V2"
+V2=$(vibrate_checked) || exit 1; echo "Vibrate on press restored: $V2"
 [ "$V2" = 'checked="true"' ] || { echo "FAIL: could not restore Vibrate on press"; exit 1; }
-if [ -n "$E2" ] && [[ "$E2" > "$M2" ]]; then echo "FAIL: an app tick fired after the marker with Vibrate on press off"; exit 1; fi
+# Observed absence only: the off step has no independent proof that the key press did anything, so this checks that no
+# app tick was recorded, and the log says so. The positive proof is the haptics-on step above.
+if click_after "$E2" "$M2"; then echo "FAIL: an app tick fired after the marker with Vibrate on press off"; exit 1; fi
+echo "haptics off: no app tick recorded after the marker (observed absence; key activation itself not separately asserted)"
 ls -la $OUT
 adb shell wm size reset
 adb shell wm density reset
