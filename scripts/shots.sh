@@ -131,6 +131,59 @@ fi
   adb shell run-as com.bumplog cat shared_prefs/spotter.xml 2>/dev/null | grep -oE 'name="(restart_wanted|detection_enabled)"[^/]*' || echo "(run-as unavailable)"
 } > $OUT/v17-restart-tap-lifecycle.txt
 cat $OUT/v17-restart-tap-lifecycle.txt
+# --- Redesign runtime proof: bar styles, feedback row, updates timer, settings scroll rule ---
+has_text() { adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; adb shell cat /sdcard/ui.xml | grep -q "$1"; }
+tap_text() {
+  adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1
+  B=$(adb shell cat /sdcard/ui.xml | grep -o "text=\"[^\"]*$1[^\"]*\"[^>]*bounds=\"\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]\"" | head -1 | grep -o '\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]')
+  if [ -z "$B" ]; then echo "FAIL: tap target '$1' not on screen"; exit 1; fi
+  read X1 Y1 X2 Y2 <<< $(echo "$B" | tr -d '[]' | tr ',' ' ' | awk '{print $1, $2, $3, $4}')
+  adb shell input tap $(( (X1+X2)/2 )) $(( (Y1+Y2)/2 ))
+  sleep 2
+}
+
+# Bottom bar styles (owner-approved trial): same Home screen under all three.
+shot v21-bar-pill --ez demo true --es screen home --es barstyle pill
+shot v21-bar-glass --ez demo true --es screen home --es barstyle glass
+shot v21-bar-flat --ez demo true --es screen home --es barstyle flat
+
+# The feedback row with the more prominent chevron, and the feedback screen itself.
+shot v21-settings-top --es screen settings
+scroll_to "Send feedback" v21-feedback-row
+shot v21-feedback --es screen feedback
+
+# Updates card: the fake up-to-date stub exercises the real result text and 5s hide timer.
+# A second identical tap must restart the timer: still visible 3s after it, gone 6s after it.
+adb shell am force-stop com.bumplog; sleep 1
+adb shell am start -n com.bumplog/.MainActivity --es screen settings --ez fakeuptodate true; sleep 4
+scroll_to "Check for updates" v21-updates-card
+tap_text "Check for updates"; sleep 1
+has_text "up to date" || { echo "FAIL: up-to-date result not shown after tap"; exit 1; }
+adb exec-out screencap -p > $OUT/v21-uptodate-shown.png
+sleep 3
+adb shell am start -n com.bumplog/.MainActivity --ez fakeuptodate true >/dev/null; sleep 1
+tap_text "Check for updates"; sleep 1
+sleep 3
+has_text "up to date" && echo "timer restart OK: identical result still visible 3s after the repeat" || { echo "FAIL: identical result did not restart the 5s timer"; exit 1; }
+sleep 3
+has_text "up to date" && { echo "FAIL: up-to-date still visible 6s after the repeat tap"; exit 1; } || echo "hide OK: result cleared 5s after the last check"
+adb exec-out screencap -p > $OUT/v21-uptodate-hidden.png
+
+# Settings scroll rule: child screens keep the place; leaving Settings entirely resets to the top.
+adb shell am force-stop com.bumplog; sleep 1
+adb shell am start -n com.bumplog/.MainActivity --es screen settings; sleep 4
+scroll_to "Send feedback" v21-scroll-before
+tap_text "Send feedback"
+has_text "What will be sent" || { echo "FAIL: feedback screen did not open"; exit 1; }
+adb shell input keyevent 4; sleep 2
+has_text "Send feedback" && echo "scroll rule OK: place kept after returning from Feedback" || { echo "FAIL: settings scroll lost after returning from child screen"; exit 1; }
+adb exec-out screencap -p > $OUT/v21-scroll-kept.png
+tap_text "Home"
+tap_text "Settings"
+has_text "Send feedback" && { echo "FAIL: settings did not reset to top after leaving entirely"; exit 1; } || echo "scroll rule OK: back at the top after leaving Settings entirely"
+has_text "Sensitivity" || { echo "FAIL: settings top not visible after re-entry"; exit 1; }
+adb exec-out screencap -p > $OUT/v21-scroll-reset.png
+
 ls -la $OUT
 adb shell wm size reset
 adb shell wm density reset

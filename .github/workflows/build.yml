@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main]
+    branches: [main, redesign-modernization-1124]
     paths-ignore: ['docs/screenshots/**']
   workflow_dispatch:
     inputs:
@@ -155,6 +155,54 @@ jobs:
           name: bumplog-androidTest-results
           path: app/build/reports/androidTests/**
 
+  # The release proof the debug jobs cannot give: the signed, minified, resource-shrunk APK
+  # installed and exercised on a real emulator.
+  release-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
+      - name: Install Android 37 platform and build-tools
+        run: |
+          # sdkmanager install is idempotent: run it unconditionally so a present platform can
+          # never mask a missing build-tools package.
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0" >/dev/null
+      - name: Build signed release APK
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: bumplog
+        run: |
+          if [ -z "$KEYSTORE_B64" ]; then echo "No signing secrets set"; exit 1; fi
+          trap 'rm -f "$RUNNER_TEMP/release.keystore"' EXIT
+          echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+          export KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
+          ./gradlew --no-daemon assembleRelease
+          rm -f "$RUNNER_TEMP/release.keystore"
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          script: ./scripts/release-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bumplog-release-smoke
+          path: release-smoke/**
+
   screenshots:
     needs: build
     runs-on: ubuntu-latest
@@ -165,7 +213,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.ref_name }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -197,5 +245,5 @@ jobs:
           git config user.email "117659952+MtndaleRedneck@users.noreply.github.com"
           git add docs/screenshots
           git commit -m "Add app screenshots from emulator" || exit 0
-          git pull --rebase origin main
-          git push origin HEAD:main
+          git pull --rebase origin ${{ github.ref_name }}
+          git push origin HEAD:${{ github.ref_name }}

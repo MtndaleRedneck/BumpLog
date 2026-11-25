@@ -272,6 +272,11 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                 .clickable(enabled = !checking) {
                     checking = true
                     scope.launch {
+                        if (BuildConfig.DEBUG && Testing.fakeUpToDateOnce) {
+                            Testing.fakeUpToDateOnce = false
+                            checking = false; result = "You're up to date."; resultSeq++
+                            return@launch
+                        }
                         var failed = false
                         val info = try {
                             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Updater.checkOrThrow(BuildConfig.VERSION_NAME) }

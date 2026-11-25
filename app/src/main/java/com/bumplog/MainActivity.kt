@@ -195,6 +195,7 @@ class MainActivity : ComponentActivity() {
             "settings" -> { tab = "settings"; stack = emptyList() }
             "home" -> { tab = "home"; stack = emptyList() }
             "setup" -> stack = listOf(Screen.Setup)
+            "feedback" -> stack = listOf(Screen.BugReport)
             "alert" -> stack = listOf(Screen.Alert(spot))
             "score", "stats" -> { tab = "stats"; stack = emptyList() }
             "damagequeue" -> stack = listOf(Screen.DamageQueue)
@@ -250,6 +251,9 @@ class MainActivity : ComponentActivity() {
             Live.update { it.copy(running = live, gps = live, speedMph = if (live) 38f else 0f, hardestHitG = 1.42f, lastG = if (live) 0.34f else 0f, wave = w) }
         }
         if (BuildConfig.DEBUG && i.hasExtra("theme")) { Prefs.theme = i.getStringExtra("theme")!!; Live.bump() }
+        // Debug builds only, for the CI screenshot run: pick the bottom bar style and stub an up-to-date result.
+        if (BuildConfig.DEBUG && i.hasExtra("barstyle")) { Prefs.barStyle = i.getStringExtra("barstyle").orEmpty(); Live.bump() }
+        if (BuildConfig.DEBUG && i.getBooleanExtra("fakeuptodate", false)) Testing.fakeUpToDateOnce = true
         if (BuildConfig.DEBUG && i.hasExtra("drv")) { Prefs.passenger = false; Live.update { it.copy(paused = false) }; Live.bump() }
         if (BuildConfig.DEBUG && i.hasExtra("pass")) { Prefs.passenger = true; Live.update { it.copy(paused = true) }; Live.bump() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("lastdemo", false)) { Db.get(this).hits(1).firstOrNull()?.let { Prefs.lastDriveId = it.driveId }; Live.bump() }

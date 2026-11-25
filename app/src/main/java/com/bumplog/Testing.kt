@@ -7,6 +7,9 @@ object Testing {
     /** Debug builds only: the CI screenshot run asks once for the delete dialog to be open. */
     var openWipeOnce = false
 
+    /** Debug builds only: the next manual update check reports up to date without a network call. */
+    var fakeUpToDateOnce = false
+
     fun majorHit(ctx: Context) {
         Notifier.channels(ctx)
         val s = Db.get(ctx).addTestSpot(DefectType.POTHOLE, confirmed = false, severity = "MAJOR", fileTrip = false, maxG = 1.6f)
