@@ -397,8 +397,24 @@ adb shell input keyevent KEYCODE_TAB; sleep 1
 dump_ui
 FL=$(focused_line)
 [ -n "$FL" ] || { echo "FAIL: TAB did not focus any control"; exit 1; }
-echo "focused control after TAB: $(printf '%s' "$FL" | grep -o 'text="[^"]*"\|content-desc="[^"]*"\|class="[^"]*"' | tr '\n' ' ')"
-printf '%s' "$FL" | grep -qE 'text="[^"]+"|content-desc="[^"]+"' || { echo "FAIL: focused node has no text or description, identity unknown"; exit 1; }
+# The focused node is a merged container with no text of its own, so identify it by the text and descriptions of the
+# nodes inside its bounds. Printed, and required to be non-empty with a real size.
+FID=$(printf '%s' "$UI_XML" | python3 -c '
+import re,sys,xml.etree.ElementTree as ET
+root=ET.fromstring(sys.stdin.read())
+def bx(n):
+    m=re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.get("bounds",""))
+    return tuple(map(int,m.groups())) if m else None
+f=[n for n in root.iter("node") if n.get("focused")=="true" and n.get("class")!="android.widget.FrameLayout"]
+if not f: sys.exit(2)
+b=bx(f[0])
+if not b or b[2]-b[0]<20 or b[3]-b[1]<20: sys.exit(3)
+inside=[(n.get("text") or n.get("content-desc") or "") for n in root.iter("node") if bx(n) and bx(n)[0]>=b[0] and bx(n)[1]>=b[1] and bx(n)[2]<=b[2] and bx(n)[3]<=b[3]]
+ident=" | ".join(t for t in inside if t)
+if not ident: sys.exit(4)
+print("bounds=%s identity=%s" % (b, ident[:160]))
+') || { echo "FAIL: TAB focus could not be identified (status $?)"; exit 1; }
+echo "focused control after TAB: $FID"
 adb exec-out screencap -p > $OUT/v23-key-focus.png
 M1=$(dev_now) || exit 1; sleep 1
 adb shell input keyevent KEYCODE_DPAD_CENTER; sleep 1
