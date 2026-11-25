@@ -12,6 +12,7 @@ import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -127,9 +128,12 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         SettingsCard {
             Txt("Feel", 18, FontWeight.Bold, modifier = Modifier.asHeading())
             Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // The whole row toggles (and is one Switch node for TalkBack and the emulator script); the Switch itself is display-only.
+            Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                .toggleable(value = haptics, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { haptics = it; Prefs.haptics = it }),
+                verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Txt("Vibrate on press", 17, FontWeight.Bold); Muted("A light tick when you press a button or tab.", 12) }
-                Switch(haptics, { haptics = it; Prefs.haptics = it }, colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = p.onAccent,
+                Switch(haptics, null, colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = p.onAccent,
                     uncheckedTrackColor = p.card2, uncheckedThumbColor = p.muted, uncheckedBorderColor = p.muted))
             }
         }

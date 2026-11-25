@@ -83,16 +83,20 @@ class BackupRestoreTest {
 
     @Test
     fun retiredBarStyleDoesNotBlockOtherValidFields() {
-        val applied = Prefs.restoreAll(JSONObject()
-            .put("barstyle", JSONObject().put("t", "s").put("v", "pill"))
-            .put("minspeed", JSONObject().put("t", "i").put("v", 33))
-            .put("haptics", JSONObject().put("t", "b").put("v", false))
-            .put("report_icon", JSONObject().put("t", "s").put("v", "color")))
-        assertEquals(3, applied)
-        assertEquals(33, Prefs.minSpeedMph)
-        assertEquals(false, Prefs.haptics)
-        assertEquals("color", Prefs.reportIcon)
-        Prefs.haptics = true; Prefs.reportIcon = "mono"; Prefs.minSpeedMph = 15 // leave shared prefs as found
+        val speed = Prefs.minSpeedMph; val vib = Prefs.haptics; val icon = Prefs.reportIcon
+        try {
+            val applied = Prefs.restoreAll(JSONObject()
+                .put("barstyle", JSONObject().put("t", "s").put("v", "pill"))
+                .put("minspeed", JSONObject().put("t", "i").put("v", 33))
+                .put("haptics", JSONObject().put("t", "b").put("v", false))
+                .put("report_icon", JSONObject().put("t", "s").put("v", "color")))
+            assertEquals(3, applied)
+            assertEquals(33, Prefs.minSpeedMph)
+            assertEquals(false, Prefs.haptics)
+            assertEquals("color", Prefs.reportIcon)
+        } finally {
+            Prefs.minSpeedMph = speed; Prefs.haptics = vib; Prefs.reportIcon = icon // the values found, even if an assert failed
+        }
     }
 
     private fun backupJson(): JSONObject = JSONObject()
