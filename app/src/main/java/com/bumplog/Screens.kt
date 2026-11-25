@@ -601,6 +601,9 @@ fun PowerButton(detOn: Boolean, onClick: () -> Unit) {
     val ctx = LocalContext.current
     val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
+    // Same light tick on touch-down as every other button; the existing sink-in depth stays.
+    val view = androidx.compose.ui.platform.LocalView.current
+    LaunchedEffect(pressed) { if (pressed && Prefs.haptics) view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP) }
     val shape = RoundedCornerShape(20.dp)
     val reduce = remember { android.provider.Settings.Global.getFloat(ctx.contentResolver, android.provider.Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f }
     val sunk = detOn || pressed
