@@ -253,7 +253,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Send feedback, report a bug, or suggest a feature", 16, FontWeight.Medium, modifier = Modifier.weight(1f))
-                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = p.muted)
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = p.text, modifier = Modifier.size(28.dp))
             }
         }
         // Updates: untitled card, BingeMote pattern - result right of the version, "You're up to date." hides after 5 s.
@@ -264,7 +264,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             val scope = rememberCoroutineScope()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Version ${BuildConfig.VERSION_NAME}", 16, FontWeight.Bold, modifier = Modifier.weight(1f))
-                if (result.isNotEmpty()) Txt(result, 14, FontWeight.Medium, p.accent)
+                if (result.isNotEmpty()) Txt(result, 14, FontWeight.Medium, p.accentText(p.card))
             }
             LaunchedEffect(resultSeq) { if (result == "You're up to date.") { kotlinx.coroutines.delay(5000); result = "" } }
             Spacer(Modifier.height(10.dp))

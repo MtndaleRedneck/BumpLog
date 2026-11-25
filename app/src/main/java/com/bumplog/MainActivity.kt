@@ -15,6 +15,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -31,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
@@ -405,6 +407,9 @@ class MainActivity : ComponentActivity() {
             dismissButton = { TextButton({ Prefs.guideSeen = Reports.GUIDE_VERSION; guideOffer = false }) { Text("Not now") } },
         )
         val settingsScroll = androidx.compose.foundation.rememberScrollState()
+        // Owner rule (Nov 2026): returning from a child screen like Feedback keeps the Settings scroll
+        // position; leaving Settings entirely (another tab) resets it, so re-entering starts at the top.
+        LaunchedEffect(tab) { if (tab != "settings") settingsScroll.scrollTo(0) }
         Column(Modifier.fillMaxSize().background(p.bg).statusBarsPadding()) {
             Box(Modifier.weight(1f)) {
                 when (top) {
@@ -457,7 +462,8 @@ class MainActivity : ComponentActivity() {
     @Composable
     private fun NavItem(label: String, icon: ImageVector, sel: Boolean, pill: Boolean, m: Modifier, onClick: () -> Unit) {
         val p = LocalPal.current
-        Column(m.clickable(onClick = onClick).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+        // A tab role and selected state so TalkBack announces what is active; at least 48dp of touch height.
+        Column(m.selectable(selected = sel, role = Role.Tab, onClick = onClick).heightIn(min = 48.dp).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Box(contentAlignment = Alignment.Center) {
                 if (pill && sel) Box(Modifier.size(64.dp, 32.dp).clip(RoundedCornerShape(16.dp)).background(p.accent.copy(alpha = 0.17f)))
                 Icon(icon, null, tint = if (sel) p.accent else p.muted, modifier = Modifier.size(26.dp))

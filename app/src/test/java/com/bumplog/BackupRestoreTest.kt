@@ -41,6 +41,14 @@ class BackupRestoreTest {
     }
 
     @Test
+    fun retiredAccentRgbRestoresAsSage() {
+        Prefs.accent = 2
+        val applied = Prefs.restoreAll(JSONObject().put("accent_rgb", JSONObject().put("t", "i").put("v", 0xFFFF5228.toInt())))
+        assertEquals(1, applied)
+        assertEquals("retired colours coerce to sage, matching in-app reads", 0, Prefs.accent)
+    }
+
+    @Test
     fun barStyleRoundTripsThroughBackup() {
         Prefs.barStyle = "glass"
         val dump = Prefs.dumpAll()

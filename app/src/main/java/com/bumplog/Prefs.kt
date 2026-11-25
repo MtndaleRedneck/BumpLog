@@ -31,7 +31,9 @@ object Prefs {
     var minSpeedMph: Int get() = i("minspeed", 15); set(v) = sp.edit().putInt("minspeed", v).apply()
     var theme: String get() = s("theme", "DARK"); set(v) = sp.edit().putString("theme", v).apply()
     /** Bottom bar style: "flat" (the current strip), "pill" (strip + accent pill on the active tab), "glass" (floating frosted bar + pill). Trying the styles is owner-approved Nov 2026; the permanent choice comes in a later update. */
-    var barStyle: String get() = s("barstyle", "flat"); set(v) = sp.edit().putString("barstyle", v).apply()
+    /** Bottom bar styles the picker offers. Anything stored outside this list reads as the default. */
+    private val BAR_STYLES = setOf("flat", "pill", "glass")
+    var barStyle: String get() = s("barstyle", "flat").takeIf { it in BAR_STYLES } ?: "flat"; set(v) = sp.edit().putString("barstyle", v).apply()
     /**
      * The accent as a position in [Swatches]. It is saved as the colour (key "accent_rgb"), not the position, so the picker order can change.
      * An old position-based "accent" is converted once, using the frozen older list.
@@ -96,7 +98,8 @@ object Prefs {
             "guide_seen" -> int(0, 1000000)
             "cutoff" -> flt(0.1f, 5f); "severe" -> flt(0.1f, 10f)
             "minspeed" -> int(0, 100)
-            "accent_rgb" -> if (t == "i") AccentStore.resolve(x.getInt("v"), null).takeIf { it == x.getInt("v") } else null
+            // A colour the picker no longer offers coerces to sage, the same way it reads in the app.
+            "accent_rgb" -> if (t == "i") AccentStore.resolve(x.getInt("v"), null) else null
             "accent" -> int(0, LegacySwatchArgb.lastIndex)?.let { AccentStore.resolve(null, it) }
             "warn_far" -> int(100, 10560); "warn_near" -> int(50, 5280)
             "hit_timeout" -> int(0, 30)?.takeIf { it in listOf(0, 10, 20, 30) }
@@ -104,7 +107,7 @@ object Prefs {
             "assistant" -> str(10)?.takeIf { it in listOf("INSTINCT", "TAB", "CUSTOM") }
             "audio_mode" -> str(10)?.takeIf { it in listOf("BOTH", "TONE", "VOICE", "OFF") }
             "tone" -> str(10)?.takeIf { it in listOf("CHIME", "ALARM", "BEEP", "DOUBLE") }
-            "barstyle" -> str(10)?.takeIf { it in listOf("flat", "pill", "glass") }
+            "barstyle" -> str(10)?.takeIf { it in BAR_STYLES }
             "voice" -> str(200)
             "car_addr", "car_name" -> str(64)
             "addr_instinct", "addr_tab", "addr_custom" -> str(254)?.let { cleanEmail(it) }?.takeIf { it.isEmpty() || isValidEmail(it) }

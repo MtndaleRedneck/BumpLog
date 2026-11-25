@@ -287,7 +287,8 @@ object Notifier {
                 })
                 val row = LinearLayout(app).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
                 fun btn(label: String, act: String) = Button(app).apply {
-                    text = label; isAllCaps = false; setTextColor(Color.WHITE)
+                    text = label; isAllCaps = false
+                    setTextColor(if (act == ActionReceiver.YES) onAccentArgb(accentArgb) else Color.WHITE)
                     background = GradientDrawable().apply { setColor(if (act == ActionReceiver.YES) accentArgb else 0xFF2E2E36.toInt()); cornerRadius = 14 * dp }
                     setOnClickListener {
                         if (!preview && act == ActionReceiver.YES) { try { app.startActivity(logItIntent(app, s.id)) } catch (e: Exception) { } }

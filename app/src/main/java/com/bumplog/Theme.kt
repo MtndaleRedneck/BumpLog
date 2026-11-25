@@ -60,14 +60,18 @@ object AccentStore {
 
 private fun lighten(c: Color, f: Float) = Color(c.red + (1f - c.red) * f, c.green + (1f - c.green) * f, c.blue + (1f - c.blue) * f)
 
+/** Label color on accent fills. Verified: this dark reads at least 4.5:1 on all nine swatches, flat and
+ * lightened gradient end (worst case burnt orange flat, about 4.53:1); white fails every swatch. */
+fun onAccentArgb(accent: Int): Int = 0xFF0C0C0E.toInt()
+
 fun palette(dark: Boolean, accentIdx: Int): Pal {
     val ac = Swatches[accentIdx.coerceIn(0, Swatches.lastIndex)]
-    val lum = 0.299f * ac.red + 0.587f * ac.green + 0.114f * ac.blue
-    val onAc = if (lum > 0.62f) Color(0xFF0E0E10) else Color.White
+    val onAc = Color(onAccentArgb(ac.toArgb()))
     return if (dark) Pal(
         // Surfaces match BingeMote's grays (owner decision, Nov 2026): one rung lighter than the old ladder.
         bg = Color(0xFF1B1B1E), card = Color(0xFF26262D), card2 = Color(0xFF2E2E36), nav = Color(0xFF141418),
-        text = Color(0xFFF5F5F7), muted = Color(0xFF9696A0), accent = ac, onAccent = onAc,
+        // Muted sits one step brighter than BingeMote's so small tile labels stay at 4.5:1 on the tile top.
+        text = Color(0xFFF5F5F7), muted = Color(0xFFA0A0AA), accent = ac, onAccent = onAc,
         yellow = Color(0xFFFFBE3C), danger = Color(0xFFE57373), dark = true,
         accentHi = lighten(ac, 0.30f),
         // Same step above card2 that Listen Later's tile top (2E2E36) keeps over its card2 (26262C).

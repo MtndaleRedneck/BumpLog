@@ -7,6 +7,32 @@ import androidx.compose.ui.graphics.toArgb
 import org.junit.Test
 
 class TypesTest {
+    @Test fun onAccentReadsOnEverySwatchAndGradientEnd() {
+        Swatches.forEachIndexed { i, sw ->
+            val p = palette(true, i)
+            assertTrue("swatch $i label must reach 4.5:1 on the flat accent", contrastRatio(p.onAccent, sw) >= 4.5f)
+            assertTrue("swatch $i label must reach 4.5:1 on the lightened gradient end", contrastRatio(p.onAccent, p.accentHi) >= 4.5f)
+        }
+    }
+
+    @Test fun mutedReadsOnEveryNeutralSurface() {
+        val p = palette(true, 0)
+        listOf(p.bg, p.card, p.card2, p.tile, p.nav).forEach { surface ->
+            assertTrue("muted must reach 4.5:1 on $surface", contrastRatio(p.muted, surface) >= 4.5f)
+        }
+    }
+
+    @Test fun accentTextStaysReadableOnCard() {
+        val card = palette(true, 0).card
+        Swatches.forEachIndexed { i, sw ->
+            val p = palette(true, i)
+            val chosen = p.accentText(card)
+            assertTrue("swatch $i accent text must reach 4.5:1 on card", contrastRatio(chosen, card) >= 4.5f)
+            // An accent that already reads stays exactly itself - no visible change for the 7 passing swatches.
+            if (contrastRatio(sw, card) >= 4.5f) assertEquals(sw, chosen)
+        }
+    }
+
     @Test fun plainLabelsAndTechnicalTerms() {
         assertEquals("Broken pavement (lip)", DefectType.FAULTING.label)
         assertEquals("Rough stretch", DefectType.RUMBLE.label)
