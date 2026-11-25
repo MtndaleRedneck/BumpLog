@@ -98,6 +98,25 @@ jobs:
           sha256sum BumpLog-v$V.apk | awk '{print $1}' > BumpLog-v$V.apk.sha256
           git rev-parse HEAD > built-commit.txt
 
+      - name: Verify release signer
+        run: |
+          # Fail-closed, pre-publish: the release APK must carry the same signer as the live
+          # install. Pin grounded byte-direct in the live v1.17.2 APK's v2 signing block
+          # (public data, present in every shipped APK). KEY ROTATION: if the signing key
+          # ever changes, this pin must change in the same commit or every build fails here.
+          # The publish job digest-binds the exact artifact verified here, so this gate
+          # covers the published bytes. VERSION comes from GITHUB_ENV (Name the APK step).
+          EXPECTED=c88752c76cb398fa88f18b6bf39420f01d008169542fcd50ba6ef5355fce2ed0
+          if ! OUT=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "BumpLog-v$VERSION.apk" 2>&1); then
+            echo "FAIL: apksigner verify exited nonzero:"
+            echo "$OUT"
+            exit 1
+          fi
+          ACTUAL=$(printf '%s\n' "$OUT" | grep -m1 "Signer #1 certificate SHA-256 digest:" | awk '{print $NF}')
+          if [ -z "$ACTUAL" ]; then echo "FAIL: apksigner printed no Signer #1 SHA-256 digest"; exit 1; fi
+          if [ "$ACTUAL" != "$EXPECTED" ]; then echo "FAIL: signer $ACTUAL != expected $EXPECTED"; exit 1; fi
+          echo "signer verified: $ACTUAL"
+
       - uses: actions/upload-artifact@v4
         with:
           name: BumpLog-apk
@@ -318,16 +337,40 @@ jobs:
             echo "FAIL: release-notes.md has no 'BumpLog $V' section; refusing to publish with fallback notes."
             exit 1
           fi
+          # Fail-closed BEFORE anything is published: create the tag explicitly at the exact
+          # tested commit. gh release create reuses an existing tag as-is, so the only tag it
+          # can publish under is a verified one. (Draft-then-publish is not usable: GitHub
+          # creates the tag only when a draft publishes, leaving nothing to check beforehand.)
+          # A failed create deletes NOTHING - a tag another actor created is never ours to remove.
+          if ! gh api -X POST "repos/{owner}/{repo}/git/refs" -f ref="refs/tags/$TAG" -f sha="$GITHUB_SHA" > /tmp/tag-create.json; then
+            echo "FAIL: could not create tag $TAG (race or API error); refusing to publish; no existing tag touched"
+            exit 1
+          fi
+          # Independent read right before the commit point: the POST response only echoes the
+          # sha we sent, so it proves nothing. This GET bounds but cannot eliminate the
+          # replace-window before gh release create; the post-release read below is the backstop.
+          # On mismatch we do NOT delete: in the window since our create another actor may own
+          # the tag now, and the refs API has no compare-and-delete. Fail and leave it for a human.
+          ACTUAL=$(gh api "repos/{owner}/{repo}/git/ref/tags/$TAG" --jq '.object.sha') || { echo "FAIL: could not re-read tag $TAG after creating it"; exit 1; }
+          if [ "$ACTUAL" != "$GITHUB_SHA" ]; then
+            echo "FAIL: tag $TAG peels to $ACTUAL, expected $GITHUB_SHA; NOT deleting (ownership unprovable); refusing to publish; human review required"
+            exit 1
+          fi
+          echo "tag verified immediately before release: $TAG -> $GITHUB_SHA"
           gh release create "$TAG" "BumpLog-v$V.apk" \
             --target "$GITHUB_SHA" \
             --title "BumpLog $TAG" \
             --notes-file /tmp/notes.md
-          # Post-create peel: the tag must point at the exact tested commit. gh release create
-          # makes a lightweight tag, so the ref's object is the commit itself. A mismatch does
-          # not undo the release - it is a loud WARN and the release gets verified before sign-off.
-          ACTUAL=$(gh api "repos/{owner}/{repo}/git/ref/tags/$TAG" --jq '.object.sha' 2>/dev/null) || ACTUAL=''
-          if [ "$ACTUAL" != "$GITHUB_SHA" ]; then
-            echo "WARN: created tag $TAG points at '${ACTUAL:-unknown}', expected $GITHUB_SHA - verify the release target before announcing"
-          else
-            echo "verified: tag $TAG -> $GITHUB_SHA"
+          # Post-release backstop: the release is live now, so this is detection, not
+          # prevention. The asserted value is the tag peel, an independent read of the actual
+          # ref. target_commitish is DIAGNOSTIC ONLY: GitHub documents it as "Unused if the
+          # Git tag already exists" (our tag always exists, created above) and API responses
+          # can carry a branch name instead of the sent sha, so it must never gate a live release.
+          REL_TARGET=$(gh api "repos/{owner}/{repo}/releases/tags/$TAG" --jq '.target_commitish') || REL_TARGET=''
+          echo "diagnostic: release target_commitish='${REL_TARGET:-unreadable}'"
+          FINAL_SHA=$(gh api "repos/{owner}/{repo}/git/ref/tags/$TAG" --jq '.object.sha') || FINAL_SHA=''
+          if [ "$FINAL_SHA" != "$GITHUB_SHA" ]; then
+            echo "FAIL: post-publish tag peel '${FINAL_SHA:-unreadable}' != tested commit $GITHUB_SHA (mismatch or unreadable ref). The release is LIVE; human review and cleanup required."
+            exit 1
           fi
+          echo "verified after publish: tag $TAG peels to $GITHUB_SHA"

@@ -21,8 +21,17 @@ for t in 1 2; do
   if [ "$t" = 2 ]; then echo "DISPLAY GEOMETRY MISMATCH - captures would not match his phone"; exit 1; fi
   adb shell wm size 1080x2310; adb shell wm density 480; sleep 2
 done
-adb install -r $APK
-for p in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION POST_NOTIFICATIONS BLUETOOTH_CONNECT; do adb shell pm grant com.bumplog android.permission.$p; done
+# Install must propagate: a failed install on a reused emulator leaves the OLD app answering
+# every later assertion. Verify presence AND the exact version the APK carries.
+adb install -r $APK || { echo "FAIL: adb install failed"; exit 1; }
+adb shell pm path com.bumplog >/dev/null || { echo "FAIL: com.bumplog absent after install"; exit 1; }
+AAPT=$(ls -d "$ANDROID_HOME"/build-tools/*/aapt 2>/dev/null | sort -V | tail -1)
+[ -n "$AAPT" ] || { echo "FAIL: no aapt found under $ANDROID_HOME/build-tools"; exit 1; }
+WANT_V=$("$AAPT" dump badging "$APK" 2>/dev/null | grep -oP "versionName='\K[^']+")
+GOT_V=$(adb shell dumpsys package com.bumplog | grep -m1 -oP 'versionName=\K\S+')
+[ -n "$WANT_V" ] || { echo "FAIL: could not read versionName from $APK"; exit 1; }
+[ "$WANT_V" = "$GOT_V" ] || { echo "FAIL: installed version '$GOT_V' != APK version '$WANT_V' (stale app survived install)"; exit 1; }
+for p in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION POST_NOTIFICATIONS BLUETOOTH_CONNECT; do adb shell pm grant com.bumplog android.permission.$p || { echo "FAIL: pm grant $p"; exit 1; }; done
 # statusbar collapse first: the notification-tap section leaves the shade open on its WARN path,
 # and a shade left open poisons every later capture AND every uiautomator dump (it reads the shade).
 shot() { adb shell cmd statusbar collapse; adb shell am force-stop com.bumplog; sleep 1; adb shell am start -n com.bumplog/.MainActivity "${@:2}"; sleep 5; adb exec-out screencap -p > $OUT/$1.png; }
