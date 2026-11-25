@@ -1,4 +1,5 @@
 -- resumed activity after tapping the notification (MainActivity = the direct-activity path worked) --
-    topResumedActivity=ActivityRecord{3f6601e u0 com.bumplog/.MainActivity t34}
--- prefs after the tap (detection_enabled true = the start flow consumed restart_wanted) --
+    topResumedActivity=ActivityRecord{d487a51 u0 com.bumplog/.MainActivity t34}
+-- prefs after the tap (detection true = the start flow consumed restart_wanted; default is also true, so presence alone cannot distinguish) --
+name="detection" value="true" 
 name="restart_wanted" value="false" 
