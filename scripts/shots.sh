@@ -290,7 +290,7 @@ hold_capture "Stats" v22-press-tab
 shot v22-settings-appearance --es screen settings
 has_text "Report icon" || { echo "FAIL: Report icon setting missing"; exit 1; }
 has_text "Vibrate on press" || { echo "FAIL: Vibrate on press switch missing"; exit 1; }
-has_text "Bottom bar" && { echo "FAIL: Bottom bar setting should be gone"; exit 1; }
+has_text "Bottom bar" || { echo "FAIL: Bottom bar setting missing"; exit 1; }
 
 # The feedback row with the more prominent chevron, and the feedback screen itself.
 shot v21-settings-top --es screen settings
