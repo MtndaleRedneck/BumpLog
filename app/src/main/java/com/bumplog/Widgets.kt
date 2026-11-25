@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -40,7 +41,11 @@ import androidx.compose.ui.semantics.semantics
 
 @Composable
 fun Card(modifier: Modifier = Modifier, color: Color = LocalPal.current.card, pad: Dp = 16.dp, content: @Composable ColumnScope.() -> Unit) {
-    Column(modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp)).background(color).padding(pad), content = content)
+    val p = LocalPal.current
+    val shape = RoundedCornerShape(20.dp)
+    Column(modifier.fillMaxWidth().shadow(4.dp, shape).clip(shape)
+        .then(if (color == p.card) Modifier.background(p.cardGradient) else Modifier.background(color))
+        .padding(pad), content = content)
 }
 
 @Composable
@@ -57,7 +62,7 @@ fun BigButton(label: String, icon: ImageVector? = null, filled: Boolean = true, 
     val p = LocalPal.current
     val shape = RoundedCornerShape(32.dp)
     val m = modifier.fillMaxWidth().heightIn(min = 60.dp).clip(shape)
-        .let { if (filled) it.background(if (enabled) p.accent else p.card2) else it.background(p.card2).border(BorderStroke(2.dp, p.accent), shape) }
+        .let { if (filled) { if (enabled) it.background(p.accentGradient) else it.background(p.card2) } else it.background(p.card2).border(BorderStroke(2.dp, p.accent), shape) }
         .clickable(enabled = enabled, onClick = onClick)
     Row(m, horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
         if (icon != null) { Icon(icon, null, tint = if (filled) p.onAccent else p.text, modifier = Modifier.size(26.dp)); Spacer(Modifier.width(10.dp)) }
@@ -69,7 +74,7 @@ fun BigButton(label: String, icon: ImageVector? = null, filled: Boolean = true, 
 fun SmallButton(label: String, modifier: Modifier = Modifier, outline: Boolean = true, onClick: () -> Unit) {
     val p = LocalPal.current
     val shape = RoundedCornerShape(26.dp)
-    Box(modifier.heightIn(min = 52.dp).clip(shape).background(if (outline) p.card2 else p.accent)
+    Box(modifier.heightIn(min = 52.dp).clip(shape).let { if (outline) it.background(p.card2) else it.background(p.accentGradient) }
         .let { if (outline) it.border(BorderStroke(2.dp, p.accent), shape) else it }.clickable(onClick = onClick),
         contentAlignment = Alignment.Center) {
         Txt(label, 16, FontWeight.Bold, if (outline) p.text else p.onAccent)
@@ -304,7 +309,7 @@ fun ActionButtonPair(primaryLabel: String, primaryIcon: ImageVector, onPrimary: 
             val p = LocalPal.current
             val shape = RoundedCornerShape(32.dp)
             Row(Modifier.fillMaxWidth().height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Column(Modifier.weight(1f).fillMaxHeight().heightIn(min = 76.dp).clip(shape).background(p.accent)
+                Column(Modifier.weight(1f).fillMaxHeight().heightIn(min = 76.dp).clip(shape).background(p.accentGradient)
                     .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onPrimary).padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                     androidx.compose.material3.Icon(primaryIcon, null, tint = p.onAccent, modifier = Modifier.size(26.dp))

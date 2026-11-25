@@ -279,7 +279,7 @@ object Notifier {
                 val box = LinearLayout(app).apply {
                     orientation = LinearLayout.VERTICAL
                     setPadding((18 * dp).toInt(), (14 * dp).toInt(), (18 * dp).toInt(), (14 * dp).toInt())
-                    background = GradientDrawable().apply { setColor(0xFF1C1C20.toInt()); cornerRadius = 20 * dp; setStroke((2 * dp).toInt(), accentArgb) }
+                    background = GradientDrawable().apply { setColor(0xFF26262D.toInt()); cornerRadius = 20 * dp; setStroke((2 * dp).toInt(), accentArgb) }
                 }
                 box.addView(TextView(app).apply {
                     text = (if (preview) "PREVIEW  " else "") + "MAJOR BUMP"; setTextColor(Color.WHITE)
@@ -288,7 +288,7 @@ object Notifier {
                 val row = LinearLayout(app).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER }
                 fun btn(label: String, act: String) = Button(app).apply {
                     text = label; isAllCaps = false; setTextColor(Color.WHITE)
-                    background = GradientDrawable().apply { setColor(if (act == ActionReceiver.YES) accentArgb else 0xFF26262C.toInt()); cornerRadius = 14 * dp }
+                    background = GradientDrawable().apply { setColor(if (act == ActionReceiver.YES) accentArgb else 0xFF2E2E36.toInt()); cornerRadius = 14 * dp }
                     setOnClickListener {
                         if (!preview && act == ActionReceiver.YES) { try { app.startActivity(logItIntent(app, s.id)) } catch (e: Exception) { } }
                         else if (!preview) app.sendBroadcast(Intent(app, ActionReceiver::class.java).setAction(act).putExtra("spot", s.id).setPackage(app.packageName))

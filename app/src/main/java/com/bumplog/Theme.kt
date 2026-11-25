@@ -5,24 +5,32 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 
 data class Pal(
     val bg: Color, val card: Color, val card2: Color, val nav: Color, val text: Color, val muted: Color,
     val accent: Color, val onAccent: Color, val yellow: Color, val danger: Color, val dark: Boolean,
+    /** Accent lightened toward white: the top of accent gradients on filled buttons and selected tiles. */
+    val accentHi: Color,
+    /** Raised tile top, one step above card2: the top of unselected tile gradients. */
+    val tile: Color,
 )
 
-/** Muted sage, the default accent. It leads the last row of the picker. */
+/** Muted sage, the default accent. It leads the picker. */
 const val SAGE_ARGB: Long = 0xFF6F9C7E
 
 val Swatches = listOf(
-    0xFFFF5228, 0xFFFFB020, 0xFF3CC878, 0xFF3C9BFF, 0xFFA064FF,
-    0xFFFF4D8D, 0xFF20C9C9, 0xFFC8E63C, 0xFFFF8C28, 0xFFE0E0E8,
     SAGE_ARGB,
     0xFFCC5500, // burnt orange
-    // Muted tones from the notification shade photo: sampled blue and mint, glow colors lifted to be readable.
-    0xFF7BAFDB, 0xFF83A2A4, 0xFFB8735C,
+    0xFF7BAFDB, // dusty blue
+    0xFF83A2A4, // gray-green
+    0xFFB8735C, // terracotta
+    0xFFF97C02, // BingeMote orange
+    0xFFB3838F, // mauve
+    0xFF8C8FC0, // indigo
+    0xFFA89A8C, // taupe
 ).map { Color(it) }
 
 /** The accent list in the order it had when accents were saved by position. Frozen: it only exists to read old saved choices. */
@@ -36,31 +44,48 @@ val LegacySwatchArgb: List<Long> = listOf(
 object AccentStore {
     private val current: Set<Int> = Swatches.map { it.toArgb() }.toSet()
 
-    /** The colour to use. [rgb] is the stored colour, [legacyIndex] an old position-based choice from before colours were stored. */
-    fun resolve(rgb: Int?, legacyIndex: Int?): Int = when {
-        rgb != null && rgb in current -> rgb
-        rgb == null && legacyIndex != null && legacyIndex in LegacySwatchArgb.indices -> LegacySwatchArgb[legacyIndex].toInt()
-        else -> SAGE_ARGB.toInt()
+    /** The colour to use. [rgb] is the stored colour, [legacyIndex] an old position-based choice from before colours were stored. A colour the picker no longer offers falls back to sage. */
+    fun resolve(rgb: Int?, legacyIndex: Int?): Int {
+        val candidate = when {
+            rgb != null -> rgb
+            legacyIndex != null && legacyIndex in LegacySwatchArgb.indices -> LegacySwatchArgb[legacyIndex].toInt()
+            else -> null
+        }
+        return if (candidate != null && candidate in current) candidate else SAGE_ARGB.toInt()
     }
 
     /** Position of [argb] in the picker. */
     fun indexOf(argb: Int): Int = Swatches.indexOfFirst { it.toArgb() == argb }.coerceAtLeast(0)
 }
 
+private fun lighten(c: Color, f: Float) = Color(c.red + (1f - c.red) * f, c.green + (1f - c.green) * f, c.blue + (1f - c.blue) * f)
+
 fun palette(dark: Boolean, accentIdx: Int): Pal {
     val ac = Swatches[accentIdx.coerceIn(0, Swatches.lastIndex)]
     val lum = 0.299f * ac.red + 0.587f * ac.green + 0.114f * ac.blue
     val onAc = if (lum > 0.62f) Color(0xFF0E0E10) else Color.White
     return if (dark) Pal(
-        bg = Color(0xFF0E0E10), card = Color(0xFF1C1C20), card2 = Color(0xFF26262C), nav = Color(0xFF141418),
+        // Surfaces match BingeMote's grays (owner decision, Nov 2026): one rung lighter than the old ladder.
+        bg = Color(0xFF1B1B1E), card = Color(0xFF26262D), card2 = Color(0xFF2E2E36), nav = Color(0xFF141418),
         text = Color(0xFFF5F5F7), muted = Color(0xFF9696A0), accent = ac, onAccent = onAc,
         yellow = Color(0xFFFFBE3C), danger = Color(0xFFE57373), dark = true,
+        accentHi = lighten(ac, 0.30f),
+        // Same step above card2 that Listen Later's tile top (2E2E36) keeps over its card2 (26262C).
+        tile = Color(0xFF363640),
     ) else Pal(
         bg = Color(0xFFF4F4F6), card = Color.White, card2 = Color(0xFFE9E9EE), nav = Color.White,
         text = Color(0xFF111114), muted = Color(0xFF6A6A74), accent = ac, onAccent = onAc,
         yellow = Color(0xFF946400), danger = Color(0xFFC62828), dark = false,
+        accentHi = lighten(ac, 0.30f), tile = Color.White,
     )
 }
+
+/** Card fill: card2 at the top easing to card at the bottom. */
+val Pal.cardGradient: Brush get() = Brush.verticalGradient(listOf(card2, card))
+/** Filled buttons and selected tiles: lightened accent over the accent. */
+val Pal.accentGradient: Brush get() = Brush.verticalGradient(listOf(accentHi, accent))
+/** Unselected raised tiles: one step above card2 easing to card2. */
+val Pal.tileGradient: Brush get() = Brush.verticalGradient(listOf(tile, card2))
 
 val LocalPal = staticCompositionLocalOf { palette(true, 0) }
 

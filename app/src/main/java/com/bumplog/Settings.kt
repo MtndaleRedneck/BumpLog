@@ -18,6 +18,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -28,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import kotlinx.coroutines.launch
 
 const val REPO_ISSUES = "https://github.com/MtndaleRedneck/BumpLog/issues"
 
@@ -96,10 +98,8 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Txt("Accent", 16, color = p.muted)
             Spacer(Modifier.height(8.dp))
             val rows = Swatches.chunked(5)
-            // The muted row (the last chunk, sage first) is shown first. Choices are saved as colours, so the order here is free to change.
-            val order = listOf(rows.lastIndex) + (0 until rows.lastIndex)
-            order.forEach { r ->
-                val row = rows[r]
+            // Choices are saved as colours, so the order here is free to change. Sage leads the first row.
+            rows.forEachIndexed { r, row ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     row.forEachIndexed { c, col ->
                         val idx = r * 5 + c
@@ -248,17 +248,40 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Txt("Feedback & bugs", 18, FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Txt("General feedback, bugs, and feature suggestions", 16, FontWeight.Medium, modifier = Modifier.weight(1f))
-                Icon(Icons.Default.PlayArrow, null, tint = p.muted)
+                Txt("Send feedback, report a bug, or suggest a feature", 16, FontWeight.Medium, modifier = Modifier.weight(1f))
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = p.muted)
             }
-            Muted("You see exactly what is sent before you send it.", 12)
         }
+        // Updates: untitled card, BingeMote pattern - result right of the version, "You're up to date." hides after 5 s.
         Card(pad = 16.dp) {
-            Txt("Updates", 18, FontWeight.Bold)
+            var checking by remember { mutableStateOf(false) }
+            var result by remember { mutableStateOf("") }
+            val scope = rememberCoroutineScope()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Txt("Version ${BuildConfig.VERSION_NAME}", 16, FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (result.isNotEmpty()) Txt(result, 14, FontWeight.Medium, p.accent)
+            }
+            LaunchedEffect(result) { if (result == "You're up to date.") { kotlinx.coroutines.delay(5000); result = "" } }
             Spacer(Modifier.height(10.dp))
-            SmallButton("Check for updates", Modifier.fillMaxWidth(), outline = false) { onCheckUpdates() }
-            Spacer(Modifier.height(8.dp))
-            Txt("Version ${BuildConfig.VERSION_NAME}", 12, color = p.text)
+            Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(26.dp)).background(p.accentGradient)
+                .clickable(enabled = !checking) {
+                    checking = true
+                    scope.launch {
+                        var failed = false
+                        val info = try {
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Updater.checkOrThrow(BuildConfig.VERSION_NAME) }
+                        } catch (e: Exception) { failed = true; null }
+                        checking = false
+                        when {
+                            failed -> toast(ctx, "Couldn't check for updates right now.")
+                            info == null -> result = "You're up to date."
+                            // The offer pop-up owns the release flow; it re-checks and shows the notes.
+                            else -> onCheckUpdates()
+                        }
+                    }
+                }, contentAlignment = Alignment.Center) {
+                Txt(if (checking) "Checking..." else "Check for updates", 16, FontWeight.Bold, p.onAccent)
+            }
         }
         if (confirmWipe) AlertDialog(onDismissRequest = { confirmWipe = false },
             confirmButton = { TextButton({ Db.get(ctx).wipeAll(); DamagePhotos.wipeAll(ctx); Prefs.wipeLocalExtras(ctx); Live.bump(); confirmWipe = false }) { Text("Delete") } },

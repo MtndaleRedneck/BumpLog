@@ -69,20 +69,18 @@ fun BugReportScreen(done: () -> Unit) {
             Txt("What will be sent", 16, FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
             Muted(BugReport.preview(text, c), 13)
-            Spacer(Modifier.height(6.dp))
-            Muted("No location, saved spots, addresses, or damage records are included. Nothing is sent until you tap a button below, and then it opens in your browser for you to review and submit.", 12)
         }
         Card {
             Txt("GitHub issue", 16, FontWeight.Bold)
             Muted("Public and easiest to follow up.", 12)
             Spacer(Modifier.height(8.dp))
-            SmallButton("Open GitHub issue", Modifier.fillMaxWidth()) { if (text.isBlank()) toast(ctx, "Write your message first.") else open(BugReport.githubUrl(text, c)) }
+            SmallButton("Open GitHub issue", Modifier.fillMaxWidth(), outline = false) { if (text.isBlank()) toast(ctx, "Write your message first.") else open(BugReport.githubUrl(text, c)) }
         }
         Card {
             Txt("Private form", 16, FontWeight.Bold)
             Muted("No name needed. A reply email is optional.", 12)
             Spacer(Modifier.height(8.dp))
-            SmallButton("Open private form", Modifier.fillMaxWidth()) { if (text.isBlank()) toast(ctx, "Write your message first.") else open(BugReport.formUrl(text, c)) }
+            SmallButton("Open private form", Modifier.fillMaxWidth(), outline = false) { if (text.isBlank()) toast(ctx, "Write your message first.") else open(BugReport.formUrl(text, c)) }
         }
         SmallButton("Done", Modifier.fillMaxWidth(), onClick = done)
     }

@@ -33,31 +33,39 @@ class TypesTest {
 
 class AppearanceTest {
     @Test fun sageLeadsItsRowAndIsTheDefault() {
-        assertEquals(15, Swatches.size)
-        assertEquals(SAGE_ARGB.toInt(), Swatches[10].toArgb())
-        assertEquals(0, Swatches.chunked(5).last().indexOfFirst { it.toArgb() == SAGE_ARGB.toInt() })
+        assertEquals(9, Swatches.size)
+        assertEquals(SAGE_ARGB.toInt(), Swatches[0].toArgb())
+        assertEquals(0, Swatches.chunked(5).first().indexOfFirst { it.toArgb() == SAGE_ARGB.toInt() })
         // Nothing saved at all gives sage.
         assertEquals(SAGE_ARGB.toInt(), AccentStore.resolve(null, null))
     }
 
-    @Test fun everyOldPositionKeepsItsColourAfterTheReorder() {
+    @Test fun oldPositionsKeepKeptColoursAndFallBackForRetiredOnes() {
         for (i in LegacySwatchArgb.indices) {
+            val legacy = LegacySwatchArgb[i].toInt()
             val colour = AccentStore.resolve(null, i)
-            assertEquals(LegacySwatchArgb[i].toInt(), colour)
-            // And the picker still has that colour, so the right swatch is highlighted.
-            assertEquals(colour, Swatches[AccentStore.indexOf(colour)].toArgb())
+            if (Swatches.any { it.toArgb() == legacy }) {
+                assertEquals(legacy, colour)
+                // And the picker still has that colour, so the right swatch is highlighted.
+                assertEquals(colour, Swatches[AccentStore.indexOf(colour)].toArgb())
+            } else {
+                // A colour the new picker retired falls back to sage instead of an accent the picker cannot show.
+                assertEquals(SAGE_ARGB.toInt(), colour)
+            }
         }
     }
 
     @Test fun oldSageChoiceAndNewDefaultAreTheSameColour() {
         // In the older list sage was the last position and the default. Someone who picked it still gets sage.
         assertEquals(SAGE_ARGB.toInt(), AccentStore.resolve(null, LegacySwatchArgb.lastIndex))
-        assertEquals(10, AccentStore.indexOf(SAGE_ARGB.toInt()))
+        assertEquals(0, AccentStore.indexOf(SAGE_ARGB.toInt()))
     }
 
     @Test fun savedColourWinsAndBadValuesFallBackToSage() {
-        val blue = 0xFF3C9BFF.toInt()
+        val blue = 0xFF7BAFDB.toInt() // dusty blue, in the new picker
         assertEquals(blue, AccentStore.resolve(blue, 14))
+        // A saved colour the new picker retired falls back to sage.
+        assertEquals(SAGE_ARGB.toInt(), AccentStore.resolve(0xFF3C9BFF.toInt(), null))
         assertEquals(SAGE_ARGB.toInt(), AccentStore.resolve(0x12345678, null))
         assertEquals(SAGE_ARGB.toInt(), AccentStore.resolve(null, 99))
         assertEquals(SAGE_ARGB.toInt(), AccentStore.resolve(null, -1))
@@ -65,7 +73,10 @@ class AppearanceTest {
 
     @Test fun legacyListIsFrozenAtFifteenColours() {
         assertEquals(15, LegacySwatchArgb.size)
-        assertTrue(LegacySwatchArgb.all { c -> Swatches.any { it.toArgb() == c.toInt() } })
+        // The picker keeps the muted legacy colours; the bright ones are retired, so membership is no longer
+        // required of every legacy entry - resolve() falls back to sage for those.
+        val kept = listOf(0xFFCC5500, 0xFF7BAFDB, 0xFF83A2A4, 0xFFB8735C, 0xFF6F9C7E)
+        assertTrue(kept.all { k -> Swatches.any { it.toArgb() == k.toInt() } })
     }
 }
 

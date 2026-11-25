@@ -77,7 +77,7 @@ fun spotIcon(s: Spot) = if (s.review == "DISMISSED") Icons.Default.Close else if
 @Composable
 fun SpotRow(s: Spot, tag: String? = null, onClick: () -> Unit) {
     val p = LocalPal.current
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.card).clickable(onClick = onClick).padding(14.dp),
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.cardGradient).clickable(onClick = onClick).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically) {
         Box(Modifier.size(44.dp).clip(RoundedCornerShape(22.dp)).background(p.card2), contentAlignment = Alignment.Center) {
             Icon(spotIcon(s), null, tint = spotColor(s), modifier = Modifier.size(24.dp))
@@ -145,10 +145,9 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
             @Composable fun Seg(k: Pair<Pair<Boolean, String>, String>, mod: Modifier) {
                 val (mode, title) = k.first
                 val on = isPassenger == mode
-                val segBg by androidx.compose.animation.animateColorAsState(if (on) p.accent else p.card, androidx.compose.animation.core.tween(160), label = "seg")
                 Column(
                     mod.fillMaxHeight().alpha(if (detOn) 1f else 0.35f).clip(RoundedCornerShape(20.dp))
-                        .background(segBg)
+                        .background(if (on) p.accentGradient else p.tileGradient)
                         .clickable(enabled = detOn, indication = null, interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }) { if (!on) togglePassenger() },
                     horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center,
                 ) {
@@ -258,7 +257,7 @@ fun hitReported(h: Hit, s: Spot) = s.reportStatus != "NONE" && (s.sentTs == 0L |
 fun HitRow(h: Hit, s: Spot, gray: Boolean = false, onClick: () -> Unit) {
     val p = LocalPal.current
     // The card background stays opaque: greying the whole row let the swipe "Dismiss" background bleed through.
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.card).clickable(onClick = onClick).padding(14.dp),
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.cardGradient).clickable(onClick = onClick).padding(14.dp),
         verticalAlignment = Alignment.CenterVertically) {
         val fade = Modifier.alpha(if (gray) 0.45f else 1f)
         Column(fade.weight(1f)) {

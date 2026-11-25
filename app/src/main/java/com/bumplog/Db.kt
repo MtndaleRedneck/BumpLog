@@ -363,7 +363,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
                     put("heading", hd); put("speed", spd); put("peak_g", g)
                     put("duration", 0); put("peaks", 1); put("type", type.name)
                 })
-                db.execSQL("UPDATE spots SET hit_count=hit_count+1, max_g=MAX(max_g,?), first_ts=MIN(first_ts,?), last_ts=MAX(last_ts,?) WHERE id=?", arrayOf(g, ts, ts, sid))
+                db.execSQL("UPDATE spots SET hit_count=hit_count+1, max_g=MAX(max_g,?), first_ts=MIN(first_ts,?), last_ts=MAX(last_ts,?) WHERE id=?", arrayOf<Any>(g, ts, ts, sid))
             } catch (e: Exception) { bad++ }
         }
         if (damageLines.isNotEmpty() && damageLines[0].startsWith("damage_report_id,")) {
