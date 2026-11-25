@@ -23,13 +23,14 @@ class TypesTest {
     }
 
     @Test fun accentTextStaysReadableOnCard() {
-        val card = palette(true, 0).card
+        // Accent-colored text renders on card gradients, whose light end is card2: check against that end.
+        val card2 = palette(true, 0).card2
         Swatches.forEachIndexed { i, sw ->
             val p = palette(true, i)
-            val chosen = p.accentText(card)
-            assertTrue("swatch $i accent text must reach 4.5:1 on card", contrastRatio(chosen, card) >= 4.5f)
-            // An accent that already reads stays exactly itself - no visible change for the 7 passing swatches.
-            if (contrastRatio(sw, card) >= 4.5f) assertEquals(sw, chosen)
+            val chosen = p.accentText(card2)
+            assertTrue("swatch $i accent text must reach 4.5:1 on the card gradient top", contrastRatio(chosen, card2) >= 4.5f)
+            // An accent that already reads on the gradient top stays exactly itself.
+            if (contrastRatio(sw, card2) >= 4.5f) assertEquals(sw, chosen)
         }
     }
 

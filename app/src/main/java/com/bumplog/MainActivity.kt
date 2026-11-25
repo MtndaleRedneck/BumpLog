@@ -470,9 +470,10 @@ class MainActivity : ComponentActivity() {
         Column(m.selectable(selected = sel, role = Role.Tab, onClick = onClick).heightIn(min = 48.dp).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
             Box(contentAlignment = Alignment.Center) {
                 if (pill && sel) Box(Modifier.size(64.dp, 32.dp).clip(RoundedCornerShape(16.dp)).background(p.accent.copy(alpha = 0.17f)))
-                Icon(icon, null, tint = if (sel) p.accent else p.muted, modifier = Modifier.size(26.dp))
+                // Selected tint is checked against card so the label also reads on the glass bar's card surface.
+                Icon(icon, null, tint = if (sel) p.accentText(p.card) else p.muted, modifier = Modifier.size(26.dp))
             }
-            Txt(label, 12, FontWeight.Medium, if (sel) p.accent else p.muted)
+            Txt(label, 12, FontWeight.Medium, if (sel) p.accentText(p.card) else p.muted)
         }
     }
 }

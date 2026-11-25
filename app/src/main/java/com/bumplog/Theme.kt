@@ -105,5 +105,15 @@ fun BumpLogTheme(theme: String, accent: Int, content: @Composable () -> Unit) {
 private fun chan(x: Float): Float = if (x <= 0.03928f) x / 12.92f else Math.pow(((x + 0.055f) / 1.055f).toDouble(), 2.4).toFloat()
 private fun lum(c: Color): Float = 0.2126f * chan(c.red) + 0.7152f * chan(c.green) + 0.0722f * chan(c.blue)
 fun contrastRatio(a: Color, b: Color): Float { val x = maxOf(lum(a), lum(b)); val y = minOf(lum(a), lum(b)); return (x + 0.05f) / (y + 0.05f) }
-/** The accent as a text color, but only when it reads at 4.5:1 on the given background. Otherwise plain text color. */
-fun Pal.accentText(bg: Color): Color = if (contrastRatio(accent, bg) >= 4.5f) accent else text
+/** The accent as a text color: itself when it already reads at 4.5:1 on the surface, otherwise lightened
+ * in small steps until it does (hue kept), falling back to plain text only past a 40% lift. */
+fun Pal.accentText(bg: Color): Color {
+    if (contrastRatio(accent, bg) >= 4.5f) return accent
+    var f = 0.04f
+    while (f <= 0.40f) {
+        val c = lighten(accent, f)
+        if (contrastRatio(c, bg) >= 4.5f) return c
+        f += 0.04f
+    }
+    return text
+}

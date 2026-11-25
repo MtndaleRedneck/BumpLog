@@ -99,7 +99,7 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
         "FIXED" -> "Marked fixed ${shortDay(s.outcomeTs)}" to androidx.compose.ui.graphics.Color(0xFF3CC878)
         "UNCLEAR" -> "Marked unclear response ${shortDay(s.outcomeTs)}" to p.yellow
         "WONTFIX" -> ("Marked won't fix ${shortDay(s.outcomeTs)}" + if (hitAgain) " - hit again" else "") to p.danger
-        else -> "Waiting on the city" to p.accentText(p.card)
+        else -> "Waiting on the city" to p.accentText(p.card2)
     }
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(18.dp)).background(p.card).clickable(onClick = onMark).padding(14.dp)) {
         Txt(s.title, 17, FontWeight.Bold, modifier = Modifier.clickable(onClick = onOpen))

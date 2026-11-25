@@ -220,13 +220,13 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         if (!permsOk) Card(Modifier.clickable { askPerms() }, pad = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Permissions", 18, FontWeight.Bold, modifier = Modifier.weight(1f))
-                Txt("Set up", 17, FontWeight.Bold, p.accentText(p.card))
+                Txt("Set up", 17, FontWeight.Bold, p.accentText(p.card2))
             }
         }
         if (!batt) Card(Modifier.clickable { batterySetup(ctx) }, pad = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Txt("Battery setup", 18, FontWeight.Bold); Muted("Samsung can stop BumpLog mid-drive. Tap to fix.", 12) }
-                Txt("Set up", 17, FontWeight.Bold, p.accentText(p.card))
+                Txt("Set up", 17, FontWeight.Bold, p.accentText(p.card2))
             }
         }
         BackupCards()
@@ -264,7 +264,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             val scope = rememberCoroutineScope()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Version ${BuildConfig.VERSION_NAME}", 16, FontWeight.Bold, modifier = Modifier.weight(1f))
-                if (result.isNotEmpty()) Txt(result, 14, FontWeight.Medium, p.accentText(p.card))
+                if (result.isNotEmpty()) Txt(result, 14, FontWeight.Medium, p.accentText(p.card2))
             }
             LaunchedEffect(resultSeq) { if (result == "You're up to date.") { kotlinx.coroutines.delay(5000); result = "" } }
             Spacer(Modifier.height(10.dp))

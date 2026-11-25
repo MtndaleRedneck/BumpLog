@@ -298,7 +298,7 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) { Txt("$saved", 54, FontWeight.Bold); Muted("hits saved", 16) }
-                Column(horizontalAlignment = Alignment.CenterHorizontally) { Txt("$pendingCount", 54, FontWeight.Bold, if (pendingCount == 0) p.text else p.accentText(p.card)); Muted("to review", 16) }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) { Txt("$pendingCount", 54, FontWeight.Bold, if (pendingCount == 0) p.text else p.accentText(p.card2)); Muted("to review", 16) }
             }
         }
         // The drive being shown is the live drive while running, otherwise the last drive that started, even if it logged no hits.
