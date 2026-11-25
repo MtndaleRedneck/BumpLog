@@ -69,6 +69,14 @@ tap_now() {
   fi
   TX=$(( (X1+X2)/2 )); TY=$(( (Y1+Y2)/2 ))
   adb shell input tap $TX $TY
+  LAST_TAP_X=$TX; LAST_TAP_Y=$TY
+}
+# retap_last: re-tap the exact point tap_now just verified, with NO re-dump. Only for an
+# immediate second tap on the same static screen (the timer restart probe), where a fresh
+# dump's ~2.4s latency would push the second tap past the 5s window it must land inside.
+retap_last() {
+  if [ -z "${LAST_TAP_X:-}" ]; then echo "FAIL: retap_last with no prior tap_now"; exit 1; fi
+  adb shell input tap $LAST_TAP_X $LAST_TAP_Y
 }
 # tap_text <text>: tap, then settle 2s.
 tap_text() { tap_now "$1"; sleep 2; }
@@ -134,6 +142,10 @@ adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home
 sleep 7
 adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --ez logpaused true
 sleep 2; adb exec-out screencap -p > $OUT/v17-logpaused-headsup.png
+# Installed-icon pixel: with the "Logging paused" notification just posted, this capture's
+# status-bar strip and heads-up banner show the new white logo as installed - the artifact for
+# the clipping/recognizability check.
+adb exec-out screencap -p > $OUT/v21-notif-icon-statusbar.png
 adb shell am force-stop com.bumplog; sleep 1
 adb shell am start -n com.bumplog/.MainActivity --es screen settings; sleep 3
 # v17 backup status line sits at the bottom of the Backup card: scroll until its
@@ -168,6 +180,12 @@ sleep 2
 adb shell input keyevent KEYCODE_HOME; sleep 1
 adb shell cmd statusbar expand-notifications; sleep 2
 dump_ui
+# Discriminator, captured BEFORE the tap (the record can disappear after it): the posted
+# "Logging paused" notification's tap must route through the non-exported
+# InternalActionActivity (do=restart), which UNCONDITIONALLY sets restart_wanted=true.
+# Only with tramp-ok here does a post-tap restart_wanted=false prove MainActivity consumed it.
+adb shell dumpsys notification > $OUT/v17-dumpsys-notification.txt
+TRAMP=$(awk 'BEGIN{RS="NotificationRecord\\("} /Logging paused/ { if ($0 ~ /InternalActionActivity/) print "tramp-ok"; else print "tramp-missing"; found=1; exit } END { if (!found) print "tramp-no-record" }' $OUT/v17-dumpsys-notification.txt)
 B=$(printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'text="Logging paused"' | head -1 | grep -o 'bounds="\[[0-9]*,[0-9]*\]\[[0-9]*,[0-9]*\]"' | head -1 | sed 's/^bounds="//; s/"$//')
 if [ -n "$B" ]; then
   read X1 Y1 X2 Y2 <<< $(echo "$B" | grep -o '[0-9]\+' | tr '\n' ' ')
@@ -181,9 +199,11 @@ else
   echo "WARN: 'Logging paused' notification not found in shade"
 fi
 {
+  echo "-- notification tap route ($TRAMP: tramp-ok = the tap goes through the non-exported trampoline that sets restart_wanted) --"
   echo "-- resumed activity after tapping the notification (MainActivity = the direct-activity path worked) --"
-  adb shell dumpsys activity activities | grep -iE "mResumedActivity|topResumedActivity" | head -2
-  echo "-- prefs after the tap (detection true = the start flow consumed restart_wanted; default is also true, so presence alone cannot distinguish) --"
+  RESUMED=$(adb shell dumpsys activity activities | grep -iE "mResumedActivity|topResumedActivity" | head -2)
+  printf '%s\n' "$RESUMED"
+  echo "-- prefs after the tap + consumption verdict (restart_wanted=false proves consumption ONLY if the pre-tap route was tramp-ok; otherwise the default is also false and nothing is distinguished) --"
   # The fixture boundary: only the two synthetic keys may leave the device. set +x around the
   # read so xtrace can never echo the full prefs file into the CI log via the assignment trace.
   set +x
@@ -197,6 +217,14 @@ fi
   fi
   set -x
   printf '%s\n' "$PREFS_OUT"
+  # Bounded verdict: consumption is PROVEN only when all three hold - the pre-tap dump showed
+  # the tap routes via the trampoline (tramp-ok), MainActivity resumed, and restart_wanted
+  # now reads false. Anything else keeps the known uncovered qualification, never a pass claim.
+  if [ "$TRAMP" = "tramp-ok" ] && printf '%s\n' "$RESUMED" | grep -q 'com.bumplog/.MainActivity' && printf '%s\n' "$PREFS_OUT" | grep -q 'name="restart_wanted"[^/]*false'; then
+    echo "restart-consumption: PROVEN (pre-tap tramp-ok + MainActivity resumed + post-tap restart_wanted=false)"
+  else
+    echo "restart-consumption: NOT-DISTINGUISHED (route=$TRAMP; resumed and prefs above) - qualification stands"
+  fi
 } > $OUT/v17-restart-tap-lifecycle.txt
 cat $OUT/v17-restart-tap-lifecycle.txt
 # Never let the shade leak into the redesign captures below, whatever the tap outcome was.
@@ -227,7 +255,11 @@ FOUND=0
 for i in $(seq 1 8); do dump_ui_soft && printf '%s\n' "$UI_XML" | grep -qF "up to date" && { FOUND=1; break; }; sleep 1; done
 [ "$FOUND" = 1 ] || { echo "FAIL: up-to-date result not shown after tap"; exit 1; }
 adb exec-out screencap -p > $OUT/v21-uptodate-shown.png
-tap_now "Check for updates"; T2=$(date +%s)
+# Second tap via the cached point: the button cannot have moved - in Settings.kt the result
+# text appears in the version ROW above it, and the button is a separate full-width Box with
+# fixed height; only its label toggles. Skipping the re-dump lands T2 ~2.5s after T1, inside
+# the 5s window. A gap >= 5s stays the WARN/inconclusive branch below, never a failure.
+retap_last; T2=$(date +%s)
 GAP=$((T2 - T1))
 if [ "$GAP" -ge 5 ]; then echo "WARN: repeat tap landed ${GAP}s after the first; restart window missed, checking fresh-timer behavior only"; fi
 # Visible assertion: past the FIRST tap's deadline (proves the restart extended it), before the second's.

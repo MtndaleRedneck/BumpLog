@@ -16,7 +16,7 @@ on:
 # get their own group so a push never cancels a publish.
 concurrency:
   group: build-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name != 'workflow_dispatch' }}
 
 permissions:
   contents: read
@@ -102,11 +102,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           TAG=v$VERSION
-          # Releases are published only for a new version number. An existing release is never replaced.
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "Release $TAG already exists. Bump versionName to publish a new release."
-            exit 0
+          # Releases are published only for a new version number, and the check fails CLOSED:
+          # only a real HTTP 404 means absent. 200 means it exists; any other status
+          # (401/403/5xx) or no status line at all (network/proxy failure) refuses the publish.
+          REF_ST=$(gh api -i "repos/{owner}/{repo}/git/ref/tags/$TAG" 2>&1 | sed -n 's/^HTTP[^ ]* \([0-9][0-9][0-9]\).*/\1/p' | head -1)
+          REL_ST=$(gh api -i "repos/{owner}/{repo}/releases/tags/$TAG" 2>&1 | sed -n 's/^HTTP[^ ]* \([0-9][0-9][0-9]\).*/\1/p' | head -1)
+          if [ "$REF_ST" = "200" ]; then
+            echo "FAIL: tag $TAG already exists (HTTP 200). Resolve the tag before publishing."
+            exit 1
           fi
+          if [ "$REL_ST" = "200" ]; then
+            echo "FAIL: release $TAG already exists (HTTP 200). Bump versionName to publish a new release."
+            exit 1
+          fi
+          if [ "$REF_ST" != "404" ]; then
+            echo "FAIL: could not verify tag $TAG is absent (status '${REF_ST:-none}'); refusing to publish."
+            exit 1
+          fi
+          if [ "$REL_ST" != "404" ]; then
+            echo "FAIL: could not verify release $TAG is absent (status '${REL_ST:-none}'); refusing to publish."
+            exit 1
+          fi
+          echo "GUARD-PASSED: no tag or release named $TAG (both HTTP 404)."
           # Release pages show ONLY their own version's notes (owner's standing rule, Oct 2026):
           # extract the "BumpLog $V" section from the running notes file.
           awk -v v="BumpLog $VERSION" 'BEGIN{f=0} $0 ~ /^BumpLog / { if($0==v){f=1}else if(f){exit} } f' release-notes.md > /tmp/notes.md

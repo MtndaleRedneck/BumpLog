@@ -1,3 +1,15 @@
+BumpLog 1.18.0
+
+November 25, 2026. A freshened Settings and a modernized app.
+
+New:
+- Settings has a new layout. A Feedback & bugs row (with a clearer arrow) opens the screen for sending feedback, reporting a bug or suggesting a feature, and a version card has a "Check for updates" button - the answer ("You're up to date.") shows next to the version and fades away after 5 seconds.
+- Settings keeps your place when you open a screen and come back; leaving Settings fully starts you back at the top.
+- Notifications use a white version of the BumpLog logo.
+
+Under the hood:
+- BumpLog is rebuilt on Android SDK 37 with Android Gradle plugin 9.3.1 and Kotlin 2.4.21, and the release app now strips out unused code and resources.
+
 BumpLog 1.17.2
 
 November 24, 2026. Share-sheet and restore reliability fixes.
