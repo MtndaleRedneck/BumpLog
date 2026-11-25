@@ -23,7 +23,9 @@ for t in 1 2; do
 done
 adb install -r $APK
 for p in ACCESS_FINE_LOCATION ACCESS_COARSE_LOCATION ACCESS_BACKGROUND_LOCATION POST_NOTIFICATIONS BLUETOOTH_CONNECT; do adb shell pm grant com.bumplog android.permission.$p; done
-shot() { adb shell am force-stop com.bumplog; sleep 1; adb shell am start -n com.bumplog/.MainActivity "${@:2}"; sleep 5; adb exec-out screencap -p > $OUT/$1.png; }
+# statusbar collapse first: the notification-tap section leaves the shade open on its WARN path,
+# and a shade left open poisons every later capture AND every uiautomator dump (it reads the shade).
+shot() { adb shell cmd statusbar collapse; adb shell am force-stop com.bumplog; sleep 1; adb shell am start -n com.bumplog/.MainActivity "${@:2}"; sleep 5; adb exec-out screencap -p > $OUT/$1.png; }
 # dump_ui: fresh UI hierarchy into $UI_XML, fail-closed: a failed dump exits the script, so no
 # assertion, scroll or tap can ever read a stale or missing /sdcard/ui.xml. Always called
 # directly (never in a subshell or pipeline) so the exit really exits.
@@ -162,6 +164,9 @@ fi
   adb shell run-as com.bumplog cat shared_prefs/spotter.xml 2>/dev/null | grep -oE 'name="(restart_wanted|detection_enabled)"[^/]*' || echo "(run-as unavailable)"
 } > $OUT/v17-restart-tap-lifecycle.txt
 cat $OUT/v17-restart-tap-lifecycle.txt
+# Never let the shade leak into the redesign captures below, whatever the tap outcome was.
+adb shell cmd statusbar collapse
+sleep 1
 # --- Redesign runtime proof: bar styles, feedback row, updates timer, settings scroll rule ---
 # Bottom bar styles (owner-approved trial): same Home screen under all three.
 shot v21-bar-pill --ez demo true --es screen home --es barstyle pill

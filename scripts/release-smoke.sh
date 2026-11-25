@@ -21,6 +21,26 @@ dump_ui() {
 }
 # has_text <fixed string>: 0 present, 1 absent; a failed dump exits before the grep.
 has_text() { dump_ui; printf '%s\n' "$UI_XML" | grep -qF "$1"; }
+# wait_text <fixed> <timeout-s>: poll until the text renders (bounded), so slow first-frame or
+# warm-route timing can never false-red a working screen.
+wait_text() {
+  DEADLINE=$(( $(date +%s) + $2 ))
+  while [ $(date +%s) -lt $DEADLINE ]; do
+    dump_ui
+    if printf '%s\n' "$UI_XML" | grep -qF "$1"; then return 0; fi
+    sleep 1
+  done
+  return 1
+}
+# fail <name> <message>: capture what IS on screen (pixels, visible texts, any crash) before dying,
+# so the next failure is diagnosable from the artifact alone.
+fail() {
+  echo "FAIL: $2"
+  adb exec-out screencap -p > $OUT/fail-$1.png 2>/dev/null
+  adb shell uiautomator dump /sdcard/ui-fail.xml >/dev/null 2>&1 && adb shell cat /sdcard/ui-fail.xml | tr '<' '\n' | grep -o 'text="[^"]*"' | head -20 | tee $OUT/fail-$1-texts.txt
+  adb logcat -d | grep -A25 'FATAL EXCEPTION' | head -40
+  exit 1
+}
 adb shell am force-stop com.bumplog; sleep 1
 adb logcat -c
 adb shell am start -n com.bumplog/.MainActivity; sleep 6
@@ -28,18 +48,18 @@ PID=$(adb shell pidof com.bumplog | tr -d '\r')
 if [ -z "$PID" ]; then echo "FAIL: release app not running after launch"; adb logcat -d | tail -80; exit 1; fi
 # Real screen assertions, not just process liveness: each key screen must render its own content.
 # A fresh install truthfully lands on the assistant setup screen (setupDone is false).
-has_text "Set up your assistant" || { echo "FAIL: setup screen not rendered on fresh install"; exit 1; }
+wait_text "Set up your assistant" 12 || fail setup "setup screen not rendered on fresh install"
 adb exec-out screencap -p > $OUT/release-setup.png
 # Warm route to Home exercises the minified home graph (singleTask: onNewIntent handles the extra).
-adb shell am start -n com.bumplog/.MainActivity --es screen home; sleep 3
-has_text "Detection" || { echo "FAIL: home screen content not rendered"; exit 1; }
+adb shell am start -n com.bumplog/.MainActivity --es screen home
+wait_text "Detection" 12 || fail home "home screen content not rendered after warm route"
 adb exec-out screencap -p > $OUT/release-home.png
 # Settings and its child feedback screen exercise the minified Compose graph and resources.
-adb shell am start -n com.bumplog/.MainActivity --es screen settings; sleep 3
-has_text "Sensitivity" || { echo "FAIL: settings screen content not rendered"; exit 1; }
+adb shell am start -n com.bumplog/.MainActivity --es screen settings
+wait_text "Sensitivity" 12 || fail settings "settings screen content not rendered"
 adb exec-out screencap -p > $OUT/release-settings.png
-adb shell am start -n com.bumplog/.MainActivity --es screen feedback; sleep 3
-has_text "What will be sent" || { echo "FAIL: feedback screen content not rendered"; exit 1; }
+adb shell am start -n com.bumplog/.MainActivity --es screen feedback
+wait_text "What will be sent" 12 || fail feedback "feedback screen content not rendered"
 adb exec-out screencap -p > $OUT/release-feedback.png
 if adb logcat -d | grep -q "FATAL EXCEPTION"; then
   echo "FAIL: FATAL EXCEPTION in logcat"
