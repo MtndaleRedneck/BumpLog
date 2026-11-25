@@ -363,9 +363,10 @@ has_text "Sensitivity" || { echo "FAIL: settings top not visible after re-entry"
 adb exec-out screencap -p > $OUT/v21-scroll-reset.png
 
 # Keyboard and D-pad activation plus haptic on/off, observed on the running app. TAB moves focus to the first
-# focusable control, the UI dump must then show a focused node, and ENTER must produce a new vibrator CLICK entry
-# (key activation ticks while Vibrate on press is on). Then Vibrate on press is switched off in Settings and the same
-# key activation and a tap must add NO new CLICK entry. Counts come from the dumpsys files saved beside the shots.
+# focusable control (its identity is printed, not asserted to be a particular button). D-pad center on it must be
+# followed by a new app-attributed CLICK. Then the Vibrate on press row is tapped, its checked state is read before and
+# after, key activation is repeated with it off and only the absence of a new app CLICK is observed, and the setting is
+# restored and verified. No claim beyond the assertions below.
 # Haptic proof: the newest TOUCH-usage CLICK vibration attributed to com.bumplog, by its own createTime on the device
 # clock. A marker taken from the same device clock just before the action must be older than that event. Dump or clock
 # failures fail the script; nothing is inferred from line counts, so a full history buffer cannot hide an event.
