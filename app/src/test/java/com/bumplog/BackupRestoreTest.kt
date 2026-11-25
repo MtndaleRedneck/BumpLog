@@ -40,6 +40,25 @@ class BackupRestoreTest {
         Backup.hashForReconcile = { Backup.sha256Hex(it) }
     }
 
+    @Test
+    fun barStyleRoundTripsThroughBackup() {
+        Prefs.barStyle = "glass"
+        val dump = Prefs.dumpAll()
+        assertTrue("barstyle must be part of a settings backup", dump.has("barstyle"))
+        Prefs.barStyle = "flat"
+        val applied = Prefs.restoreAll(dump)
+        assertTrue(applied >= 1)
+        assertEquals("glass", Prefs.barStyle)
+    }
+
+    @Test
+    fun barStyleRestoreRejectsUnknownValue() {
+        Prefs.barStyle = "pill"
+        val applied = Prefs.restoreAll(JSONObject().put("barstyle", JSONObject().put("t", "s").put("v", "neon")))
+        assertEquals(0, applied)
+        assertEquals("pill", Prefs.barStyle)
+    }
+
     private fun backupJson(): JSONObject = JSONObject()
         .put("format", "BumpLog backup").put("version", 1).put("created", 1L)
         .put("prefs", JSONObject().put("minspeed", JSONObject().put("t", "i").put("v", 20)))

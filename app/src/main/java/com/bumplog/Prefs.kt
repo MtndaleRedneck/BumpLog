@@ -84,7 +84,7 @@ object Prefs {
     }
 
     private val SETTING_KEYS = setOf("detection", "cutoff", "severe", "minspeed", "accent_rgb", "accent", "assistant", "addr_instinct", "addr_tab", "addr_custom",
-        "setup_done", "setup_email_sent", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons", "autooff")
+        "setup_done", "setup_email_sent", "guide_seen", "autostart", "car_addr", "car_name", "warn_far", "warn_near", "audio_mode", "tone", "voice", "hit_timeout", "lock_buttons", "autooff", "barstyle")
 
     /** Checks one restored value against the type and range its setting expects. Returns the clean value or null to skip it. */
     private fun checked(k: String, t: String, x: org.json.JSONObject): Any? {
@@ -104,6 +104,7 @@ object Prefs {
             "assistant" -> str(10)?.takeIf { it in listOf("INSTINCT", "TAB", "CUSTOM") }
             "audio_mode" -> str(10)?.takeIf { it in listOf("BOTH", "TONE", "VOICE", "OFF") }
             "tone" -> str(10)?.takeIf { it in listOf("CHIME", "ALARM", "BEEP", "DOUBLE") }
+            "barstyle" -> str(10)?.takeIf { it in listOf("flat", "pill", "glass") }
             "voice" -> str(200)
             "car_addr", "car_name" -> str(64)
             "addr_instinct", "addr_tab", "addr_custom" -> str(254)?.let { cleanEmail(it) }?.takeIf { it.isEmpty() || isValidEmail(it) }

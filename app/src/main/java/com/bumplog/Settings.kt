@@ -56,7 +56,7 @@ fun pairedDevices(ctx: Context): List<Pair<String, String>> {
 }
 
 @Composable
-fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, askPerms: () -> Unit, openVoice: () -> Unit, openBug: () -> Unit, openSetup: () -> Unit, onCheckUpdates: () -> Unit) {
+fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, askPerms: () -> Unit, openVoice: () -> Unit, openBug: () -> Unit, openSetup: () -> Unit, onCheckUpdates: (UpdateInfo) -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
     // Local copies so the screen redraws as values change.
@@ -260,12 +260,13 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         Card(pad = 16.dp) {
             var checking by remember { mutableStateOf(false) }
             var result by remember { mutableStateOf("") }
+            var resultSeq by remember { mutableStateOf(0) } // restarts the hide timer even when the same result repeats
             val scope = rememberCoroutineScope()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Version ${BuildConfig.VERSION_NAME}", 16, FontWeight.Bold, modifier = Modifier.weight(1f))
                 if (result.isNotEmpty()) Txt(result, 14, FontWeight.Medium, p.accent)
             }
-            LaunchedEffect(result) { if (result == "You're up to date.") { kotlinx.coroutines.delay(5000); result = "" } }
+            LaunchedEffect(resultSeq) { if (result == "You're up to date.") { kotlinx.coroutines.delay(5000); result = "" } }
             Spacer(Modifier.height(10.dp))
             Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).clip(RoundedCornerShape(26.dp)).background(p.accentGradient)
                 .clickable(enabled = !checking) {
@@ -278,9 +279,9 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                         checking = false
                         when {
                             failed -> toast(ctx, "Couldn't check for updates right now.")
-                            info == null -> result = "You're up to date."
-                            // The offer pop-up owns the release flow; it re-checks and shows the notes.
-                            else -> onCheckUpdates()
+                            info == null -> { result = "You're up to date."; resultSeq++ }
+                            // The offer pop-up owns the release flow; it shows this already-fetched info and its notes.
+                            else -> onCheckUpdates(info)
                         }
                     }
                 }, contentAlignment = Alignment.Center) {

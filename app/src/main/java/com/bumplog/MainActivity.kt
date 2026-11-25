@@ -130,24 +130,22 @@ class MainActivity : ComponentActivity() {
     }
     override fun onDestroy() { updateJob?.cancel(); super.onDestroy() }
 
-    /** Always on: once per cold open, plus any manual tap of Check for updates in Settings.
-     * A manual tap always runs and always says what happened, even during a drive -
-     * the offer stays cancelable. Only the automatic check stays quiet during a drive.
-     * A skipped version stays skipped on the automatic check. */
-    private fun checkForUpdate(fakeCurrent: String?, manual: Boolean = false) {
+    /** Once per cold open. The manual Check for updates in Settings does its own fetch and hands the
+     * result straight to the offer, so it never double-requests. The automatic check stays quiet during
+     * a drive, and a skipped version stays skipped. */
+    private fun checkForUpdate(fakeCurrent: String?) {
         val current = fakeCurrent ?: BuildConfig.VERSION_NAME
         Updater.clean(this)
         ioScope.launch {
             val info = try {
                 kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { Updater.checkOrThrow(current) }
             } catch (e: Exception) {
-                if (manual) toast(this@MainActivity, "Couldn't check for updates right now.")
                 return@launch
             }
             val st = Live.state.value
-            if (st.running && st.gps && st.speedMph >= Prefs.minSpeedMph && !manual) return@launch
-            if (info == null) { if (manual) toast(this@MainActivity, "You're up to date."); return@launch }
-            if (!manual && info.versionName == Prefs.skippedUpdate) return@launch
+            if (st.running && st.gps && st.speedMph >= Prefs.minSpeedMph) return@launch
+            if (info == null) return@launch
+            if (info.versionName == Prefs.skippedUpdate) return@launch
             updateUi = UpdateUi.Offer(info)
         }
     }
@@ -422,7 +420,7 @@ class MainActivity : ComponentActivity() {
                         "review" -> ReviewScreen(live, { stack = listOf(Screen.Spot(it)) }) { stack = listOf(Screen.Setup) }
                         "reported" -> ReportedScreen(live.tick) { stack = listOf(Screen.Spot(it)) }
                         "stats" -> StatsScreen(live.tick) { stack = listOf(Screen.Spot(it)) }
-                        "settings" -> SettingsScreen(live.tick, settingsScroll, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) }, { stack = listOf(Screen.Setup) }, { checkForUpdate(null, manual = true) })
+                        "settings" -> SettingsScreen(live.tick, settingsScroll, { askPerms() }, { stack = listOf(Screen.Voice) }, { stack = listOf(Screen.BugReport) }, { stack = listOf(Screen.Setup) }, { info -> updateUi = UpdateUi.Offer(info) })
                         else -> HomeScreen(live, { stack = listOf(Screen.Spot(it)) }, { stack = listOf(Screen.Damage(0)) }, permsOk, { askPerms() },
                             {
                                 Prefs.passenger = !Prefs.passenger
