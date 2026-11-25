@@ -390,7 +390,25 @@ newest_app_click() {
 # click_after <click> <marker>: true only when both are well-formed and the click is strictly later.
 click_after() { [[ "$1" =~ $TS_RE && "$2" =~ $TS_RE && "$1" > "$2" ]]; }
 focused_line() { printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'focused="true"' | grep -v 'class="android.widget.FrameLayout"' | head -1; }
-vibrate_checked() { dump_ui || return 1; printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -F 'Vibrate on press' | grep -o 'checked="[a-z]*"' | head -1; }
+# The checked state lives on the toggleable row that CONTAINS the "Vibrate on press" text node (the text node itself is never
+# checked), so find the smallest checkable node whose bounds enclose that text. Prints checked="true"/"false"; fails if absent.
+vibrate_checked() {
+  dump_ui || return 1
+  printf '%s' "$UI_XML" | python3 -c '
+import re,sys,xml.etree.ElementTree as ET
+root=ET.fromstring(sys.stdin.read())
+def bx(n):
+    m=re.match(r"\[(\d+),(\d+)\]\[(\d+),(\d+)\]",n.get("bounds",""))
+    return tuple(map(int,m.groups())) if m else None
+t=[bx(n) for n in root.iter("node") if n.get("text")=="Vibrate on press" and bx(n)]
+if len(t)!=1: sys.exit(2)
+a=t[0]
+c=[(bx(n),n) for n in root.iter("node") if n.get("checkable")=="true" and bx(n) and bx(n)[0]<=a[0] and bx(n)[1]<=a[1] and bx(n)[2]>=a[2] and bx(n)[3]>=a[3]]
+if not c: sys.exit(3)
+c.sort(key=lambda x:(x[0][2]-x[0][0])*(x[0][3]-x[0][1]))
+print("checked=\"%s\"" % c[0][1].get("checked"))
+' || { echo "vibrate row state unreadable" >&2; return 1; }
+}
 adb shell am force-stop com.bumplog; sleep 1
 adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --es reporticon mono; sleep 5
 adb shell input keyevent KEYCODE_TAB; sleep 1
