@@ -66,8 +66,9 @@ class LogItActivity : ComponentActivity() {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf("MAJOR" to "Major", "MINOR" to "Minor").forEach { (k, label) ->
                         val on = severity == k
-                        Box(Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(if (on) p.accent else p.card2)
-                            .clickable { severity = k }.heightIn(min = 56.dp).padding(14.dp), contentAlignment = Alignment.Center) {
+                        Box(Modifier.weight(1f).pressFeel(role = androidx.compose.ui.semantics.Role.RadioButton, selected = on, onPress = { severity = k })
+                            .clip(RoundedCornerShape(14.dp)).background(if (on) p.accent else p.card2)
+                            .heightIn(min = 56.dp).padding(14.dp), contentAlignment = Alignment.Center) {
                             Txt(label, 16, FontWeight.Bold, if (on) p.onAccent else p.text)
                         }
                     }

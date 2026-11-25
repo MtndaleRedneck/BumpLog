@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -601,6 +602,9 @@ fun PowerButton(detOn: Boolean, onClick: () -> Unit) {
     val ctx = LocalContext.current
     val src = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val pressed by src.collectIsPressedAsState()
+    // The button is focusable through clickable (keyboard Enter or D-pad center already click and set pressed, so the
+    // tick below fires once). Indication is off, so draw a ring when it holds focus.
+    val focused by androidx.compose.foundation.interaction.collectIsFocusedAsState(src)
     // Same light tick on touch-down as every other button; the existing sink-in depth stays.
     val view = androidx.compose.ui.platform.LocalView.current
     LaunchedEffect(pressed) { if (pressed && Prefs.haptics) view.performHapticFeedback(android.view.HapticFeedbackConstants.KEYBOARD_TAP) }
@@ -621,6 +625,12 @@ fun PowerButton(detOn: Boolean, onClick: () -> Unit) {
         .background(androidx.compose.ui.graphics.Brush.verticalGradient(if (sunk) listOf(insetTop, insetBot) else listOf(raisedTop, raisedBot)))
         .border(if (detOn) 3.dp else 2.dp,
             androidx.compose.ui.graphics.Brush.verticalGradient(if (detOn) listOf(ringColor, ringColor) else edge), shape)
+        .drawWithContent {
+            drawContent()
+            if (focused) drawRoundRect(p.text, topLeft = androidx.compose.ui.geometry.Offset(5.dp.toPx(), 5.dp.toPx()),
+                size = androidx.compose.ui.geometry.Size(size.width - 10.dp.toPx(), size.height - 10.dp.toPx()),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(16.dp.toPx()), style = androidx.compose.ui.graphics.drawscope.Stroke(2.dp.toPx()))
+        }
     val c = p.text
     Box(m.clickable(interactionSource = src, indication = null, role = androidx.compose.ui.semantics.Role.Switch, onClick = onClick)
         .semantics { contentDescription = "Bump detection"; stateDescription = if (detOn) "On" else "Off" }, contentAlignment = Alignment.Center) {

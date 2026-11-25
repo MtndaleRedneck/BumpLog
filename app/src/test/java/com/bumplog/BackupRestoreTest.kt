@@ -81,6 +81,20 @@ class BackupRestoreTest {
         assertEquals(0, Prefs.restoreAll(JSONObject().put("barstyle", JSONObject().put("t", "s").put("v", "glass"))))
     }
 
+    @Test
+    fun retiredBarStyleDoesNotBlockOtherValidFields() {
+        val applied = Prefs.restoreAll(JSONObject()
+            .put("barstyle", JSONObject().put("t", "s").put("v", "pill"))
+            .put("minspeed", JSONObject().put("t", "i").put("v", 33))
+            .put("haptics", JSONObject().put("t", "b").put("v", false))
+            .put("report_icon", JSONObject().put("t", "s").put("v", "color")))
+        assertEquals(3, applied)
+        assertEquals(33, Prefs.minSpeedMph)
+        assertEquals(false, Prefs.haptics)
+        assertEquals("color", Prefs.reportIcon)
+        Prefs.haptics = true; Prefs.reportIcon = "mono"; Prefs.minSpeedMph = 15 // leave shared prefs as found
+    }
+
     private fun backupJson(): JSONObject = JSONObject()
         .put("format", "BumpLog backup").put("version", 1).put("created", 1L)
         .put("prefs", JSONObject().put("minspeed", JSONObject().put("t", "i").put("v", 20)))

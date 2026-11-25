@@ -362,6 +362,33 @@ has_text "Send feedback" && { echo "FAIL: settings did not reset to top after le
 has_text "Sensitivity" || { echo "FAIL: settings top not visible after re-entry"; exit 1; }
 adb exec-out screencap -p > $OUT/v21-scroll-reset.png
 
+# Keyboard and D-pad activation plus haptic on/off, observed on the running app. TAB moves focus to the first
+# focusable control, the UI dump must then show a focused node, and ENTER must produce a new vibrator CLICK entry
+# (key activation ticks while Vibrate on press is on). Then Vibrate on press is switched off in Settings and the same
+# key activation and a tap must add NO new CLICK entry. Counts come from the dumpsys files saved beside the shots.
+click_count() { adb shell dumpsys vibrator_manager 2>&1 | grep -c "CLICK" || true; }
+adb shell am force-stop com.bumplog; sleep 1
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home --es reporticon mono; sleep 5
+adb shell input keyevent KEYCODE_TAB; sleep 1
+dump_ui
+printf '%s\n' "$UI_XML" | tr '<' '\n' | grep -qF 'focused="true"' || { echo "FAIL: TAB did not focus any control"; exit 1; }
+adb exec-out screencap -p > $OUT/v23-key-focus.png
+C0=$(click_count)
+adb shell input keyevent KEYCODE_DPAD_CENTER; sleep 1
+C1=$(click_count)
+adb shell dumpsys vibrator_manager > $OUT/v23-key-enter-vibrator.txt 2>&1 || true
+echo "key activation: CLICK entries before=$C0 after=$C1"
+[ "$C1" -gt "$C0" ] || { echo "FAIL: D-pad center produced no tick with Vibrate on press on"; exit 1; }
+adb exec-out screencap -p > $OUT/v23-key-after.png
+shot v23-vibrate-before --es screen settings
+tap_text "Vibrate on press"
+adb exec-out screencap -p > $OUT/v23-vibrate-off.png
+C2=$(click_count)
+adb shell input keyevent KEYCODE_TAB; adb shell input keyevent KEYCODE_DPAD_CENTER; sleep 1
+C3=$(click_count)
+echo "vibrate off: CLICK entries before=$C2 after=$C3"
+[ "$C3" -eq "$C2" ] || { echo "FAIL: tick fired with Vibrate on press off"; exit 1; }
+
 ls -la $OUT
 adb shell wm size reset
 adb shell wm density reset

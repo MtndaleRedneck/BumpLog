@@ -109,11 +109,15 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     row.forEachIndexed { c, col ->
                         val idx = r * 5 + c
-                        Box(Modifier.size(46.dp)
+                        // 48 dp touch target around the same 46 dp circle, so the look is unchanged. Five across is 240 dp, which
+                        // fits the card's inner width down to a 320 dp-wide screen (320 - 32 pane - 32 card = 256).
+                        Box(Modifier.size(48.dp)
                             .pressFeel(role = androidx.compose.ui.semantics.Role.RadioButton, selected = accent == idx, onPress = { accent = idx; Prefs.accent = idx; Live.bump() })
-                            .semantics { contentDescription = "Accent color, ${SwatchNames.getOrElse(idx) { "custom" }}" }
-                            .clip(CircleShape).background(col)
-                            .let { if (accent == idx) it.border(3.dp, p.text, CircleShape) else it })
+                            .semantics { contentDescription = "Accent color, ${SwatchNames.getOrElse(idx) { "custom" }}" },
+                            contentAlignment = Alignment.Center) {
+                            Box(Modifier.size(46.dp).clip(CircleShape).background(col)
+                                .let { if (accent == idx) it.border(3.dp, p.text, CircleShape) else it })
+                        }
                     }
                 }
             }
@@ -167,7 +171,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Spacer(Modifier.height(8.dp))
             Muted("Alerts also pop up as a heads-up notification with Yes / No / Warn buttons.", 12)
         }
-        Card(Modifier.clickable { openVoice() }, pad = 16.dp) {
+        Card(Modifier.pressFeel(onPress = { openVoice() }), pad = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Txt("Voice", 18, FontWeight.Bold)
@@ -222,7 +226,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         if (auto && cars.isNotEmpty()) Card {
             Dropdown("Car Bluetooth", car, listOf("" to "Choose your car") + cars) { car = it; Prefs.carAddress = it; Prefs.carName = cars.firstOrNull { c -> c.first == it }?.second ?: "" }
         }
-        Card(Modifier.clickable { Notifier.openPersistentSettings(ctx) }, pad = 16.dp) {
+        Card(Modifier.pressFeel(onPress = { Notifier.openPersistentSettings(ctx) }), pad = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Txt("Persistent notification", 18, FontWeight.Bold)
@@ -232,13 +236,13 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             }
         }
         // Setup rows only show while something still needs doing; they come back by themselves if a permission or the battery exemption is lost.
-        if (!permsOk) Card(Modifier.clickable { askPerms() }, pad = 16.dp) {
+        if (!permsOk) Card(Modifier.pressFeel(onPress = { askPerms() }), pad = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Txt("Permissions", 18, FontWeight.Bold, modifier = Modifier.weight(1f))
                 Txt("Set up", 17, FontWeight.Bold, p.accentText(p.card2))
             }
         }
-        if (!batt) Card(Modifier.clickable { batterySetup(ctx) }, pad = 16.dp) {
+        if (!batt) Card(Modifier.pressFeel(onPress = { batterySetup(ctx) }), pad = 16.dp) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) { Txt("Battery setup", 18, FontWeight.Bold); Muted("Samsung can stop BumpLog mid-drive. Tap to fix.", 12) }
                 Txt("Set up", 17, FontWeight.Bold, p.accentText(p.card2))
@@ -276,12 +280,14 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
         Card(pad = 16.dp) {
             var checking by remember { mutableStateOf(false) }
             var result by remember { mutableStateOf("") }
-            var resultSeq by remember { mutableStateOf(0) } // restarts the hide timer even when the same result repeats
+            // Bumped at every check start and every result. The hide timer is keyed on it, so a new check or result cancels
+            // an older timer, and a late timer can never erase a newer result (for example a failure).
+            var resultSeq by remember { mutableStateOf(0) }
             val scope = rememberCoroutineScope()
             LaunchedEffect(resultSeq) { if (result == "You're up to date.") { kotlinx.coroutines.delay(5000); result = "" } }
             Box(Modifier.fillMaxWidth().heightIn(min = 52.dp).pressFeel(!checking) {
                     checking = true
-                    result = ""
+                    result = ""; resultSeq++
                     scope.launch {
                         if (BuildConfig.DEBUG && Testing.fakeUpToDateCount > 0) {
                             Testing.fakeUpToDateCount--
@@ -294,7 +300,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                         } catch (e: Exception) { failed = true; null }
                         checking = false
                         when {
-                            failed -> result = "Couldn't check right now. Try again later."
+                            failed -> { result = "Couldn't check right now. Try again later."; resultSeq++ }
                             info == null -> { result = "You're up to date."; resultSeq++ }
                             // The offer pop-up owns the release flow; it shows this already-fetched info and its notes.
                             else -> onCheckUpdates(info)
