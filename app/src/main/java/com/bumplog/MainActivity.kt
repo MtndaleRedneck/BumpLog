@@ -451,7 +451,7 @@ class MainActivity : ComponentActivity() {
                         .border(1.dp, p.card2, barShape).padding(vertical = 8.dp)
                 else
                     Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp)
-                Row(barMod) {
+                Row(barMod, verticalAlignment = Alignment.CenterVertically) {
                     val pill = barStyle != "flat"
                     NavItem("Home", Icons.Default.Home, tab == "home" && top == null, pill, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
                     NavItem("Review", Icons.Default.CheckCircle, tab == "review" && top == null, pill, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
@@ -468,12 +468,13 @@ class MainActivity : ComponentActivity() {
         val p = LocalPal.current
         // A tab role and selected state so TalkBack announces what is active; at least 48dp of touch height.
         Column(m.selectable(selected = sel, role = Role.Tab, onClick = onClick).heightIn(min = 48.dp).padding(vertical = 6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Box(contentAlignment = Alignment.Center) {
+            // Fixed icon slot per bar mode so the selected pill never pushes its label below its neighbors'.
+            Box(Modifier.height(if (pill) 32.dp else 26.dp), contentAlignment = Alignment.Center) {
                 if (pill && sel) Box(Modifier.size(64.dp, 32.dp).clip(RoundedCornerShape(16.dp)).background(p.accent.copy(alpha = 0.17f)))
-                // Selected tint is checked against card so the label also reads on the glass bar's card surface.
-                Icon(icon, null, tint = if (sel) p.accentText(p.card) else p.muted, modifier = Modifier.size(26.dp))
+                // Selected tint is checked against card2 so the label also reads on the glass bar's composite surface.
+                Icon(icon, null, tint = if (sel) p.accentText(p.card2) else p.muted, modifier = Modifier.size(26.dp))
             }
-            Txt(label, 12, FontWeight.Medium, if (sel) p.accentText(p.card) else p.muted)
+            Txt(label, 12, FontWeight.Medium, if (sel) p.accentText(p.card2) else p.muted)
         }
     }
 }
