@@ -32,21 +32,38 @@ shot() { adb shell cmd statusbar collapse; adb shell am force-stop com.bumplog; 
 # dump_ui_soft: one dump attempt. 0 = fresh hierarchy in $UI_XML; 1 = no fresh dump. It clears
 # $UI_XML first, so a failed attempt can never leave a stale document for a grep to read.
 dump_ui_soft() {
+  # One attempt, nonfatal - but the same enforced freshness as dump_ui: verified delete,
+  # successful dump, fresh complete-hierarchy read. Any failed step returns 1 WITHOUT
+  # touching UI_XML, so a stale hierarchy can never turn into a positive found/absent read.
   UI_XML=""
-  adb shell rm -f /sdcard/ui.xml 2>/dev/null
+  adb shell rm -f /sdcard/ui.xml 2>/dev/null || return 1
+  adb shell test ! -e /sdcard/ui.xml || return 1
   adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1 || return 1
   local X
   X=$(adb shell cat /sdcard/ui.xml 2>/dev/null) || return 1
-  # A successful dump with an empty or invalid read must never pass an absence assertion.
-  case "$X" in *"<hierarchy"*) UI_XML="$X"; return 0 ;; *) return 1 ;; esac
+  case "$X" in *"<hierarchy"*"</hierarchy>"*) UI_XML="$X"; return 0 ;; *) return 1 ;; esac
 }
 dump_ui() {
-  adb shell rm -f /sdcard/ui.xml
-  if ! adb shell uiautomator dump /sdcard/ui.xml >/dev/null 2>&1; then echo "FAIL: uiautomator dump failed"; exit 1; fi
-  UI_XML=$(adb shell cat /sdcard/ui.xml) || { echo "FAIL: could not read the UI dump"; exit 1; }
-  # A successful dump with an empty or invalid read must never pass an absence assertion:
-  # require a non-empty hierarchy document before any grep sees it.
-  case "$UI_XML" in *"<hierarchy"*) ;; *) echo "FAIL: UI dump has no hierarchy root"; exit 1 ;; esac
+  # Bounded retry around a transiently unreadable dump. Freshness is enforced, not assumed:
+  # every attempt REQUIRES a verified delete of the old file, a successful dump, and a fresh
+  # read carrying a hierarchy root. A failed delete or dump invalidates the attempt before any
+  # read happens, so a stale or partial hierarchy can never pass. Fail-closed with diagnostics.
+  local i OUT
+  for i in 1 2 3; do
+    UI_XML=""
+    OUT=""
+    adb shell rm -f /sdcard/ui.xml 2>/dev/null || { echo "WARN: UI dump attempt $i: could not clear /sdcard/ui.xml; retrying"; sleep 2; continue; }
+    adb shell test ! -e /sdcard/ui.xml || { echo "WARN: UI dump attempt $i: old dump survived the delete; retrying"; sleep 2; continue; }
+    OUT=$(adb shell uiautomator dump /sdcard/ui.xml 2>&1) || { echo "WARN: UI dump attempt $i: dump failed ('${OUT:-no output}'); retrying"; sleep 2; continue; }
+    UI_XML=$(adb shell cat /sdcard/ui.xml 2>/dev/null) || { echo "WARN: UI dump attempt $i: dump file unreadable (dump said: '${OUT:-no output}'); retrying"; sleep 2; continue; }
+    case "$UI_XML" in
+      *"<hierarchy"*"</hierarchy>"*) return 0 ;;
+      *) echo "WARN: UI dump attempt $i: incomplete hierarchy (missing root or closing tag); retrying"; sleep 2 ;;
+    esac
+  done
+  echo "FAIL: could not read the UI dump after 3 attempts (last dump said: '${OUT:-no output}')"
+  adb shell ls -la /sdcard/ui.xml 2>&1 || true
+  exit 1
 }
 # has_text <fixed string>: 0 present, 1 absent; a failed dump exits before the grep, so a
 # negative assertion can never read a failed dump as absence.
