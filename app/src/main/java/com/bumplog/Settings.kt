@@ -132,7 +132,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                     uncheckedTrackColor = p.card2, uncheckedThumbColor = p.muted, uncheckedBorderColor = p.muted))
             }
             Spacer(Modifier.height(10.dp))
-            Txt("Report icon", 15)
+            Txt("Report icon on home screen", 15)
             Spacer(Modifier.height(8.dp))
             // Two buttons, the chosen one filled. Same look as the app's other button pairs.
             PillRow(listOf(
