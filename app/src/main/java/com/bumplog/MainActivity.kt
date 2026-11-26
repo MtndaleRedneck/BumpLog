@@ -338,15 +338,21 @@ class MainActivity : ComponentActivity() {
     private fun closeAskSentWithoutSend() {
         val q = askQuestion ?: PendingAsk.current()   // the question the user was shown, not whatever is stored now
         askQuestion = null; askSent = null
-        val snap = if (q.kind == "again") Rollback.parse(q.again) else null
+        val plan = Rollback.plan(q.kind, q.again)
         val finish = { PendingAsk.clearIf(q.gen); Live.bump() }
         // The pending state is cleared only after the rollback is written, so a process death in between still has it (the dialog just asks again).
         // The user's "not sent" answer is always applied: the rollback is ONE conditional statement that only touches a row that still carries the report time this
         // question's Report again wrote, so a newer re-report (or anything else that changed the row) makes it a no-op and it needs no generation gate. The
         // question is cleared only after the rollback landed, and only if it is still the displayed one (a newer question survives). A kill or error before the clear
         // re-asks, and running the rollback twice is harmless.
-        if (snap == null) finish()
-        else DbQ.run(this, fail = { Live.bump() }, work = { db -> db.unReportAgainIf(snap) }) { finish() }
+        when (plan) {
+            is Rollback.Plan.None -> finish()
+            is Rollback.Plan.CannotUndo -> {   // an old-build snapshot: nothing is guessed, and the user is told instead of the spot silently staying re-reported
+                toast(this, "BumpLog could not undo that Report again automatically (it was started by an older version). The spot still shows as reported again.")
+                finish()
+            }
+            is Rollback.Plan.Undo -> DbQ.run(this, fail = { Live.bump() }, work = { db -> db.unReportAgainIf(plan.r) }) { finish() }
+        }
     }
 
     @Composable

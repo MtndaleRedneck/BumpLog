@@ -212,6 +212,15 @@ class TabSnapTest {
         assertEquals("77", m.f); assertEquals("trip", m.k)
     }
 
+    @Test fun aLegacyAgainSnapshotIsReportedAsCannotUndoNeverAsRolledBack() {
+        assertTrue(Rollback.plan("again", "5|12|1000|1100|NONE|0") === Rollback.Plan.CannotUndo)   // 6 fields from an older build
+        assertTrue(Rollback.plan("again", "") === Rollback.Plan.CannotUndo)
+        assertTrue(Rollback.plan("trip", "") === Rollback.Plan.None)
+        assertTrue(Rollback.plan("single", "garbage") === Rollback.Plan.None)
+        val p = Rollback.plan("again", Rollback(5, 12, 1000L, 1100L, "NONE", 0L, 2000L).encode())
+        assertTrue(p is Rollback.Plan.Undo && p.r.expectedTs == 2000L)
+    }
+
     @Test fun rollbackSnapshotNeedsAllSevenFields() {
         val r = Rollback(5, 12, 1000L, 1100L, "NONE", 0L, 2000L)
         val p = Rollback.parse(r.encode())!!
