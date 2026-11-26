@@ -121,16 +121,17 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
                 // The number is drawn once, together with the change, and the mail carries that stored number (before, the mail used a peeked number and the
                 // draw came later, so another taker in between could make them differ). The rollback snapshot is saved with the change, so a process death
                 // before the mail opens still ends in the "did it go out?" question and a rollback. A refused handoff rolls the change back at once.
+                var tok = -1   // written on the queue thread, read in done: the generation of this question
                 val old = listOf(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs).joinToString("|")
                 DbQ.run(ctx, fail = { againBusy = false; toast(ctx, "That didn't work. Try again.") }, work = { db ->
                     db.reportAgain(s.id, now)
                     val no = db.spot(s.id)?.reportNo ?: error("spot is gone")
-                    Prefs.askAgain = old; Prefs.askSentFor = s.id.toString(); Prefs.askSentKind = "again"
+                    tok = PendingAsk.set(s.id.toString(), "again", old)
                     no
                 }) { no ->
                     if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(s.copy(reportNo = no, reportTs = now))))) { againBusy = false; Live.bump() }
                     else DbQ.run(ctx, fail = { againBusy = false; Live.bump(); toast(ctx, "That didn't work. Try again.") },
-                        work = { it.unReportAgain(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs); Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = "" }) { againBusy = false; Live.bump() }
+                        work = { it.unReportAgain(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs); PendingAsk.clearIf(tok) }) { againBusy = false; Live.bump() }
                 }
             }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                 Txt("Report again", 16, FontWeight.Bold, p.onAccent)

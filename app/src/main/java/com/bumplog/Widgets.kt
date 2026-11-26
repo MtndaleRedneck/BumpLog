@@ -535,6 +535,20 @@ object DbQ {
     }
 }
 
+/**
+ * The "did the email go out?" pending state (Prefs.askSentFor / askSentKind / askAgain). Every write goes through [set], which starts a new
+ * generation; a queued completion that was started for an older question clears the state only if no newer question has been set since
+ * ([clearIf]), so a late "Not yet" or "Yes, sent" can never erase a newer mail hand-off's question. Compare-and-clear is atomic with [set].
+ */
+object PendingAsk {
+    private var gen = 0
+    /** Where the three values are stored; tests replace it. */
+    internal var write: (String?, String?, String?) -> Unit = { f, k, a -> if (f != null) Prefs.askSentFor = f; if (k != null) Prefs.askSentKind = k; if (a != null) Prefs.askAgain = a }
+    @Synchronized fun set(sentFor: String, kind: String, again: String? = null): Int { gen++; write(sentFor, kind, again); return gen }
+    @Synchronized fun token(): Int = gen
+    @Synchronized fun clearIf(token: Int): Boolean { if (gen != token) return false; gen++; write("", "", ""); return true }
+}
+
 object TabSnap {
     val home = SnapSlot<HomeSnap>(); val review = SnapSlot<ReviewSnap>(); val stats = SnapSlot<StatsSnap>(); val reported = SnapSlot<ReportedSnap>()
     @Volatile var homeGeo: GeoSnap? = null; @Volatile var statsGeo: GeoSnap? = null

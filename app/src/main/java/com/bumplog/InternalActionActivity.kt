@@ -40,7 +40,7 @@ class InternalActionActivity : Activity() {
                         val list = db.tripSpots(driveId)
                         if (list.isEmpty()) Toast.makeText(this, "No confirmed reports left to send.", Toast.LENGTH_LONG).show()
                         else if (handOffMail(this, Reports.reportsMail(this, list))) {
-                            Prefs.askSentFor = list.joinToString(",") { it.id.toString() }; Prefs.askSentKind = "trip"
+                            PendingAsk.set(list.joinToString(",") { it.id.toString() }, "trip")
                         }
                     }
                 }

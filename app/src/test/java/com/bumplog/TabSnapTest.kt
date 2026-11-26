@@ -181,4 +181,36 @@ class TabSnapTest {
         val (ok, err) = queued { 41 + 1 }
         assertEquals(42, ok); assertNull(err)
     }
+
+    // PendingAsk: the "did the email go out?" state, with Prefs replaced by a map.
+    private fun fakePending(): MutableMap<String, String> {
+        val m = mutableMapOf("for" to "", "kind" to "", "again" to "")
+        PendingAsk.write = { f, k, a -> if (f != null) m["for"] = f; if (k != null) m["kind"] = k; if (a != null) m["again"] = a }
+        return m
+    }
+
+    @Test fun anOlderCompletionNeverErasesANewerPendingQuestion() {
+        val m = fakePending()
+        PendingAsk.set("1,2", "trip")
+        val olderTap = PendingAsk.token()             // the user answers the trip question; its write is queued
+        PendingAsk.set("7", "again", "snap")          // meanwhile a newer mail hand-off sets its own question
+        assertEquals("the late completion must not clear it", false, PendingAsk.clearIf(olderTap))
+        assertEquals("7", m["for"]); assertEquals("again", m["kind"]); assertEquals("snap", m["again"])
+    }
+
+    @Test fun aCompletionForTheCurrentQuestionClearsIt() {
+        val m = fakePending()
+        PendingAsk.set("1,2", "trip")
+        val tap = PendingAsk.token()
+        assertTrue(PendingAsk.clearIf(tap))
+        assertEquals("", m["for"]); assertEquals("", m["kind"]); assertEquals("", m["again"])
+    }
+
+    @Test fun theSameQuestionSetTwiceStillCountsAsNewer() {
+        val m = fakePending()
+        PendingAsk.set("5", "trip")
+        val tap = PendingAsk.token()
+        PendingAsk.set("5", "trip")                   // same values, new hand-off: identity is the generation, not the text
+        assertEquals(false, PendingAsk.clearIf(tap)); assertEquals("5", m["for"])
+    }
 }

@@ -244,7 +244,7 @@ class MainActivity : ComponentActivity() {
         // Debug builds only, for the CI screenshot run: pick the voice source and trigger the celebration.
         if (BuildConfig.DEBUG && i.hasExtra("setvoice")) { Prefs.voice = i.getStringExtra("setvoice").orEmpty(); Live.bump() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("celebrate", false)) Celebrate.trigger()
-        if (BuildConfig.DEBUG && i.getBooleanExtra("askmail", false)) { Prefs.askSentFor = "5"; Prefs.askSentKind = "trip" }
+        if (BuildConfig.DEBUG && i.getBooleanExtra("askmail", false)) { PendingAsk.set("5", "trip") }
         if (BuildConfig.DEBUG && i.getBooleanExtra("logstop", false)) Notifier.loggingStopped(this)
         if (BuildConfig.DEBUG && i.getBooleanExtra("logpaused", false)) Notifier.loggingPaused(this)
         if (BuildConfig.DEBUG && i.getBooleanExtra("showwipe", false)) { Testing.openWipeOnce = true; tab = "settings"; stack = emptyList() }
@@ -315,7 +315,7 @@ class MainActivity : ComponentActivity() {
             sendingTrip = false
             if (list.isEmpty()) toast(this, "No confirmed reports left to send.")
             else if (handOffMail(this, Reports.reportsMail(this, list))) {
-                Prefs.askSentFor = list.joinToString(",") { it.id.toString() }; Prefs.askSentKind = "trip"
+                PendingAsk.set(list.joinToString(",") { it.id.toString() }, "trip")
             }
         }
     }
@@ -334,7 +334,8 @@ class MainActivity : ComponentActivity() {
     private fun closeAskSentWithoutSend() {
         val snap = if (Prefs.askSentKind == "again") Prefs.askAgain.split("|").takeIf { it.size == 6 } else null
         askSent = null
-        val finish = { Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; Live.bump() }
+        val tok = PendingAsk.token()
+        val finish = { PendingAsk.clearIf(tok); Live.bump() }
         // The pending state is cleared only after the rollback is written, so a process death in between still has it (the dialog just asks again).
         if (snap == null) finish()
         else DbQ.run(this, work = { it.unReportAgain(snap[0].toLong(), snap[1].toInt(), snap[2].toLong(), snap[3].toLong(), snap[4], snap[5].toLong()) }) { finish() }
@@ -369,11 +370,11 @@ class MainActivity : ComponentActivity() {
                 title = { Text("Did the email go out?") },
                 text = { Text(if (ids.size == 1) "The report went to your mail app. If it wasn't sent, it stays in the queue for the next try." else "The ${ids.size} reports went to your mail app. If they weren't sent, they stay in the queue for the next try.") },
                 confirmButton = { TextButton({
-                    val now = System.currentTimeMillis(); val trip = Prefs.askSentKind == "trip"
+                    val now = System.currentTimeMillis(); val trip = Prefs.askSentKind == "trip"; val tok = PendingAsk.token()
                     askSent = null
                     // The sent marks are written on the Db queue, then the pending state is cleared; the backup that follows a trip runs on IO as before.
                     DbQ.run(this@MainActivity, work = { db -> ids.forEach { db.markSent(it, now) } }) {
-                        Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""
+                        PendingAsk.clearIf(tok)   // only if no newer mail question was set while this write waited
                         Live.bump()
                         if (trip) ioScope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             when (val r = Backup.autoSaveResult(this@MainActivity)) {
