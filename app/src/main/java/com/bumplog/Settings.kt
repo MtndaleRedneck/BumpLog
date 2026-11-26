@@ -185,9 +185,12 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = p.text, modifier = Modifier.size(28.dp))
             }
         }
-        SettingsCard {
-            Dropdown("Major-hit alert dismisses after", hitTimeout, listOf("10" to "10 seconds", "20" to "20 seconds", "30" to "30 seconds", "0" to "Never dismiss")) { hitTimeout = it; Prefs.hitTimeoutSec = it.toInt() }
-        }
+        // Same minus/plus control as the other time settings. Steps through the same four values the dropdown offered.
+        val hitSteps = listOf("10", "20", "30", "0")
+        val hitIdx = hitSteps.indexOf(hitTimeout).coerceAtLeast(0)
+        Stepper("Major-hit alert dismisses after", if (hitSteps[hitIdx] == "0") "Never" else "${hitSteps[hitIdx]} sec",
+            { hitTimeout = hitSteps[(hitIdx - 1).coerceAtLeast(0)]; Prefs.hitTimeoutSec = hitTimeout.toInt() },
+            { hitTimeout = hitSteps[(hitIdx + 1).coerceAtMost(hitSteps.lastIndex)]; Prefs.hitTimeoutSec = hitTimeout.toInt() })
         Toggle("Lock buttons while moving", lock, "Alerts show no buttons above the minimum speed") { lock = it; Prefs.lockButtons = it }
         SettingsCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
