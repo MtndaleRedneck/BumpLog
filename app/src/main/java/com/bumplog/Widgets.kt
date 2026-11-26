@@ -573,9 +573,15 @@ object PendingAsk {
 
 /** Damage reports already handed to the mail app whose "sent" mark did not land (or has not yet). Kept on disk so they are retried, never re-sent. */
 object DamageMarks {
-    @Synchronized fun pending(): Set<Long> = Prefs.damageMarks.split(",").mapNotNull { it.toLongOrNull() }.toSet()
-    @Synchronized fun add(id: Long) { Prefs.damageMarks = (pending() + id).joinToString(",") }
-    @Synchronized fun remove(id: Long) { Prefs.damageMarks = (pending() - id).joinToString(",") }
+    // Entries: "12" = the hand-off returned true (HANDED); "12?" = about to hand off (HANDING). A HANDING entry that survives means the app died or errored
+    // inside the hand-off: nobody knows whether a mail exists, so it is never auto-marked; the queue row asks the user.
+    private fun entries() = Prefs.damageMarks.split(",").filter { it.isNotBlank() }
+    @Synchronized fun pending(): Set<Long> = entries().filter { !it.endsWith("?") }.mapNotNull { it.toLongOrNull() }.toSet()
+    @Synchronized fun handing(): Set<Long> = entries().filter { it.endsWith("?") }.mapNotNull { it.dropLast(1).toLongOrNull() }.toSet()
+    @Synchronized private fun put(list: List<String>) { Prefs.damageMarks = list.joinToString(",") }
+    @Synchronized fun beginHandOff(id: Long) = put(entries().filter { it != "$id" && it != "$id?" } + "$id?")
+    @Synchronized fun handedOff(id: Long) = put(entries().filter { it != "$id" && it != "$id?" } + "$id")
+    @Synchronized fun remove(id: Long) = put(entries().filter { it != "$id" && it != "$id?" })
     /** Marks one report sent on the Db queue; keeps it pending when that fails. */
     fun settle(ctx: android.content.Context, id: Long, done: () -> Unit = {}) {
         DbQ.run(ctx, fail = { toast(ctx, "The email is in your mail app, but BumpLog could not mark it sent yet. It will try again; do not send it again.") },

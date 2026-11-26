@@ -561,9 +561,9 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
                 if (r == null) sendBusy.value = false
                 else {
                     val (d, sp) = r
-                    // recorded only once the hand-off call has returned true: a kill or error before that never marks an unsent report as handed off
-                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.add(d.id); DamageMarks.settle(ctx, d.id) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() } }
-                    else sendBusy.value = false
+                    DamageMarks.beginHandOff(d.id)   // HANDING until the hand-off returns; a leftover HANDING is asked about, never auto-marked sent
+                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.handedOff(d.id); DamageMarks.settle(ctx, d.id) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() } }
+                    else { DamageMarks.remove(d.id); sendBusy.value = false }
                 }
             }
         }
@@ -590,6 +590,7 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
     if (list == null) { NotLoadedPane("Damage reports waiting", queueLoad); return }
     // Reports already handed to the mail app whose sent mark did not land: retried here, and their Send stays off so they cannot be sent twice.
     val marks = DamageMarks.pending()
+    val handing = DamageMarks.handing()
     androidx.compose.runtime.LaunchedEffect(list.size, tick, n) { DamageMarks.pending().forEach { id -> if (list.any { it.id == id }) DamageMarks.settle(ctx, id) { n++ } } }
     Column(Modifier.fillMaxSize().pane("Damage reports waiting").verticalScroll(ScrollMemory.get("DamageQueue")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         BackRow("Damage reports waiting", back)
@@ -606,11 +607,18 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
                 PhotoButtons { DamagePhotos.add(ctx, d.reportId, it); n++ }
                 Spacer(Modifier.height(8.dp))
                 if (d.id in marks) Muted("Already in your mail app. Saving the sent mark. Do not send it again.", 13)
-                BigButton("Send", Icons.Default.Send, enabled = d.id !in marks) {
+                if (d.id in handing) {
+                    Muted("BumpLog was interrupted while opening the email for this report. Did it go out?", 13)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        SmallButton("Yes, it was sent", Modifier.weight(1f)) { DamageMarks.handedOff(d.id); n++ }
+                        SmallButton("No, send again", Modifier.weight(1f)) { DamageMarks.remove(d.id); n++ }
+                    }
+                }
+                BigButton("Send", Icons.Default.Send, enabled = d.id !in marks && d.id !in handing) {
                     DbQ.runOnce(ctx, rowBusy, work = { db -> db.hit(d.hitId) to db.spot(d.spotId) }) { (h, sp) ->
-                        // recorded only once the hand-off call has returned true: a kill or error before that never marks an unsent report as handed off
-                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.add(d.id); DamageMarks.settle(ctx, d.id) { n++; Live.bump() } }
-                        else rowBusy.value = false
+                        DamageMarks.beginHandOff(d.id)   // HANDING until the hand-off returns; a leftover HANDING is asked about, never auto-marked sent
+                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.handedOff(d.id); DamageMarks.settle(ctx, d.id) { n++; Live.bump() } }
+                        else { DamageMarks.remove(d.id); rowBusy.value = false }
                     }
                 }
             }
