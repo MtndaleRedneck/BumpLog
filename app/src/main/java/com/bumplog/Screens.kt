@@ -560,6 +560,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
                 work = { db ->
                     // The report is queued (so it is visible in the damage list whatever happens next) and HANDING is on disk BEFORE the mail is opened.
                     build(db, h, c, n, ph)?.let { d ->
+                        if (d.status == "SENT") return@let null   // same draft already sent: never move it back to QUEUED, send nothing
                         db.setDamageStatus(d.id, "QUEUED")
                         if (!DamageMarks.beginHandOffDurable(d.id)) throw IllegalStateException("hand-off mark not saved")
                         d to db.spot(d.spotId)
