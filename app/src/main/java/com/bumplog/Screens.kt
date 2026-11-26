@@ -44,6 +44,7 @@ import kotlinx.coroutines.withContext
 fun clock(ts: Long): String = SimpleDateFormat("h:mm a", Locale.US).format(Date(ts))
 fun dayTime(ts: Long): String = SimpleDateFormat("MMM d, h:mm a", Locale.US).format(Date(ts))
 
+class AlreadySentException : Exception("already sent")
 fun toast(ctx: Context, s: String) = Toast.makeText(ctx, s, Toast.LENGTH_LONG).show()
 
 /** True when some app can take a mail handoff. Checked before anything is written. */
@@ -529,6 +530,8 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     fun build(db: Db, h: Hit?, cat: String, note: String, photos: List<android.net.Uri>): Damage? {
         h ?: return null
         val d = db.addDamage(h.id, h.spotId, cat, note, System.currentTimeMillis(), draftId)
+        // A draft that was already sent is finished: its photos are not synced again, its status is not touched, and nothing is sent.
+        if (d.status == "SENT") throw AlreadySentException()
         // Even an empty pick list syncs: clearing every photo must empty the outgoing set.
         // An unreadable pick throws, so the report is never sent with a shortened set.
         DamagePhotos.syncDraft(ctx, d.reportId, photos) // retry-safe: content identity, no duplicates, no orphan attaches
@@ -556,11 +559,10 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
             if (Prefs.activeAddress.isBlank()) { toast(ctx, "Set your assistant address first (Settings > Assistant)."); return@BigButton }
             if (!mailAppAvailable(ctx, photos.isNotEmpty())) { toast(ctx, "No mail app found."); return@BigButton }
             val h = hits.firstOrNull { it.id == picked }; val c = cat; val n = note; val ph = photos.toList()
-            DbQ.runOnce(ctx, sendBusy, fail = { e -> toast(ctx, if (e is java.io.IOException) "A photo could not be saved - the report was not sent. Try again." else "That didn't work. Try again.") },
+            DbQ.runOnce(ctx, sendBusy, fail = { e -> toast(ctx, if (e is AlreadySentException) "That report was already sent." else if (e is java.io.IOException) "A photo could not be saved - the report was not sent. Try again." else "That didn't work. Try again.") },
                 work = { db ->
                     // The report is queued (so it is visible in the damage list whatever happens next) and HANDING is on disk BEFORE the mail is opened.
                     build(db, h, c, n, ph)?.let { d ->
-                        if (d.status == "SENT") return@let null   // same draft already sent: never move it back to QUEUED, send nothing
                         db.setDamageStatus(d.id, "QUEUED")
                         if (!DamageMarks.beginHandOffDurable(d.id)) throw IllegalStateException("hand-off mark not saved")
                         d to db.spot(d.spotId)
@@ -576,7 +578,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
         }
         BigButton("Send at end of drive", Icons.Default.Check, filled = false, enabled = picked != 0L) {
             val h = hits.firstOrNull { it.id == picked }; val c = cat; val n = note; val ph = photos.toList()
-            DbQ.runOnce(ctx, sendBusy, fail = { e -> toast(ctx, if (e is java.io.IOException) "A photo could not be saved - the report was not queued. Try again." else "That didn't work. Try again.") },
+            DbQ.runOnce(ctx, sendBusy, fail = { e -> toast(ctx, if (e is AlreadySentException) "That report was already sent." else if (e is java.io.IOException) "A photo could not be saved - the report was not queued. Try again." else "That didn't work. Try again.") },
                 work = { db -> build(db, h, c, n, ph)?.also { db.setDamageStatus(it.id, "QUEUED") } }) { d ->
                 if (d == null) sendBusy.value = false
                 else { Live.bump(); toast(ctx, "Confirmed. ${d.ref(h)}. You'll get a reminder when the drive ends to add photos and send."); back() }
