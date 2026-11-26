@@ -37,7 +37,9 @@ import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 fun clock(ts: Long): String = SimpleDateFormat("h:mm a", Locale.US).format(Date(ts))
 fun dayTime(ts: Long): String = SimpleDateFormat("MMM d, h:mm a", Locale.US).format(Date(ts))
@@ -68,9 +70,9 @@ fun sendSetupMail(ctx: android.content.Context): Boolean {
 }
 
 @Composable
-private fun LoadingSpots(tick: Int, load: (Db) -> Unit) {
+private fun LoadingSpots(tick: Int, load: suspend (Db) -> Unit) {
     val ctx = LocalContext.current
-    LaunchedEffect(tick) { load(Db.get(ctx)) }
+    LaunchedEffect(tick) { load(Db.get(ctx)) }   // the load does its Db read inside withContext(IO): the main thread never waits on the Db monitor
 }
 
 fun spotIcon(s: Spot) = if (s.review == "DISMISSED") Icons.Default.Close else if (s.reportStatus == "SENT") Icons.Default.CheckCircle else if (s.severe) Icons.Default.Warning else Icons.Default.Place
@@ -109,7 +111,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     LoadingSpots(live.tick) { db ->
         TabSnap.home.warm(Stamp.now(live.tick))?.takeIf { it.driveKey == homeKey }?.let { recent = it.recent; today = it.today; return@LoadingSpots }   // already read at this stamp (possibly by a late first-frame read): use it, no second read
         val st = Stamp.now(live.tick)   // read before the load: a write during it leaves this snapshot stale
-        val r = readHome(db); recent = r.recent; today = r.today; TabSnap.home.put(st, r)
+        val r = withContext(Dispatchers.IO) { readHome(db) }; recent = r.recent; today = r.today; TabSnap.home.put(st, r)
     }
     val status = when {
         !Prefs.detectionEnabled -> "Detection off" to p.muted
@@ -222,7 +224,7 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit, onConfirmed: () -> 
     val p = LocalPal.current
     val ctx = LocalContext.current
     var s by remember { mutableStateOf<Spot?>(null) }
-    LoadingSpots(tick) { db -> s = db.spot(spotId) }
+    LoadingSpots(tick) { db -> s = withContext(Dispatchers.IO) { db.spot(spotId) } }
     val spot = s ?: return
     Column(Modifier.fillMaxSize().pane("Heads-up").verticalScroll(ScrollMemory.get("Heads-up")).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(24.dp))
@@ -307,7 +309,7 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
     LoadingSpots(live.tick) { db ->
         TabSnap.review.warm(Stamp.now(live.tick))?.takeIf { !it.partial }?.let { pendingCount = it.pending; saved = it.saved; allHits = it.hits; return@LoadingSpots }
         val st = Stamp.now(live.tick)
-        val r = readReview(db); pendingCount = r.pending; saved = r.saved; allHits = r.hits; TabSnap.review.put(st, r)
+        val r = withContext(Dispatchers.IO) { readReview(db) }; pendingCount = r.pending; saved = r.saved; allHits = r.hits; TabSnap.review.put(st, r)
     }
     val scroll = ScrollMemory.get("Review")
     val scope = rememberCoroutineScope()
@@ -394,7 +396,7 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
     val p = LocalPal.current
     val ctx = LocalContext.current
     var s by remember { mutableStateOf<Spot?>(null) }
-    LoadingSpots(tick) { db -> s = db.spot(spotId) }
+    LoadingSpots(tick) { db -> s = withContext(Dispatchers.IO) { db.spot(spotId) } }
     val spot = s ?: return
     val db = Db.get(ctx)
     var confirmFixed by remember { mutableStateOf(false) }
@@ -469,7 +471,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     val ctx = LocalContext.current
     var hits by remember { mutableStateOf(listOf<Hit>()) }
     var queued by remember { mutableStateOf(0) }
-    LoadingSpots(tick) { db -> hits = db.hits(60); queued = db.queuedDamages().size }
+    LoadingSpots(tick) { db -> val (h, q) = withContext(Dispatchers.IO) { db.hits(60) to db.queuedDamages().size }; hits = h; queued = q }
     // One sheet session = one draft token (kept across process restore): rebuilds retry the
     // same row; filing a second, separate report starts a new sheet with a new token.
     val draftId = androidx.compose.runtime.saveable.rememberSaveable { "draft-" + java.util.UUID.randomUUID().toString() }
@@ -538,7 +540,7 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
     val ctx = LocalContext.current
     var list by remember { mutableStateOf(listOf<Damage>()) }
     var n by remember { mutableStateOf(0) }
-    LoadingSpots(tick + n) { db -> list = db.queuedDamages() }
+    LoadingSpots(tick + n) { db -> list = withContext(Dispatchers.IO) { db.queuedDamages() } }
     Column(Modifier.fillMaxSize().pane("Damage reports waiting").verticalScroll(ScrollMemory.get("DamageQueue")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         BackRow("Damage reports waiting", back)
         if (list.isEmpty()) Muted("Nothing waiting.")
@@ -576,7 +578,7 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     LoadingSpots(tick) { db ->
         TabSnap.stats.warm(Stamp.now(tick))?.let { sc = it.score; byType = it.byType; big = it.big; return@LoadingSpots }
         val st = Stamp.now(tick)
-        val r = readStats(db); sc = r.score; byType = r.byType; big = r.big; TabSnap.stats.put(st, r)
+        val r = withContext(Dispatchers.IO) { readStats(db) }; sc = r.score; byType = r.byType; big = r.big; TabSnap.stats.put(st, r)
     }
     val s = sc ?: return
     BoxWithConstraints(Modifier.fillMaxSize()) {

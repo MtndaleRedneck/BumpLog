@@ -18,6 +18,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import java.text.SimpleDateFormat
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.util.Date
 import java.util.Locale
 
@@ -32,7 +34,7 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
     val ctx = LocalContext.current
     val first = remember { firstFrame(TabSnap.reported, tick) { ReportedSnap(Db.get(ctx).reportedSpots()) } }
     var reported by remember { mutableStateOf(first?.spots ?: emptyList()) }
-    LaunchedEffect(tick) { TabSnap.reported.warm(Stamp.now(tick))?.let { reported = it.spots; return@LaunchedEffect }; val st = Stamp.now(tick); val l = Db.get(ctx).reportedSpots(); reported = l; TabSnap.reported.put(st, ReportedSnap(l)) }
+    LaunchedEffect(tick) { TabSnap.reported.warm(Stamp.now(tick))?.let { reported = it.spots; return@LaunchedEffect }; val st = Stamp.now(tick); val l = withContext(Dispatchers.IO) { Db.get(ctx).reportedSpots() }; reported = l; TabSnap.reported.put(st, ReportedSnap(l)) }
     var markFor by remember { mutableStateOf<Spot?>(null) }
 
     markFor?.let { s ->
