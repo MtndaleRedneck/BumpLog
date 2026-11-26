@@ -156,4 +156,17 @@ class DbUpgradeDeviceTest {
         db.markDamageSent(db.queuedDamages()[0].id)
         assertEquals(0, db.queuedDamages().size)
     }
+
+    /** A SENT draft is untouched by a later addDamage for the same draft (category/note/time/status stay), so a refused re-send changes nothing. */
+    @Test
+    fun anAddDamageForASentDraftChangesNothing() {
+        createV6Database()
+        val db = Db.get(ctx)
+        val first = db.addDamage(1, 1, "RIM", "first", 10_000L, "draft-x")
+        db.markDamageSent(first.id)
+        val again = db.addDamage(1, 1, "TIRE", "changed", 20_000L, "draft-x")
+        assertEquals(first.id, again.id); assertEquals("SENT", again.status)
+        val row = db.damages().first { it.id == first.id }
+        assertEquals("RIM", row.category); assertEquals("first", row.note); assertEquals("SENT", row.status); assertEquals(10_000L, row.ts)
+    }
 }
