@@ -222,7 +222,7 @@ class TabSnapTest {
 
     class MarkMap(var v: String = "", val commitOk: Boolean = true) : DamageMarks.MarkStore {
         override fun read() = v; override fun write(v: String) { this.v = v }
-        override fun commit(v: String): Boolean { if (commitOk) this.v = v; return commitOk }
+        override fun sync(): Boolean = commitOk
     }
 
     @Test fun anInterruptedHandOffStaysHandingAndIsNeverAutoSettled() {
@@ -243,6 +243,23 @@ class TabSnapTest {
         DamageMarks.remove(5)
         assertEquals(setOf(4L), DamageMarks.pending()); assertEquals(emptySet<Long>(), DamageMarks.handing())
         DamageMarks.clearAll(); assertEquals(emptySet<Long>(), DamageMarks.pending())
+    }
+
+    @Test fun aReaderIsNotBlockedWhileTheDiskCommitRuns() {
+        var readerDone = false
+        val m = object : DamageMarks.MarkStore {
+            var v = ""
+            override fun read() = v; override fun write(v: String) { this.v = v }
+            override fun sync(): Boolean {   // the "disk commit": a main-thread style reader must finish while this is still running
+                val t = Thread { DamageMarks.pending(); DamageMarks.handing(); readerDone = true }
+                t.start(); t.join(2000)
+                return true
+            }
+        }
+        DamageMarks.store = m
+        assertTrue(DamageMarks.beginHandOffDurable(4))
+        assertTrue("pending()/handing() must not wait behind the commit", readerDone)
+        assertEquals(setOf(4L), DamageMarks.handing())
     }
 
     @Test fun aHandingMarkThatCannotBeCommittedIsRefusedAndWritesNothing() {

@@ -587,11 +587,11 @@ object PendingAsk {
 
 /** Damage reports already handed to the mail app whose "sent" mark did not land (or has not yet). Kept on disk so they are retried, never re-sent. */
 object DamageMarks {
-    interface MarkStore { fun read(): String; fun write(v: String); fun commit(v: String): Boolean }
+    interface MarkStore { fun read(): String; fun write(v: String); fun sync(): Boolean }
     private val prefsStore = object : MarkStore {
         override fun read() = Prefs.damageMarks
         override fun write(v: String) { Prefs.damageMarks = v }
-        override fun commit(v: String) = Prefs.commitDamageMarks(v)
+        override fun sync() = Prefs.syncDamageMarks()
     }
     internal var store: MarkStore = prefsStore
     internal fun resetStore() { store = prefsStore }
@@ -602,7 +602,13 @@ object DamageMarks {
     @Synchronized fun handing(): Set<Long> = entries().filter { it.endsWith("?") }.mapNotNull { it.dropLast(1).toLongOrNull() }.toSet()
     private fun without(id: Long) = entries().filter { it != "$id" && it != "$id?" }
     /** HANDING, committed to disk (call on the Db queue thread, before the hand-off): false when it could not be saved, and then nothing is handed off. */
-    @Synchronized fun beginHandOffDurable(id: Long): Boolean = store.commit((without(id) + "$id?").joinToString(","))
+    fun beginHandOffDurable(id: Long): Boolean {
+        // The in-memory edit is under the lock (cheap); the disk commit is OUTSIDE it, so a main-thread pending()/handing() never waits for the disk.
+        synchronized(this) { store.write((without(id) + "$id?").joinToString(",")) }
+        if (store.sync()) return true
+        synchronized(this) { if (entries().contains("$id?")) store.write(without(id).joinToString(",")) }   // nothing is handed off: take our own mark back
+        return false
+    }
     @Synchronized fun handedOff(id: Long) { store.write((without(id) + "$id").joinToString(",")) }
     @Synchronized fun remove(id: Long) { store.write(without(id).joinToString(",")) }
     @Synchronized fun clearAll() { store.write("") }

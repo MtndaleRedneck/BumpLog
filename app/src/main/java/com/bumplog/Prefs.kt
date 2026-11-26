@@ -165,8 +165,8 @@ object Prefs {
     fun syncAsk(): Boolean = sp.edit().putLong("ask_tick", System.nanoTime()).commit()
     /** Damage reports handed to the mail app whose "sent" mark has not landed: comma-joined ids. Survives a kill. */
     var damageMarks: String get() = s("damage_marks", ""); set(v) = sp.edit().putString("damage_marks", v).apply()
-    /** Same value, but committed (checked). Off the main thread only. */
-    fun commitDamageMarks(v: String): Boolean = sp.edit().putString("damage_marks", v).commit()
+    /** Forces everything written so far (the damage marks included) to disk: commit, checked. Off the main thread only. */
+    fun syncDamageMarks(): Boolean = sp.edit().putLong("marks_tick", System.nanoTime()).commit()
     /** Which handoff waits on the "did the email go out?" answer: "trip", "single", "again", or "". */
     var askSentKind: String get() = s("ask_sent_kind", ""); set(v) = sp.edit().putString("ask_sent_kind", v).apply()
     /** A re-reported spot's pre-send snapshot: id|reportNo|reportTs|sentTs|outcome|outcomeTs, or "" when none. */
