@@ -99,13 +99,20 @@ fun SpotRow(s: Spot, tag: String? = null, onClick: () -> Unit) {
 fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit, permsOk: Boolean, askPerms: () -> Unit, togglePassenger: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
-    var recent by remember { mutableStateOf(if (TabSnap.homeLoaded) TabSnap.homeRecent else emptyList()) }
     val homeKey = homeDriveId(live.running, live.driveId, Prefs.lastDriveId)
-    // Warm only if the cached counts are for the drive being shown now; otherwise draw a blank pane until the first read.
-    val warm = TabSnap.homeLoaded && TabSnap.homeDriveKey == homeKey
-    var today by remember { mutableStateOf(if (warm) TabSnap.homeToday else 0) }
-    var loaded by remember { mutableStateOf(warm) }
-    LoadingSpots(live.tick) { db -> recent = db.allSpots().take(6); val id = homeDriveId(live.running, live.driveId, Prefs.lastDriveId); today = if (id > 0) db.hitsInDrive(id) else 0; TabSnap.homeRecent = recent; TabSnap.homeToday = today; TabSnap.homeDriveKey = id; TabSnap.homeLoaded = true; loaded = true }
+    // Warm only if read at this tick AND for the drive shown now; otherwise a blank pane until the first read.
+    val homeStamp = Stamp.now(live.tick)
+    val warm = TabSnap.home.warm(homeStamp)?.takeIf { it.driveKey == homeKey }
+    var recent by remember { mutableStateOf(warm?.recent ?: emptyList()) }
+    var today by remember { mutableStateOf(warm?.today ?: 0) }
+    var loaded by remember { mutableStateOf(warm != null) }
+    LoadingSpots(live.tick) { db ->
+        try {
+            val st = Stamp.now(live.tick)   // read before the load: a write during it leaves this snapshot stale
+            val r = db.allSpots().take(6); val id = homeDriveId(live.running, live.driveId, Prefs.lastDriveId); val t = if (id > 0) db.hitsInDrive(id) else 0
+            recent = r; today = t; TabSnap.home.put(st, HomeSnap(r, t, id))
+        } finally { loaded = true }   // a failed read still leaves the page (empty), never a pane that stays blank
+    }
     if (!loaded) { Box(Modifier.fillMaxSize()); return }
     val status = when {
         !Prefs.detectionEnabled -> "Detection off" to p.muted
@@ -121,10 +128,12 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     val dens = androidx.compose.ui.platform.LocalDensity.current
     // Slight fixed padding top and bottom; the gaps between the blocks flex with the screen height (blocks never change size).
     // Start from the last measured spacing so the first frame after a tab switch is already final (no second layout pass).
-    var gap by remember { mutableStateOf(TabSnap.homeGap) }
-    var extraAct by remember { mutableStateOf(TabSnap.homeExtraAct) }   // extra space above the action buttons
-    var extraTop by remember { mutableStateOf(0.dp) }   // extra space above everything
     val nGaps = if (permsOk) 3 else 4
+    val geoKey = GeoKey(viewH.value, nGaps, dens.density, dens.fontScale)
+    val geo = TabSnap.homeGeo?.takeIf { it.key == geoKey }
+    var gap by remember { mutableStateOf(geo?.gap ?: 10.dp) }
+    var extraAct by remember { mutableStateOf(geo?.extra ?: 0.dp) }   // extra space above the action buttons
+    var extraTop by remember { mutableStateOf(0.dp) }   // extra space above everything
     Column(Modifier.fillMaxSize().pane("Home").verticalScroll(ScrollMemory.get("Home")).padding(start = 16.dp, end = 16.dp, top = 24.dp + extraTop, bottom = 6.dp)) {
       Column(Modifier.onSizeChanged {
           val h = with(dens) { it.height.toDp() }
@@ -132,8 +141,9 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
           val free = viewH - 30.dp - fixed
           var g: Dp; var ea = 0.dp; var et = 0.dp
           g = (free / nGaps).coerceIn(4.dp, 16.dp); ea = (free - g * nGaps).coerceIn(0.dp, 32.dp)
-          if (kotlin.math.abs((g - gap).value) > 0.5f) { gap = g; TabSnap.homeGap = g }
-          if (kotlin.math.abs((ea - extraAct).value) > 0.5f) { extraAct = ea; TabSnap.homeExtraAct = ea }
+          if (kotlin.math.abs((g - gap).value) > 0.5f) gap = g
+          if (kotlin.math.abs((ea - extraAct).value) > 0.5f) extraAct = ea
+          TabSnap.homeGeo = GeoSnap(geoKey, gap, extraAct)
           if (kotlin.math.abs((et - extraTop).value) > 0.5f) extraTop = et
       }, verticalArrangement = Arrangement.spacedBy(gap)) {
         val detOn = Prefs.detectionEnabled
@@ -282,11 +292,14 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
     val p = LocalPal.current
     val ctx = LocalContext.current
     val snack = remember { SnackbarHostState() }
-    var pendingCount by remember { mutableStateOf(TabSnap.reviewPending) }
-    var saved by remember { mutableStateOf(TabSnap.reviewSaved) }
-    var allHits by remember { mutableStateOf(TabSnap.reviewHits) }
-    var loaded by remember { mutableStateOf(TabSnap.reviewLoaded) }
-    LoadingSpots(live.tick) { db ->
+    val reviewStamp = Stamp.now(live.tick)
+    val warmR = TabSnap.review.warm(reviewStamp)
+    var pendingCount by remember { mutableStateOf(warmR?.pending ?: 0) }
+    var saved by remember { mutableStateOf(warmR?.saved ?: 0) }
+    var allHits by remember { mutableStateOf(warmR?.hits ?: emptyList()) }
+    var loaded by remember { mutableStateOf(warmR != null) }
+    LoadingSpots(live.tick) { db -> try {
+        val st = Stamp.now(live.tick)
         // Hits are listed one by one (never merged by spot). Hits logged after their spot was reported are kept in the data but not listed.
         val shown = db.hits(200).mapNotNull { h -> db.spot(h.spotId)?.takeIf { !it.reportId.startsWith("TEST-") && (it.reportStatus == "NONE" || hitReported(h, it)) }?.let { h to it } }
         // A spot still waiting on you must always be reachable, however old its hits are: add its latest hit if it fell outside the recent window.
@@ -296,8 +309,8 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
         allHits = (shown + missing).sortedByDescending { it.first.ts }
         pendingCount = db.pendingSpots().size
         saved = db.hitsSince(Db.startOfToday())
-        TabSnap.reviewPending = pendingCount; TabSnap.reviewSaved = saved; TabSnap.reviewHits = allHits; TabSnap.reviewLoaded = true; loaded = true
-    }
+        TabSnap.review.put(st, ReviewSnap(pendingCount, saved, allHits))
+    } finally { loaded = true } }
     if (!loaded) { Box(Modifier.fillMaxSize()); return }
     val scroll = ScrollMemory.get("Review")
     val scope = rememberCoroutineScope()
@@ -557,23 +570,30 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
 @Composable
 fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     val p = LocalPal.current
-    var sc by remember { mutableStateOf(if (TabSnap.statsLoaded) TabSnap.statsScore else null) }
-    var big by remember { mutableStateOf(TabSnap.statsBig) }
-    var byType by remember { mutableStateOf(TabSnap.statsByType) }
-    LoadingSpots(tick) { db -> sc = db.score(); byType = db.savesByType(); big = db.largestImpact(); TabSnap.statsLoaded = true; TabSnap.statsScore = sc; TabSnap.statsByType = byType; TabSnap.statsBig = big }
+    val warmS = TabSnap.stats.warm(Stamp.now(tick))
+    var sc by remember { mutableStateOf(warmS?.score) }
+    var big by remember { mutableStateOf(warmS?.big) }
+    var byType by remember { mutableStateOf(warmS?.byType ?: emptyList()) }
+    LoadingSpots(tick) { db ->
+        val st = Stamp.now(tick)
+        val ns = db.score(); val nt = db.savesByType(); val nb = db.largestImpact()
+        sc = ns; byType = nt; big = nb; TabSnap.stats.put(st, StatsSnap(ns, nb, nt))
+    }
     val s = sc ?: return
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val viewH = maxHeight
     val dens = androidx.compose.ui.platform.LocalDensity.current
     // Slight fixed padding top and bottom; the gaps between the summary cards flex with the screen height (cards and text never change size).
-    var gap by remember { mutableStateOf(TabSnap.statsGap) }
+    val statsKey = GeoKey(viewH.value, 0, dens.density, dens.fontScale)
+    var gap by remember { mutableStateOf(TabSnap.statsGeo?.takeIf { it.key == statsKey }?.gap ?: 10.dp) }
     Column(Modifier.fillMaxSize().pane("Stats").verticalScroll(ScrollMemory.get("Stats")).padding(start = 16.dp, end = 16.dp, top = gap, bottom = gap), verticalArrangement = Arrangement.spacedBy(gap)) {
       Column(Modifier.onSizeChanged {
           val h = with(dens) { it.height.toDp() }
           val cards = h - gap * 3
           // One spacing S: above the first card, between cards, and below the last card (above the nav bar).
           val want = ((viewH - cards) / 5).coerceIn(8.dp, 16.dp)
-          if (kotlin.math.abs((want - gap).value) > 0.5f) { gap = want; TabSnap.statsGap = want }
+          if (kotlin.math.abs((want - gap).value) > 0.5f) gap = want
+          TabSnap.statsGeo = GeoSnap(statsKey, gap, 0.dp)
       }, verticalArrangement = Arrangement.spacedBy(gap)) {
         Card(pad = 20.dp) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Muted("TIMES AVOIDED", 13, Modifier.asHeading())

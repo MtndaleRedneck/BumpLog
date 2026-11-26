@@ -382,8 +382,10 @@ object Backup {
      * NotABackup when it is not a BumpLog backup, Refused when a limit says it cannot be one this app
      * wrote, otherwise Done - and Done.incomplete tells him to run it again when a copy failed.
      */
-    fun restoreZip(ctx: Context, ins: InputStream): RestoreResult {
-        TabSnap.clear()   // restored data replaces what every tab last showed
+    /** Clears the tab snapshots AFTER the restore (also on failure): restored data replaces what every tab last showed. */
+    fun restoreZip(ctx: Context, ins: InputStream): RestoreResult = try { restoreZipInner(ctx, ins) } finally { TabSnap.clear() }
+
+    private fun restoreZipInner(ctx: Context, ins: InputStream): RestoreResult {
         val db = Db.get(ctx)
         var json: JSONObject? = null
         var photos = 0

@@ -307,7 +307,6 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
      * reports already on the phone, like a backup restore (a CSV carries no stored counter). */
     class ImportResult(val imported: Int, val skipped: Int, val damages: Int = 0)
     @Synchronized fun importCsv(text: String): ImportResult? {
-        TabSnap.clear()
         val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US)
         val have = allSpots().map { it.reportId }.toMutableSet()
         val db = writableDatabase
@@ -400,6 +399,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             .use { it.moveToFirst(); it.getInt(0) }
         bumpCounterTo(ReportNumbers.restoreNext(maxNo, 0, existing))
         noteWrite() // an import changes what warnings should fire: drop the service's cached list
+        TabSnap.clear()
         return ImportResult(n, skippedIds.size + bad, dn)
     }
 
@@ -529,6 +529,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             writableDatabase.update("damage", ContentValues().apply {
                 put("hit_id", hitId); put("spot_id", spotId); put("category", category); put("note", note); put("report_ts", rts)
             }, "id=?", arrayOf(old.id.toString()))
+            noteWrite()
             return old.copy(hitId = hitId, spotId = spotId, category = category, note = note, reportTs = rts)
         }
         val rid = newReportId("BD", now)
@@ -539,15 +540,18 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             put("note", note); put("ts", now); put("status", "NONE"); put("report_no", no); put("report_ts", rts); put("draft_id", draftId)
         }
         val id = writableDatabase.insert("damage", null, v)
+        noteWrite()
         return Damage(id, rid, hitId, spotId, category, note, now, "NONE", no, rts)
     }
 
     @Synchronized fun markDamageSent(id: Long) {
         writableDatabase.update("damage", ContentValues().apply { put("status", "SENT") }, "id=?", arrayOf(id.toString()))
+        noteWrite()
     }
 
     @Synchronized fun setDamageStatus(id: Long, status: String) {
         writableDatabase.update("damage", ContentValues().apply { put("status", status) }, "id=?", arrayOf(id.toString()))
+        noteWrite()
     }
     @Synchronized fun queuedDamages(): List<Damage> = damages().filter { it.status == "QUEUED" }
     @Synchronized fun damages(): List<Damage> {
@@ -569,11 +573,13 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             put("review", if (confirmed) "CONFIRMED" else "PENDING"); put("warn", 0); put("report_status", "NONE"); put("sent_ts", 0)
             put("address", "Test location (not real)"); put("clean_passes", 0); put("severity", severity); put("file_trip", if (fileTrip) 1 else 0); put("saves", 0)
         })
+        noteWrite()
         return spot(id)!!
     }
     @Synchronized fun clearTestData(): Int {
         val n = writableDatabase.delete("spots", "report_id LIKE 'TEST-%'", null)
         writableDatabase.delete("hits", "spot_id NOT IN (SELECT id FROM spots)", null)
+        noteWrite()
         return n
     }
     @Synchronized fun testCount(): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM spots WHERE report_id LIKE 'TEST-%'", null).use { it.moveToFirst(); it.getInt(0) }
@@ -586,9 +592,9 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     }
 
     @Synchronized fun wipeAll() {
-        TabSnap.clear()
         writableDatabase.execSQL("DELETE FROM spots"); writableDatabase.execSQL("DELETE FROM hits"); writableDatabase.execSQL("DELETE FROM damage")
         noteWrite()
+        TabSnap.clear()
     }
 
     companion object {
@@ -597,7 +603,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         /** Bumped by every spot-table write, so cached reads (the drive-time warn list) refresh exactly when the data changes. */
         @Volatile var writes = 0L
             private set
-        fun noteWrite() { writes++ }
+        @Synchronized fun noteWrite() { writes++ }
         @Volatile private var inst: Db? = null
         fun get(ctx: Context): Db = inst ?: synchronized(this) { inst ?: Db(ctx.applicationContext).also { inst = it } }
 

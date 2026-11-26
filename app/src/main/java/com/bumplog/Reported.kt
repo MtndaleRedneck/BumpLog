@@ -30,9 +30,10 @@ private fun shortDay(ts: Long): String = SimpleDateFormat("M/d", Locale.US).form
 fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
-    var reported by remember { mutableStateOf(if (TabSnap.reportedLoaded) TabSnap.reported else emptyList()) }
-    var loaded by remember { mutableStateOf(TabSnap.reportedLoaded) }
-    LaunchedEffect(tick) { reported = Db.get(ctx).reportedSpots(); TabSnap.reported = reported; TabSnap.reportedLoaded = true; loaded = true }
+    val warmP = TabSnap.reported.warm(Stamp.now(tick))
+    var reported by remember { mutableStateOf(warmP?.spots ?: emptyList()) }
+    var loaded by remember { mutableStateOf(warmP != null) }
+    LaunchedEffect(tick) { try { val st = Stamp.now(tick); val l = Db.get(ctx).reportedSpots(); reported = l; TabSnap.reported.put(st, ReportedSnap(l)) } finally { loaded = true } }
     var markFor by remember { mutableStateOf<Spot?>(null) }
 
     markFor?.let { s ->

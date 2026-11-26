@@ -441,21 +441,36 @@ const val SIDE_BY_SIDE_MAX_FONT = 1.5f
 fun sideBySide(widthDp: Float, fontScale: Float) = widthDp >= SIDE_BY_SIDE_MIN_DP && fontScale < SIDE_BY_SIDE_MAX_FONT
 
 
+/** One tab's last load, stamped with the Live tick it was read at. Immutable, so a reader never sees half of an update. */
+class SnapSlot<T> {
+    private class Entry<T>(val stamp: Stamp, val value: T)
+    @Volatile private var e: Entry<T>? = null
+    /** The snapshot only if its stamp equals the current one: any later database write moves the stamp and makes it cold. */
+    fun warm(stamp: Stamp): T? = e?.takeIf { it.stamp == stamp }?.value
+    fun put(stamp: Stamp, v: T) { e = Entry(stamp, v) }
+    fun clear() { e = null }
+}
+
+/** Live tick plus the database's own write counter, read BEFORE a load starts. */
+data class Stamp(val tick: Int, val writes: Long) { companion object { fun now(tick: Int) = Stamp(tick, Db.writes) } }
+
+class HomeSnap(val recent: List<Spot>, val today: Int, val driveKey: Long)
+class ReviewSnap(val pending: Int, val saved: Int, val hits: List<Pair<Hit, Spot>>)
+class StatsSnap(val score: Db.Score, val big: Pair<Hit, Spot>?, val byType: List<Pair<DefectType?, Int>>)
+class ReportedSnap(val spots: List<Spot>)
+/** Measured spacing and the exact geometry it was measured for; reused only when the geometry matches. */
+data class GeoKey(val viewH: Float, val count: Int, val density: Float, val fontScale: Float)
+class GeoSnap(val key: GeoKey, val gap: androidx.compose.ui.unit.Dp, val extra: androidx.compose.ui.unit.Dp)
+
 /**
- * The last data and spacing each tab showed. A tab that is rebuilt on every switch starts from this instead of from
- * empty, so its first frame is the final one: no empty state, zero counts or blank page for a frame before the
- * database answers, and no second layout pass for the spacing. The database read still runs and replaces it silently.
+ * What each tab last showed, so a tab that is rebuilt on every switch can draw real content on its first frame instead of an
+ * empty state. A snapshot counts only if it was read at the CURRENT Live tick (every database change bumps it), so after a new
+ * hit, report, delete or review action the tab starts blank and fills in, it never shows old numbers. The stamp is the tick the
+ * load started at, so a load that finishes after a later write is already stale. Wipe, CSV import and restore also clear
+ * everything after they finish. A cold process has nothing, so tabs draw a blank pane until their first read.
  */
 object TabSnap {
-    // Main thread only: written from the tabs' LaunchedEffects and read in composition; cleared by wipe, CSV import and restore
-    // (which may run off it, so clear() only flips flags). A cold process has nothing loaded, so tabs draw a blank pane, never a false empty state.
-    @Volatile var homeLoaded = false; @Volatile var reviewLoaded = false; @Volatile var statsLoaded = false; @Volatile var reportedLoaded = false
-    var homeDriveKey: Long = -1
-    fun clear() { homeLoaded = false; reviewLoaded = false; statsLoaded = false; reportedLoaded = false; homeDriveKey = -1 }
-    var homeRecent: List<Spot> = emptyList(); var homeToday: Int = 0
-    var homeGap: androidx.compose.ui.unit.Dp = 10.dp; var homeExtraAct: androidx.compose.ui.unit.Dp = 0.dp
-    var reviewPending: Int = 0; var reviewSaved: Int = 0; var reviewHits: List<Pair<Hit, Spot>> = emptyList()
-    var statsScore: Db.Score? = null; var statsBig: Pair<Hit, Spot>? = null; var statsByType: List<Pair<DefectType?, Int>> = emptyList()
-    var statsGap: androidx.compose.ui.unit.Dp = 10.dp
-    var reported: List<Spot> = emptyList()
+    val home = SnapSlot<HomeSnap>(); val review = SnapSlot<ReviewSnap>(); val stats = SnapSlot<StatsSnap>(); val reported = SnapSlot<ReportedSnap>()
+    @Volatile var homeGeo: GeoSnap? = null; @Volatile var statsGeo: GeoSnap? = null
+    fun clear() { home.clear(); review.clear(); stats.clear(); reported.clear(); homeGeo = null; statsGeo = null }
 }
