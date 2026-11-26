@@ -482,7 +482,7 @@ adb shell rm -f /sdcard/tabs.mp4
 adb shell screenrecord --time-limit 170 --bit-rate 8000000 /sdcard/tabs.mp4 &
 REC=$!
 # Whatever happens after this point, the recording and the full logcat are pulled on exit (never lost to a failed step).
-pull_evidence() { trap - EXIT; adb logcat -d -v time > tabsrec/logcat-full.txt 2>&1; sleep 1; adb pull /sdcard/tabs.mp4 tabsrec/tabs.mp4 >/dev/null 2>&1 || true; }
+pull_evidence() { trap - EXIT; adb shell pkill -2 screenrecord >/dev/null 2>&1; adb logcat -d -v time > tabsrec/logcat-full.txt 2>&1; sleep 1; adb pull /sdcard/tabs.mp4 tabsrec/tabs.mp4 >/dev/null 2>&1 || true; }
 trap pull_evidence EXIT
 sleep 2
 adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home; sleep 4
