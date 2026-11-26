@@ -498,6 +498,14 @@ adb shell dumpsys gfxinfo com.bumplog reset >/dev/null; echo "PHASE post-write";
 # Phase 4, second write, then the heavier tabs first.
 adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home; sleep 3
 adb shell dumpsys gfxinfo com.bumplog reset >/dev/null; echo "PHASE post-write 2"; tab_round; gfx_phase post-write-2
+# Phase 5, import/wipe under navigation: a real CSV import (3 rounds of 5000 spots) and a wipe run on a background thread
+# while every tab is switched, so first-frame reads contend for the database monitor like a user importing and navigating.
+adb logcat -c
+adb shell am start -n com.bumplog/.MainActivity --ei stressimport 5000 --es screen home; sleep 1
+adb shell dumpsys gfxinfo com.bumplog reset >/dev/null; echo "PHASE import-under-navigation"
+tab_round; tab_round; tab_round; tab_round
+gfx_phase import-under-navigation
+{ echo "== logcat during import-under-navigation (BumpStress timings, main-thread skipped frames, ANR)"; adb logcat -d | grep -E "BumpStress|Skipped [0-9]+ frames|ANR in com.bumplog|Davey" | head -60; } | tee -a tabsrec/gfx.txt
 wait $REC 2>/dev/null; sleep 2
 adb pull /sdcard/tabs.mp4 tabsrec/tabs.mp4 || echo "WARN: tab recording not pulled"
 # Launcher proof: the real BumpLog icon as the device launcher draws it, on the home screen or in the app drawer.

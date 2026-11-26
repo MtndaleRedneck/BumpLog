@@ -383,7 +383,7 @@ object Backup {
      * wrote, otherwise Done - and Done.incomplete tells him to run it again when a copy failed.
      */
     /** Clears the tab snapshots AFTER the restore (also on failure): restored data replaces what every tab last showed. */
-    fun restoreZip(ctx: Context, ins: InputStream): RestoreResult = try { restoreZipInner(ctx, ins) } finally { TabSnap.clear() }
+    fun restoreZip(ctx: Context, ins: InputStream): RestoreResult = try { restoreZipInner(ctx, ins) } finally { Db.noteWrite(); TabSnap.clear() }   // also on a throw after partial writes: any snapshot read before it is stale
 
     private fun restoreZipInner(ctx: Context, ins: InputStream): RestoreResult {
         val db = Db.get(ctx)

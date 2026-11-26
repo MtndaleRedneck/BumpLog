@@ -43,7 +43,8 @@ class TabSnapTest {
     @Test fun dbWriteCounterMovesOnNoteWrite() {
         val before = Db.writes; Db.noteWrite()
         assertEquals(before + 1, Db.writes)
-        assertEquals(Stamp(1, before + 1), Stamp.now(1))
+        assertEquals(Stamp(1, before + 1, Db.startOfToday()), Stamp.now(1))
+        assertNotEquals(Stamp.now(1), Stamp.now(1).copy(day = 1L))   // a new day makes a snapshot cold
     }
 
     @Test fun geometryKeyMatchesOnlyIdenticalGeometry() {

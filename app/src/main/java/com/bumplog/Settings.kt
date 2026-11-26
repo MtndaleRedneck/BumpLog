@@ -110,7 +110,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     row.forEachIndexed { c, col ->
                         val idx = r * 4 + c
-                        // 48 dp touch target around the same 46 dp circle, so the look is unchanged. Five across is 240 dp, which
+                        // 48 dp touch target around the same 46 dp circle, so the look is unchanged. Four across is 192 dp, which
                         // fits the card's inner width down to a 320 dp-wide screen (320 - 32 pane - 32 card = 256).
                         Box(Modifier.size(48.dp)
                             .pressFeel(role = androidx.compose.ui.semantics.Role.RadioButton, selected = accent == idx, onPress = { accent = idx; Prefs.accent = idx; Live.bump() })

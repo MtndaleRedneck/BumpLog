@@ -219,6 +219,28 @@ class MainActivity : ComponentActivity() {
             stack = listOf(if (s != null && s.severe && s.review == "PENDING") Screen.Alert(spot) else Screen.Spot(spot))
         }
         if (BuildConfig.DEBUG && i.getBooleanExtra("demo", false)) { Demo.seed(this); Live.bump() }
+        // Debug builds only, for the CI frame run: a real CSV import and a wipe on a background thread, so the tab
+        // switches that follow run while the database monitor is busy, like a user importing while navigating.
+        if (BuildConfig.DEBUG && i.hasExtra("stressimport")) {
+            val rows = i.getIntExtra("stressimport", 0).coerceIn(1, 20000); val app = applicationContext
+            Thread {
+                val db = Db.get(app); val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", java.util.Locale.US)
+                val ab = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; val t0 = System.currentTimeMillis()
+                repeat(3) { round ->
+                    val sb = StringBuilder("report_id,report_no,review,report_status,defect_type,hit_time,lat,lon,heading,speed_mph,peak_g,spot_hit_count,road,town,county,report_ts\n")
+                    for (n in 0 until rows) {
+                        val id = "BL-20260101-" + ab[(n / 29791) % 31] + ab[(n / 961) % 31] + ab[(n / 31) % 31] + ab[n % 31]
+                        sb.append(id).append(",0,PENDING,NONE,POTHOLE,").append(fmt.format(t0 - n * 60000L)).append(",39.5,-98.3,90,35,0.9,1,Stress Rd,Anytown,Example County,\n")
+                    }
+                    val s = System.currentTimeMillis(); val r = db.importCsv(sb.toString())
+                    android.util.Log.i("BumpStress", "round $round import rows=$rows imported=${r?.imported} took=${System.currentTimeMillis() - s}ms")
+                    Live.bump(); Thread.sleep(1500)
+                    val w = System.currentTimeMillis(); db.wipeAll(); Live.bump()
+                    android.util.Log.i("BumpStress", "round $round wipe took=${System.currentTimeMillis() - w}ms"); Thread.sleep(500)
+                }
+                android.util.Log.i("BumpStress", "done")
+            }.start()
+        }
         // Debug builds only, for the CI screenshot run: pick the voice source and trigger the celebration.
         if (BuildConfig.DEBUG && i.hasExtra("setvoice")) { Prefs.voice = i.getStringExtra("setvoice").orEmpty(); Live.bump() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("celebrate", false)) Celebrate.trigger()

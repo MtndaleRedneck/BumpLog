@@ -452,7 +452,7 @@ class SnapSlot<T> {
 }
 
 /** Live tick plus the database's own write counter, read BEFORE a load starts. */
-data class Stamp(val tick: Int, val writes: Long) { companion object { fun now(tick: Int) = Stamp(tick, Db.writes) } }
+data class Stamp(val tick: Int, val writes: Long, val day: Long = 0L) { companion object { fun now(tick: Int) = Stamp(tick, Db.writes, Db.startOfToday()) } }   // the day is in the stamp so "today" counts refresh after midnight
 
 class HomeSnap(val recent: List<Spot>, val today: Int, val driveKey: Long)
 class ReviewSnap(val pending: Int, val saved: Int, val hits: List<Pair<Hit, Spot>>, val partial: Boolean = false)
