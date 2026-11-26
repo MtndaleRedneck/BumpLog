@@ -99,9 +99,9 @@ fun SpotRow(s: Spot, tag: String? = null, onClick: () -> Unit) {
 fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit, permsOk: Boolean, askPerms: () -> Unit, togglePassenger: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
-    var recent by remember { mutableStateOf(listOf<Spot>()) }
-    var today by remember { mutableStateOf(0) }
-    LoadingSpots(live.tick) { db -> recent = db.allSpots().take(6); val id = homeDriveId(live.running, live.driveId, Prefs.lastDriveId); today = if (id > 0) db.hitsInDrive(id) else 0 }
+    var recent by remember { mutableStateOf(TabSnap.homeRecent) }
+    var today by remember { mutableStateOf(TabSnap.homeToday) }
+    LoadingSpots(live.tick) { db -> recent = db.allSpots().take(6); val id = homeDriveId(live.running, live.driveId, Prefs.lastDriveId); today = if (id > 0) db.hitsInDrive(id) else 0; TabSnap.homeRecent = recent; TabSnap.homeToday = today }
     val status = when {
         !Prefs.detectionEnabled -> "Detection off" to p.muted
         !permsOk -> "Needs permission" to p.muted
@@ -115,8 +115,9 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     val viewH = maxHeight
     val dens = androidx.compose.ui.platform.LocalDensity.current
     // Slight fixed padding top and bottom; the gaps between the blocks flex with the screen height (blocks never change size).
-    var gap by remember { mutableStateOf(10.dp) }
-    var extraAct by remember { mutableStateOf(0.dp) }   // extra space above the action buttons
+    // Start from the last measured spacing so the first frame after a tab switch is already final (no second layout pass).
+    var gap by remember { mutableStateOf(TabSnap.homeGap) }
+    var extraAct by remember { mutableStateOf(TabSnap.homeExtraAct) }   // extra space above the action buttons
     var extraTop by remember { mutableStateOf(0.dp) }   // extra space above everything
     val nGaps = if (permsOk) 3 else 4
     Column(Modifier.fillMaxSize().pane("Home").verticalScroll(ScrollMemory.get("Home")).padding(start = 16.dp, end = 16.dp, top = 24.dp + extraTop, bottom = 6.dp)) {
@@ -126,8 +127,8 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
           val free = viewH - 30.dp - fixed
           var g: Dp; var ea = 0.dp; var et = 0.dp
           g = (free / nGaps).coerceIn(4.dp, 16.dp); ea = (free - g * nGaps).coerceIn(0.dp, 32.dp)
-          if (kotlin.math.abs((g - gap).value) > 0.5f) gap = g
-          if (kotlin.math.abs((ea - extraAct).value) > 0.5f) extraAct = ea
+          if (kotlin.math.abs((g - gap).value) > 0.5f) { gap = g; TabSnap.homeGap = g }
+          if (kotlin.math.abs((ea - extraAct).value) > 0.5f) { extraAct = ea; TabSnap.homeExtraAct = ea }
           if (kotlin.math.abs((et - extraTop).value) > 0.5f) extraTop = et
       }, verticalArrangement = Arrangement.spacedBy(gap)) {
         val detOn = Prefs.detectionEnabled
@@ -276,9 +277,9 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
     val p = LocalPal.current
     val ctx = LocalContext.current
     val snack = remember { SnackbarHostState() }
-    var pendingCount by remember { mutableStateOf(0) }
-    var saved by remember { mutableStateOf(0) }
-    var allHits by remember { mutableStateOf(listOf<Pair<Hit, Spot>>()) }
+    var pendingCount by remember { mutableStateOf(TabSnap.reviewPending) }
+    var saved by remember { mutableStateOf(TabSnap.reviewSaved) }
+    var allHits by remember { mutableStateOf(TabSnap.reviewHits) }
     LoadingSpots(live.tick) { db ->
         // Hits are listed one by one (never merged by spot). Hits logged after their spot was reported are kept in the data but not listed.
         val shown = db.hits(200).mapNotNull { h -> db.spot(h.spotId)?.takeIf { !it.reportId.startsWith("TEST-") && (it.reportStatus == "NONE" || hitReported(h, it)) }?.let { h to it } }
@@ -289,6 +290,7 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
         allHits = (shown + missing).sortedByDescending { it.first.ts }
         pendingCount = db.pendingSpots().size
         saved = db.hitsSince(Db.startOfToday())
+        TabSnap.reviewPending = pendingCount; TabSnap.reviewSaved = saved; TabSnap.reviewHits = allHits
     }
     val scroll = ScrollMemory.get("Review")
     val scope = rememberCoroutineScope()
@@ -548,23 +550,23 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
 @Composable
 fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     val p = LocalPal.current
-    var sc by remember { mutableStateOf<Db.Score?>(null) }
-    var big by remember { mutableStateOf<Pair<Hit, Spot>?>(null) }
-    var byType by remember { mutableStateOf(listOf<Pair<DefectType?, Int>>()) }
-    LoadingSpots(tick) { db -> sc = db.score(); byType = db.savesByType(); big = db.largestImpact() }
+    var sc by remember { mutableStateOf(TabSnap.statsScore) }
+    var big by remember { mutableStateOf(TabSnap.statsBig) }
+    var byType by remember { mutableStateOf(TabSnap.statsByType) }
+    LoadingSpots(tick) { db -> sc = db.score(); byType = db.savesByType(); big = db.largestImpact(); TabSnap.statsScore = sc; TabSnap.statsByType = byType; TabSnap.statsBig = big }
     val s = sc ?: return
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val viewH = maxHeight
     val dens = androidx.compose.ui.platform.LocalDensity.current
     // Slight fixed padding top and bottom; the gaps between the summary cards flex with the screen height (cards and text never change size).
-    var gap by remember { mutableStateOf(10.dp) }
+    var gap by remember { mutableStateOf(TabSnap.statsGap) }
     Column(Modifier.fillMaxSize().pane("Stats").verticalScroll(ScrollMemory.get("Stats")).padding(start = 16.dp, end = 16.dp, top = gap, bottom = gap), verticalArrangement = Arrangement.spacedBy(gap)) {
       Column(Modifier.onSizeChanged {
           val h = with(dens) { it.height.toDp() }
           val cards = h - gap * 3
           // One spacing S: above the first card, between cards, and below the last card (above the nav bar).
           val want = ((viewH - cards) / 5).coerceIn(8.dp, 16.dp)
-          if (kotlin.math.abs((want - gap).value) > 0.5f) gap = want
+          if (kotlin.math.abs((want - gap).value) > 0.5f) { gap = want; TabSnap.statsGap = want }
       }, verticalArrangement = Arrangement.spacedBy(gap)) {
         Card(pad = 20.dp) { Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             Muted("TIMES AVOIDED", 13, Modifier.asHeading())

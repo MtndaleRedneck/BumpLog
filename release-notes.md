@@ -1,3 +1,13 @@
+BumpLog 1.20.0
+
+November 25, 2026. Smoother tabs and a tidier Settings.
+
+Changed:
+- Switching tabs no longer flickers. Each tab now opens already showing its content instead of drawing an empty page first.
+- The Compact pill is now the bottom bar. The Bottom bar choice is gone.
+- Settings: the accent colors sit in two rows of four, Vibrate on press is a plain switch under them, and Report icon is two buttons, Monochrome and Full color.
+- The bottom bar color now matches Listen Later.
+
 BumpLog 1.19.0
 
 November 25, 2026. Buttons that press in, and your own report icon.

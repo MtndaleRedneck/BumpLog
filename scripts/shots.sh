@@ -290,7 +290,9 @@ hold_capture "Stats" v22-press-tab
 shot v22-settings-appearance --es screen settings
 has_text "Report icon" || { echo "FAIL: Report icon setting missing"; exit 1; }
 has_text "Vibrate on press" || { echo "FAIL: Vibrate on press switch missing"; exit 1; }
-has_text "Bottom bar" || { echo "FAIL: Bottom bar setting missing"; exit 1; }
+has_text "Monochrome" || { echo "FAIL: Monochrome button missing"; exit 1; }
+has_text "Full color" || { echo "FAIL: Full color button missing"; exit 1; }
+if has_text "Bottom bar"; then echo "FAIL: the Bottom bar chooser should be gone (Compact pill is permanent)"; exit 1; fi
 
 # The feedback row with the more prominent chevron, and the feedback screen itself.
 shot v21-settings-top --es screen settings
@@ -463,15 +465,28 @@ V2=$(vibrate_checked) || exit 1; echo "Vibrate on press restored: $V2"
 # app tick was recorded, and the log says so. The positive proof is the haptics-on step above.
 if click_after "$E2" "$M2"; then echo "FAIL: an app tick fired after the marker with Vibrate on press off"; exit 1; fi
 echo "haptics off: no app tick recorded after the marker (observed absence; key activation itself not separately asserted)"
-# Bottom bar setting: Compact pill, then back to the default flat bar.
-shot v24-pill-home --ez demo true --es screen home --es navstyle pill
+# Compact pill is the only bottom bar now (the chooser is gone); these captures show it on several accents.
+shot v24-pill-home --ez demo true --es screen home
 shot v24-pill-stats --es screen stats
 shot v24-pill-settings --es screen settings
 # The pill on the lightest, a mid and the darkest swatch (dusty blue, mauve, burnt orange), then sage again.
-shot v24-pill-blue --ez demo true --es screen home --es navstyle pill --ei accentidx 2
-shot v24-pill-mauve --ez demo true --es screen home --es navstyle pill --ei accentidx 5
-shot v24-pill-orange --ez demo true --es screen home --es navstyle pill --ei accentidx 1
-shot v24-flat-restore --es screen settings --es navstyle flat --ei accentidx 0
+shot v24-pill-blue --ez demo true --es screen home --ei accentidx 2
+shot v24-pill-mauve --ez demo true --es screen home --ei accentidx 5
+shot v24-pill-orange --ez demo true --es screen home --ei accentidx 1
+shot v24-flat-restore --es screen settings --ei accentidx 0
+# Tab-switch recording: every tab entered from every other, on a real screen recording, so first-frame jitter
+# (empty state, zero counts, blank page, spacing shift) can be measured frame by frame. Never fatal.
+mkdir -p tabsrec
+adb shell am force-stop com.bumplog; adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home; sleep 5
+adb shell rm -f /sdcard/tabs.mp4
+adb shell screenrecord --time-limit 120 --bit-rate 8000000 /sdcard/tabs.mp4 &
+REC=$!
+sleep 2
+for round in 1 2; do
+  for t in Review Reported Stats Settings Home Stats Review Settings Reported Home; do tap_now "$t"; sleep 1.2; done
+done
+wait $REC 2>/dev/null; sleep 2
+adb pull /sdcard/tabs.mp4 tabsrec/tabs.mp4 || echo "WARN: tab recording not pulled"
 # Launcher proof: the real BumpLog icon as the device launcher draws it, on the home screen or in the app drawer.
 # Never fatal (the other artifacts must still upload), but it says plainly whether the icon was found.
 adb shell am force-stop com.bumplog; adb shell input keyevent KEYCODE_HOME; sleep 3

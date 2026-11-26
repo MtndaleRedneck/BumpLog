@@ -71,7 +71,7 @@ fun palette(dark: Boolean, accentIdx: Int): Pal {
     val onAc = Color(onAccentArgb(ac.toArgb()))
     return if (dark) Pal(
         // Surfaces match BingeMote's grays (owner decision, Nov 2026): one rung lighter than the old ladder.
-        bg = Color(0xFF1B1B1E), card = Color(0xFF26262D), card2 = Color(0xFF2E2E36), nav = Color(0xFF141418),
+        bg = Color(0xFF1B1B1E), card = Color(0xFF26262D), card2 = Color(0xFF2E2E36), nav = Color(0xFF232328),
         // Muted sits one step brighter than BingeMote's so small tile labels stay at 4.5:1 on the tile top.
         text = Color(0xFFF5F5F7), muted = Color(0xFFA0A0AA), accent = ac, onAccent = onAc,
         yellow = Color(0xFFFFBE3C), danger = Color(0xFFE57373), dark = true,

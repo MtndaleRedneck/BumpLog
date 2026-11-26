@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main, redesign-modernization-1124, ui-1.19.0]
+    branches: [main, redesign-modernization-1124, ui-1.19.0, ui-1.20.0]
     paths-ignore: ['docs/screenshots/**']
   workflow_dispatch:
     inputs:
@@ -254,6 +254,11 @@ jobs:
         with:
           name: bumplog-screenshots-run
           path: docs/screenshots/**
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bumplog-tab-recording
+          path: tabsrec/**
       - name: Commit screenshots
         env:
           # Never interpolate github.ref_name into shell: pass it through the environment and quote it.

@@ -30,8 +30,9 @@ private fun shortDay(ts: Long): String = SimpleDateFormat("M/d", Locale.US).form
 fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
-    var reported by remember { mutableStateOf(listOf<Spot>()) }
-    LaunchedEffect(tick) { reported = Db.get(ctx).reportedSpots() }
+    var reported by remember { mutableStateOf(TabSnap.reported) }
+    var loaded by remember { mutableStateOf(TabSnap.reportedLoaded) }
+    LaunchedEffect(tick) { reported = Db.get(ctx).reportedSpots(); TabSnap.reported = reported; TabSnap.reportedLoaded = true; loaded = true }
     var markFor by remember { mutableStateOf<Spot?>(null) }
 
     markFor?.let { s ->
@@ -82,7 +83,7 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
     Column(Modifier.fillMaxSize().pane("Reported").verticalScroll(ScrollMemory.get("Reported")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Txt("Reported", 24, FontWeight.Bold, modifier = Modifier.asHeading())
         Muted("Only bumps you reported show up here.", 15)
-        if (reported.isEmpty()) {
+        if (loaded && reported.isEmpty()) {
             Spacer(Modifier.height(24.dp))
             Muted("Nothing reported yet. Confirm a bump in Review and send it, and it lands here.", 15, Modifier.fillMaxWidth(), TextAlign.Center)
         }

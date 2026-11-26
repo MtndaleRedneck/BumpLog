@@ -439,3 +439,18 @@ const val SIDE_BY_SIDE_MAX_FONT = 1.5f
 
 /** Pure rule behind [ActionButtonPair], kept testable. */
 fun sideBySide(widthDp: Float, fontScale: Float) = widthDp >= SIDE_BY_SIDE_MIN_DP && fontScale < SIDE_BY_SIDE_MAX_FONT
+
+
+/**
+ * The last data and spacing each tab showed. A tab that is rebuilt on every switch starts from this instead of from
+ * empty, so its first frame is the final one: no empty state, zero counts or blank page for a frame before the
+ * database answers, and no second layout pass for the spacing. The database read still runs and replaces it silently.
+ */
+object TabSnap {
+    var homeRecent: List<Spot> = emptyList(); var homeToday: Int = 0
+    var homeGap: androidx.compose.ui.unit.Dp = 10.dp; var homeExtraAct: androidx.compose.ui.unit.Dp = 0.dp
+    var reviewPending: Int = 0; var reviewSaved: Int = 0; var reviewHits: List<Pair<Hit, Spot>> = emptyList()
+    var statsScore: Db.Score? = null; var statsBig: Pair<Hit, Spot>? = null; var statsByType: List<Pair<DefectType?, Int>> = emptyList()
+    var statsGap: androidx.compose.ui.unit.Dp = 10.dp
+    var reported: List<Spot> = emptyList(); var reportedLoaded: Boolean = false
+}

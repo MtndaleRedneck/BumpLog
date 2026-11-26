@@ -445,7 +445,7 @@ class MainActivity : ComponentActivity() {
                 Row(Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     // Selected tint: against card2, which is stricter than the solid nav strip.
                     val selTint = p.accentText(p.card2)
-                    val pillOn = Prefs.navStyle == "pill"
+                    val pillOn = true   // Compact pill is the only bottom bar (Settings chooser removed, 1.20)
                     NavItem(pillOn, "Home", Icons.Default.Home, tab == "home" && top == null, selTint, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
                     NavItem(pillOn, "Review", Icons.Default.CheckCircle, tab == "review" && top == null, selTint, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
                     NavItem(pillOn, "Reported", StatsIcons.plane, tab == "reported" && top == null, selTint, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }

@@ -13,8 +13,8 @@ android {
         applicationId = "com.bumplog"
         minSdk = 31
         targetSdk = 34
-        versionCode = 27
-        versionName = "1.19.0"
+        versionCode = 28
+        versionName = "1.20.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Pins the assistant-guide link in report emails to the exact commit CI built from.
         buildConfigField("String", "GUIDE_REF", "\"${System.getenv("GITHUB_SHA") ?: "v$versionName"}\"")
