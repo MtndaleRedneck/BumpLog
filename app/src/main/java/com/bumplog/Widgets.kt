@@ -198,7 +198,7 @@ fun Chip(label: String, color: Color = LocalPal.current.accent) {
 @Composable
 fun Toggle(label: String, checked: Boolean, sub: String? = null, onChange: (Boolean) -> Unit) {
     val p = LocalPal.current
-    Card(pad = 14.dp) {
+    Card(pad = 16.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Txt(label, 17, FontWeight.Bold); if (sub != null) Muted(sub, 12) }
             Switch(checked, onChange, colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = p.onAccent,
@@ -240,8 +240,8 @@ fun StepperRow(label: String, value: String, onMinus: () -> Unit, onPlus: () -> 
 }
 
 @Composable
-fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
-    Card(pad = 14.dp) { StepperRow(label, value, onMinus, onPlus) }
+fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit, note: String? = null) {
+    Card(pad = 16.dp) { StepperRow(label, value, onMinus, onPlus); if (note != null) { Spacer(Modifier.height(6.dp)); Muted(note, 12) } }
 }
 
 /** Gauge ring open at the bottom, like the mockup. value/maxValue fills the accent arc. */

@@ -153,8 +153,8 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Muted("Hits above this pop an alert. 1.30 default.", 12)
         }
         Stepper("Minimum speed", "$minSpeed mph", { minSpeed = (minSpeed - 5).coerceAtLeast(5); Prefs.minSpeedMph = minSpeed }, { minSpeed = (minSpeed + 5).coerceAtMost(60); Prefs.minSpeedMph = minSpeed })
-        Stepper("Turn off when not driving", "$autoOff min", { autoOff = (autoOff - 5).coerceAtLeast(10); Prefs.autoOffMin = autoOff }, { autoOff = (autoOff + 5).coerceAtMost(120); Prefs.autoOffMin = autoOff })
-        Muted("Power turns itself off after the phone has been stopped this long, and a notification lets you turn it back on.", 12)
+        Stepper("Turn off when not driving", "$autoOff min", { autoOff = (autoOff - 5).coerceAtLeast(10); Prefs.autoOffMin = autoOff }, { autoOff = (autoOff + 5).coerceAtMost(120); Prefs.autoOffMin = autoOff },
+            note = "Power turns itself off after the phone has been stopped this long, and a notification lets you turn it back on.")
 
         SettingsCard {
             Txt("Warnings before a saved spot", 18, FontWeight.Bold)
@@ -182,7 +182,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                     Txt("Voice", 18, FontWeight.Bold)
                     Muted(when (voice) { "" -> "Phone default"; Sound.CUSTOM -> "My own recordings"; else -> Sound.naturalVoices.firstOrNull { it.first == voice }?.second?.let { "Natural voice: $it" } ?: voices.firstOrNull { it.first == voice }?.second ?: "Phone default" }, 12)
                 }
-                Icon(Icons.Default.PlayArrow, null, tint = p.muted)
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = p.text, modifier = Modifier.size(28.dp))
             }
         }
         SettingsCard {
@@ -239,7 +239,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                     Txt("Persistent notification", 18, FontWeight.Bold)
                     Muted("Sits in your notification shade while driving.", 12)
                 }
-                Icon(Icons.Default.PlayArrow, null, tint = p.muted)
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = p.text, modifier = Modifier.size(28.dp))
             }
         }
         // Setup rows only show while something still needs doing; they come back by themselves if a permission or the battery exemption is lost.
