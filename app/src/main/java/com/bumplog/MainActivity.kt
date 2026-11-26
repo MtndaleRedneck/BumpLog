@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
     private var guideOffer by mutableStateOf(false)
     private var confirmFixed by mutableStateOf<Long?>(null)
     private var askSent by mutableStateOf<List<Long>?>(null)
+    private var askQuestion: PendingAsk.Question? = null   // the exact question the dialog was built from (main thread only)
     private var updateUi by mutableStateOf<UpdateUi?>(null)
     private var updateReady: java.io.File? = null
     private var updateJob: kotlinx.coroutines.Job? = null
@@ -122,14 +123,21 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() { Sound.stopRecording(save = false); Sound.onRecordingEnded?.invoke(); super.onStop() }
     override fun onResume() {
-        super.onResume(); refreshPerms(); Live.bump()
+        super.onResume(); refreshPerms(); Live.bump(); if (Prefs.setupDone) DamageMarks.retryAll(this)
         // Power on means logging is running. Bring it back if Android or the user ended it.
         if (permsOk && Prefs.detectionEnabled && !Live.state.value.running) try { DriveService.start(this) } catch (e: Exception) { }
         // Back from the "Install unknown apps" screen with the file already downloaded and checked: carry on to the installer.
         updateReady?.let { f -> if (packageManager.canRequestPackageInstalls()) { updateReady = null; launchInstaller(f) } }
         // Back from the mail app: ask once whether the handed-off email really went.
-        if (askSent == null && Prefs.askSentFor.isNotBlank())
-            askSent = Prefs.askSentFor.split(",").mapNotNull { it.toLongOrNull() }.takeIf { it.isNotEmpty() }
+        surfaceAsk()
+    }
+    /** Shows the stored "did the email go out?" question when there is one and it is not already showing (main thread). */
+    fun surfaceAsk() {
+        if (askSent == null) {
+            val q = PendingAsk.current()   // one consistent read of the whole question
+            val ids = q.sentFor.split(",").mapNotNull { it.toLongOrNull() }.takeIf { it.isNotEmpty() }
+            if (ids != null) { askQuestion = q; askSent = ids }
+        }
     }
     override fun onDestroy() { updateJob?.cancel(); super.onDestroy() }
 
@@ -204,9 +212,8 @@ class MainActivity : ComponentActivity() {
             "spot" -> stack = listOf(Screen.Spot(spot))
             "markfixed" -> {
                 // Opened from the "may be fixed" prompt, but any app can send this, so it only asks. Nothing changes until the user confirms in the app.
-                val s = Db.get(this).spot(spot)
-                if (s != null && s.review != "FIXED") confirmFixed = spot
                 stack = emptyList()
+                DbQ.run(this, work = { it.spot(spot) }) { s -> if (s != null && s.review != "FIXED") confirmFixed = spot }
             }
         }
         // Trips and restarts arrive only from the non-exported ActionReceiver, which
@@ -215,14 +222,37 @@ class MainActivity : ComponentActivity() {
         if (Prefs.pendingTrip != 0L && !Prefs.setupDone) stack = listOf(Screen.Setup)
         if (Prefs.restartWanted) { Prefs.restartWanted = false; startDetection() }
         if (spot != 0L && i.getStringExtra("screen") == null) {
-            val s = Db.get(this).spot(spot)
-            stack = listOf(if (s != null && s.severe && s.review == "PENDING") Screen.Alert(spot) else Screen.Spot(spot))
+            stack = listOf(Screen.Spot(spot))
+            // A severe pending spot opens the alert instead, unless the user has already moved on from the spot screen.
+            DbQ.run(this, work = { it.spot(spot) }) { s -> if (s != null && s.severe && s.review == "PENDING" && stack == listOf(Screen.Spot(spot))) stack = listOf(Screen.Alert(spot)) }
         }
         if (BuildConfig.DEBUG && i.getBooleanExtra("demo", false)) { Demo.seed(this); Live.bump() }
+        // Debug builds only, for the CI frame run: a real CSV import and a wipe on a background thread, so the tab
+        // switches that follow run while the database monitor is busy, like a user importing while navigating.
+        if (BuildConfig.DEBUG && i.hasExtra("stressimport")) {
+            val rows = i.getIntExtra("stressimport", 0).coerceIn(1, 20000); val app = applicationContext
+            Thread {
+                val db = Db.get(app); val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", java.util.Locale.US)
+                val ab = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; val t0 = System.currentTimeMillis()
+                repeat(3) { round ->
+                    val sb = StringBuilder("report_id,report_no,review,report_status,defect_type,hit_time,lat,lon,heading,speed_mph,peak_g,spot_hit_count,road,town,county,report_ts\n")
+                    for (n in 0 until rows) {
+                        val id = "BL-20260101-" + ab[(n / 29791) % 31] + ab[(n / 961) % 31] + ab[(n / 31) % 31] + ab[n % 31]
+                        sb.append(id).append(",0,PENDING,NONE,POTHOLE,").append(fmt.format(t0 - n * 60000L)).append(",39.5,-98.3,90,35,0.9,1,Stress Rd,Anytown,Example County,\n")
+                    }
+                    val s = System.currentTimeMillis(); val r = db.importCsv(sb.toString())
+                    android.util.Log.i("BumpStress", "round $round import rows=$rows imported=${r?.imported} took=${System.currentTimeMillis() - s}ms")
+                    Live.bump(); Thread.sleep(1500)
+                    val w = System.currentTimeMillis(); db.wipeAll(); Live.bump()
+                    android.util.Log.i("BumpStress", "round $round wipe took=${System.currentTimeMillis() - w}ms"); Thread.sleep(500)
+                }
+                android.util.Log.i("BumpStress", "done")
+            }.start()
+        }
         // Debug builds only, for the CI screenshot run: pick the voice source and trigger the celebration.
         if (BuildConfig.DEBUG && i.hasExtra("setvoice")) { Prefs.voice = i.getStringExtra("setvoice").orEmpty(); Live.bump() }
         if (BuildConfig.DEBUG && i.getBooleanExtra("celebrate", false)) Celebrate.trigger()
-        if (BuildConfig.DEBUG && i.getBooleanExtra("askmail", false)) { Prefs.askSentFor = "5"; Prefs.askSentKind = "trip" }
+        if (BuildConfig.DEBUG && i.getBooleanExtra("askmail", false)) { PendingAsk.set("5", "trip") }
         if (BuildConfig.DEBUG && i.getBooleanExtra("logstop", false)) Notifier.loggingStopped(this)
         if (BuildConfig.DEBUG && i.getBooleanExtra("logpaused", false)) Notifier.loggingPaused(this)
         if (BuildConfig.DEBUG && i.getBooleanExtra("showwipe", false)) { Testing.openWipeOnce = true; tab = "settings"; stack = emptyList() }
@@ -259,7 +289,7 @@ class MainActivity : ComponentActivity() {
         if (BuildConfig.DEBUG && i.getBooleanExtra("fakeuptodate", false)) Testing.fakeUpToDateCount = 2
         if (BuildConfig.DEBUG && i.hasExtra("drv")) { Prefs.passenger = false; Live.update { it.copy(paused = false) }; Live.bump() }
         if (BuildConfig.DEBUG && i.hasExtra("pass")) { Prefs.passenger = true; Live.update { it.copy(paused = true) }; Live.bump() }
-        if (BuildConfig.DEBUG && i.getBooleanExtra("lastdemo", false)) { Db.get(this).hits(1).firstOrNull()?.let { Prefs.lastDriveId = it.driveId }; Live.bump() }
+        if (BuildConfig.DEBUG && i.getBooleanExtra("lastdemo", false)) { DbQ.run(this, work = { it.hits(1).firstOrNull() }) { h -> h?.let { Prefs.lastDriveId = it.driveId }; Live.bump() } }
         if (BuildConfig.DEBUG && i.getBooleanExtra("emptylast", false)) { Prefs.lastDriveId = System.currentTimeMillis(); Live.bump() }
         if (BuildConfig.DEBUG && i.hasExtra("detoff")) { Prefs.detectionEnabled = !i.getBooleanExtra("detoff", false); Live.bump() }
         // bumplog://setup?assistant=instinct&email=...
@@ -285,11 +315,14 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Hand one trip's confirmed spots to the mail app and mark them Sent. */
+    private var sendingTrip = false   // main thread only: a second tap while the trip is being read does not open the mail app twice
     private fun sendTrip(driveId: Long) {
-        val list = Db.get(this).tripSpots(driveId)
-        if (list.isEmpty()) toast(this, "No confirmed reports left to send.")
-        else if (handOffMail(this, Reports.reportsMail(this, list))) {
-            Prefs.askSentFor = list.joinToString(",") { it.id.toString() }; Prefs.askSentKind = "trip"
+        if (sendingTrip) return
+        sendingTrip = true
+        DbQ.run(this, fail = { sendingTrip = false; toast(this, "That didn't work. Try again.") }, work = { it.tripSpots(driveId) }) { list ->
+            sendingTrip = false
+            if (list.isEmpty()) toast(this, "No confirmed reports left to send.")
+            else sendWithQuestion(this, list.joinToString(",") { it.id.toString() }, "trip", Reports.reportsMail(this, list))
         }
     }
 
@@ -303,19 +336,42 @@ class MainActivity : ComponentActivity() {
         else toast(this, "The trip's reports are still waiting. Finish the assistant setup to send them.")
     }
 
+    /** "Not yet" or a dismissed dialog: roll a "Report again" back (the Db write is queued, in order) and clear the pending state at once. */
+    private fun closeAskSentWithoutSend() {
+        val q = askQuestion ?: PendingAsk.current()   // the question the user was shown, not whatever is stored now
+        askQuestion = null; askSent = null
+        val plan = Rollback.plan(q.kind, q.again)
+        val finish = { PendingAsk.clearIf(q.gen); Live.bump() }
+        // The pending state is cleared only after the rollback is written, so a process death in between still has it (the dialog just asks again).
+        // The user's "not sent" answer is always applied: the rollback is ONE conditional statement that only touches a row that still carries the report time this
+        // question's Report again wrote, so a newer re-report (or anything else that changed the row) makes it a no-op and it needs no generation gate. The
+        // question is cleared only after the rollback landed, and only if it is still the displayed one (a newer question survives). A kill or error before the clear
+        // re-asks, and running the rollback twice is harmless.
+        when (plan) {
+            is RollbackPlan.None -> finish()
+            is RollbackPlan.CannotUndo -> {   // an old-build snapshot: nothing is guessed, and the user is told instead of the spot silently staying re-reported
+                toast(this, "BumpLog could not undo that Report again automatically (it was started by an older version). The spot still shows as reported again.")
+                finish()
+            }
+            is RollbackPlan.Undo -> DbQ.run(this, fail = { Live.bump() }, work = { db -> db.unReportAgainIf(plan.r) }) { finish() }
+        }
+    }
+
     @Composable
     private fun Root(live: LiveState) {
         val p = LocalPal.current
         val top = stack.lastOrNull()
         BackHandler(top != null) { stack = stack.dropLast(1) }
         confirmFixed?.let { id ->
-            val sp = remember(id) { Db.get(this@MainActivity).spot(id) }
-            if (sp == null || sp.review == "FIXED") confirmFixed = null
+            val spR by androidx.compose.runtime.produceState<List<com.bumplog.Spot?>?>(null, id) { value = listOf(try { DbQ.call(this@MainActivity) { it.spot(id) } } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { null }) }
+            val sp = spR?.get(0)
+            if (spR == null) Unit   // still reading: show nothing yet, and do not treat "not read" as "no such spot"
+            else if (sp == null || sp.review == "FIXED") confirmFixed = null
             else AlertDialog(
                 onDismissRequest = { confirmFixed = null },
                 title = { Text("Mark as fixed?") },
                 text = { Text("${sp.title}. No impact was detected there on recent passes. Marking it fixed stops warnings for it. You can restore it any time from its screen.") },
-                confirmButton = { TextButton({ Db.get(this@MainActivity).markFixed(id, System.currentTimeMillis()); Notifier.cancel(this@MainActivity, "fixed", id.toInt()); confirmFixed = null; Celebrate.trigger(); Live.bump() }) { Text("Mark fixed") } },
+                confirmButton = { TextButton({ confirmFixed = null; DbQ.run(this@MainActivity, work = { it.markFixed(id, System.currentTimeMillis()) }) { Notifier.cancel(this@MainActivity, "fixed", id.toInt()); Celebrate.trigger(); Live.bump() } }) { Text("Mark fixed") } },
                 dismissButton = { TextButton({ confirmFixed = null }) { Text("Not yet") } },
             )
         }
@@ -325,29 +381,28 @@ class MainActivity : ComponentActivity() {
                     // Same as "Not yet": hiding the dialog without a yes rolls a "Report
                     // again" back and clears the pending state, so a later mail handoff
                     // can't silently overwrite the rollback snapshot.
-                    if (Prefs.askSentKind == "again") Prefs.askAgain.split("|").let { p ->
-                        if (p.size == 6) Db.get(this@MainActivity).unReportAgain(p[0].toLong(), p[1].toInt(), p[2].toLong(), p[3].toLong(), p[4], p[5].toLong())
-                    }
-                    Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; askSent = null; Live.bump()
+                    closeAskSentWithoutSend()
                 },
                 title = { Text("Did the email go out?") },
                 text = { Text(if (ids.size == 1) "The report went to your mail app. If it wasn't sent, it stays in the queue for the next try." else "The ${ids.size} reports went to your mail app. If they weren't sent, they stay in the queue for the next try.") },
                 confirmButton = { TextButton({
-                    val now = System.currentTimeMillis(); val db = Db.get(this@MainActivity); ids.forEach { db.markSent(it, now) }
-                    if (Prefs.askSentKind == "trip") ioScope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-                        when (val r = Backup.autoSaveResult(this@MainActivity)) {
-                            is Backup.SaveResult.TooLarge -> { Prefs.lastBackupError = r.reason; Notifier.backupFailed(this@MainActivity, r.reason) }
-                            is Backup.SaveResult.Failed -> { Prefs.lastBackupError = r.reason; Notifier.backupFailed(this@MainActivity, r.reason) }
-                            else -> Prefs.lastBackupError = ""
-                        }
-                    } }
-                    Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; askSent = null; Live.bump()
+                    val now = System.currentTimeMillis(); val q = askQuestion ?: PendingAsk.current(); val trip = q.kind == "trip"; val tok = q.gen
+                    askQuestion = null; askSent = null
+                    // The sent marks are written on the Db queue, then the pending state is cleared; the backup that follows a trip runs on IO as before.
+                    DbQ.run(this@MainActivity, work = { db -> ids.forEach { db.markSent(it, now) } }) {
+                        PendingAsk.clearIf(tok)   // only if no newer mail question was set while this write waited
+                        Live.bump()
+                        if (trip) ioScope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                            when (val r = Backup.autoSaveResult(this@MainActivity)) {
+                                is Backup.SaveResult.TooLarge -> { Prefs.lastBackupError = r.reason; Notifier.backupFailed(this@MainActivity, r.reason) }
+                                is Backup.SaveResult.Failed -> { Prefs.lastBackupError = r.reason; Notifier.backupFailed(this@MainActivity, r.reason) }
+                                else -> Prefs.lastBackupError = ""
+                            }
+                        } }
+                    }
                 }) { Text("Yes, sent") } },
                 dismissButton = { TextButton({
-                    if (Prefs.askSentKind == "again") Prefs.askAgain.split("|").let { p ->
-                        if (p.size == 6) Db.get(this@MainActivity).unReportAgain(p[0].toLong(), p[1].toInt(), p[2].toLong(), p[3].toLong(), p[4], p[5].toLong())
-                    }
-                    Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; askSent = null; Live.bump()
+                    closeAskSentWithoutSend()
                 }) { Text("Not yet") } },
             )
         }
@@ -445,7 +500,7 @@ class MainActivity : ComponentActivity() {
                 Row(Modifier.fillMaxWidth().background(p.nav).navigationBarsPadding().padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     // Selected tint: against card2, which is stricter than the solid nav strip.
                     val selTint = p.accentText(p.card2)
-                    val pillOn = Prefs.navStyle == "pill"
+                    val pillOn = true   // Compact pill is the only bottom bar (Settings chooser removed, 1.20)
                     NavItem(pillOn, "Home", Icons.Default.Home, tab == "home" && top == null, selTint, Modifier.weight(1f)) { tab = "home"; stack = emptyList() }
                     NavItem(pillOn, "Review", Icons.Default.CheckCircle, tab == "review" && top == null, selTint, Modifier.weight(1f)) { tab = "review"; stack = emptyList() }
                     NavItem(pillOn, "Reported", StatsIcons.plane, tab == "reported" && top == null, selTint, Modifier.weight(1f)) { tab = "reported"; stack = emptyList() }

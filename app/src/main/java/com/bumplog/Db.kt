@@ -301,6 +301,14 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     /** Undoes a report-again whose email never went out: the old number, times and outcome come back. */
     fun unReportAgain(id: Long, reportNo: Int, reportTs: Long, sentTs: Long, outcome: String, outcomeTs: Long) =
         update(id, "report_no" to reportNo, "report_ts" to reportTs, "sent_ts" to sentTs, "report_outcome" to outcome, "outcome_ts" to outcomeTs)
+    /** The conditional rollback: ONE statement, applied only while the row still carries the report time that this Report again set. Another re-report
+     *  of the same spot changed report_ts, so it no-ops; running it twice is harmless. Returns whether it changed the row. */
+    @Synchronized fun unReportAgainIf(r: Rollback): Boolean {
+        val v = ContentValues().apply { put("report_no", r.reportNo); put("report_ts", r.reportTs); put("sent_ts", r.sentTs); put("report_outcome", r.outcome); put("outcome_ts", r.outcomeTs) }
+        val n = writableDatabase.update("spots", v, "id=? AND report_ts=?", arrayOf(r.id.toString(), r.expectedTs.toString()))
+        if (n > 0) noteWrite()
+        return n > 0
+    }
     /** Restores spots and hits from a BumpLog CSV export. Old codes (BL-/BD-/PS-, strictly checked) and the running
      * numbers are kept; IDs already here are skipped. Both the old 12-column layout and the current one with
      * report_no, town and county load. The shared counter ends up past every number the file used and past the
@@ -399,6 +407,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             .use { it.moveToFirst(); it.getInt(0) }
         bumpCounterTo(ReportNumbers.restoreNext(maxNo, 0, existing))
         noteWrite() // an import changes what warnings should fire: drop the service's cached list
+        TabSnap.clear()
         return ImportResult(n, skippedIds.size + bad, dn)
     }
 
@@ -528,6 +537,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             writableDatabase.update("damage", ContentValues().apply {
                 put("hit_id", hitId); put("spot_id", spotId); put("category", category); put("note", note); put("report_ts", rts)
             }, "id=?", arrayOf(old.id.toString()))
+            noteWrite()
             return old.copy(hitId = hitId, spotId = spotId, category = category, note = note, reportTs = rts)
         }
         val rid = newReportId("BD", now)
@@ -538,15 +548,18 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             put("note", note); put("ts", now); put("status", "NONE"); put("report_no", no); put("report_ts", rts); put("draft_id", draftId)
         }
         val id = writableDatabase.insert("damage", null, v)
+        noteWrite()
         return Damage(id, rid, hitId, spotId, category, note, now, "NONE", no, rts)
     }
 
     @Synchronized fun markDamageSent(id: Long) {
         writableDatabase.update("damage", ContentValues().apply { put("status", "SENT") }, "id=?", arrayOf(id.toString()))
+        noteWrite()
     }
 
     @Synchronized fun setDamageStatus(id: Long, status: String) {
         writableDatabase.update("damage", ContentValues().apply { put("status", status) }, "id=?", arrayOf(id.toString()))
+        noteWrite()
     }
     @Synchronized fun queuedDamages(): List<Damage> = damages().filter { it.status == "QUEUED" }
     @Synchronized fun damages(): List<Damage> {
@@ -568,11 +581,13 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
             put("review", if (confirmed) "CONFIRMED" else "PENDING"); put("warn", 0); put("report_status", "NONE"); put("sent_ts", 0)
             put("address", "Test location (not real)"); put("clean_passes", 0); put("severity", severity); put("file_trip", if (fileTrip) 1 else 0); put("saves", 0)
         })
+        noteWrite()
         return spot(id)!!
     }
     @Synchronized fun clearTestData(): Int {
         val n = writableDatabase.delete("spots", "report_id LIKE 'TEST-%'", null)
         writableDatabase.delete("hits", "spot_id NOT IN (SELECT id FROM spots)", null)
+        noteWrite()
         return n
     }
     @Synchronized fun testCount(): Int = readableDatabase.rawQuery("SELECT COUNT(*) FROM spots WHERE report_id LIKE 'TEST-%'", null).use { it.moveToFirst(); it.getInt(0) }
@@ -587,6 +602,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     @Synchronized fun wipeAll() {
         writableDatabase.execSQL("DELETE FROM spots"); writableDatabase.execSQL("DELETE FROM hits"); writableDatabase.execSQL("DELETE FROM damage")
         noteWrite()
+        TabSnap.clear()
     }
 
     companion object {
@@ -595,7 +611,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
         /** Bumped by every spot-table write, so cached reads (the drive-time warn list) refresh exactly when the data changes. */
         @Volatile var writes = 0L
             private set
-        fun noteWrite() { writes++ }
+        @Synchronized fun noteWrite() { writes++ }
         @Volatile private var inst: Db? = null
         fun get(ctx: Context): Db = inst ?: synchronized(this) { inst ?: Db(ctx.applicationContext).also { inst = it } }
 

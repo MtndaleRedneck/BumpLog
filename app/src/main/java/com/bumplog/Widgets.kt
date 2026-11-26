@@ -198,7 +198,7 @@ fun Chip(label: String, color: Color = LocalPal.current.accent) {
 @Composable
 fun Toggle(label: String, checked: Boolean, sub: String? = null, onChange: (Boolean) -> Unit) {
     val p = LocalPal.current
-    Card(pad = 14.dp) {
+    Card(pad = 16.dp) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Txt(label, 17, FontWeight.Bold); if (sub != null) Muted(sub, 12) }
             Switch(checked, onChange, colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = p.onAccent,
@@ -240,8 +240,8 @@ fun StepperRow(label: String, value: String, onMinus: () -> Unit, onPlus: () -> 
 }
 
 @Composable
-fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit) {
-    Card(pad = 14.dp) { StepperRow(label, value, onMinus, onPlus) }
+fun Stepper(label: String, value: String, onMinus: () -> Unit, onPlus: () -> Unit, note: String? = null) {
+    Card(pad = 16.dp) { StepperRow(label, value, onMinus, onPlus); if (note != null) { Spacer(Modifier.height(6.dp)); Muted(note, 12) } }
 }
 
 /** Gauge ring open at the bottom, like the mockup. value/maxValue fills the accent arc. */
@@ -439,3 +439,215 @@ const val SIDE_BY_SIDE_MAX_FONT = 1.5f
 
 /** Pure rule behind [ActionButtonPair], kept testable. */
 fun sideBySide(widthDp: Float, fontScale: Float) = widthDp >= SIDE_BY_SIDE_MIN_DP && fontScale < SIDE_BY_SIDE_MAX_FONT
+
+
+/** One tab's last load, stamped with the Live tick it was read at. Immutable, so a reader never sees half of an update. */
+class SnapSlot<T> {
+    private class Entry<T>(val stamp: Stamp, val value: T)
+    @Volatile private var e: Entry<T>? = null
+    /** The snapshot only if its stamp equals the current one: any later database write moves the stamp and makes it cold. */
+    fun warm(stamp: Stamp): T? = e?.takeIf { it.stamp == stamp }?.value
+    /** A late, older read never replaces a snapshot taken at a newer stamp. */
+    @Synchronized fun put(stamp: Stamp, v: T) { val c = e; if (c != null && (c.stamp.writes > stamp.writes || c.stamp.tick > stamp.tick)) return; e = Entry(stamp, v) }
+    fun clear() { e = null }
+}
+
+/** Live tick plus the database's own write counter, read BEFORE a load starts. */
+data class Stamp(val tick: Int, val writes: Long, val day: Long = 0L) { companion object { fun now(tick: Int) = Stamp(tick, Db.writes, Db.startOfToday()) } }   // the day is in the stamp so "today" counts refresh after midnight
+
+class HomeSnap(val recent: List<Spot>, val today: Int, val driveKey: Long)
+class ReviewSnap(val pending: Int, val saved: Int, val hits: List<Pair<Hit, Spot>>, val partial: Boolean = false)
+class StatsSnap(val score: Db.Score, val big: Pair<Hit, Spot>?, val byType: List<Pair<DefectType?, Int>>)
+class ReportedSnap(val spots: List<Spot>)
+/** Measured spacing and the exact geometry it was measured for; reused only when the geometry matches. */
+data class GeoKey(val viewH: Float, val count: Int, val density: Float, val fontScale: Float)
+class GeoSnap(val key: GeoKey, val gap: androidx.compose.ui.unit.Dp, val extra: androidx.compose.ui.unit.Dp)
+
+/**
+ * What each tab last showed, so a tab that is rebuilt on every switch can draw real content on its first frame instead of an
+ * empty state. A snapshot counts only if it was read at the CURRENT Live tick (every database change bumps it), so after a new
+ * hit, report, delete or review action the tab starts blank and fills in, it never shows old numbers. The stamp is the tick the
+ * load started at, so a load that finishes after a later write is already stale. Wipe, CSV import and restore also clear
+ * everything after they finish. A cold process has nothing, so tabs draw a blank pane until their first read.
+ */
+/**
+ * First-frame data for a tab: the warm snapshot if its stamp is current, otherwise one small read right now (the data is a handful of
+ * rows), stamped before the read, so the first frame already shows final content: never stale, never blank. The read runs on a helper
+ * thread and the main thread waits at most [FIRST_FRAME_WAIT_MS] for it: every Db read takes the database monitor, and an import,
+ * restore or wipe holds that monitor for seconds, so an unbounded wait here froze the whole window (measured on the emulator: a 7 s
+ * frame and an input-dispatch ANR during a 5000-row import). On timeout this returns null, the tab shows its own empty state, the effect
+ * loads as before, and the helper still stores its result under the stamp it began with, so a late read can only warm the slot, never
+ * show stale data. Null also if the read itself failed (logged).
+ */
+const val FIRST_FRAME_WAIT_MS = 40L
+/** At most 2 helper threads and 4 waiting reads: during a long import every read blocks on the monitor, so extra tab switches must not pile up threads. */
+internal val firstFramePool = java.util.concurrent.ThreadPoolExecutor(2, 2, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue<Runnable>(4),
+    { r -> Thread(r, "bump-first-frame").apply { isDaemon = true } }).apply { allowCoreThreadTimeOut(true) }
+fun <T : Any> firstFrame(slot: SnapSlot<T>, tick: Int, usable: (T) -> Boolean = { true }, read: () -> T): T? {
+    val st = Stamp.now(tick)
+    slot.warm(st)?.takeIf(usable)?.let { return it }
+    val job = try { firstFramePool.submit(java.util.concurrent.Callable { read().also { slot.put(st, it) } }) }
+              catch (e: java.util.concurrent.RejectedExecutionException) { return null }   // pool and queue full: every helper is stuck behind the monitor
+    return try { job.get(FIRST_FRAME_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) }
+    catch (e: java.util.concurrent.TimeoutException) { job.cancel(false); firstFramePool.remove(job as Runnable); null }   // a queued read never starts; a running one finishes and only warms the slot under its stamp
+    catch (e: Exception) { android.util.Log.w("BumpLog", "first-frame read failed", e); null }
+}
+
+/**
+ * Every Db write or read a tap needs runs here, one at a time in the order it was queued, never on the main thread: an import or restore holds
+ * the Db monitor for seconds and a tap that read the Db inline would freeze the UI. This orders only the work that goes through here: imports,
+ * restores, the detection service and the first-frame reads run on their own threads and meet it at the Db monitor, so a queued tap can wait
+ * behind them (it never blocks the main thread). [run] hands the result to [done] on the main thread;
+ * [call] suspends for it. A failure reaches [fail] (default: a toast) and never [done].
+ */
+object DbQ {
+    private val ex = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "bump-db-queue").apply { isDaemon = true } }
+    private val mainHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+    /** Where [done] and [fail] run. The main thread; tests replace it. */
+    internal var toMain: (Runnable) -> Unit = { mainHandler.post(it) }
+    internal fun resetToMain() { toMain = { mainHandler.post(it) } }
+
+    /** The queue itself, with no Android types: [work] runs in order on the queue thread, then exactly one of [done] (result) or [fail] (exception) runs via [toMain]. */
+    internal fun <T> submit(work: () -> T, fail: (Exception) -> Unit, done: (T) -> Unit) {
+        ex.execute {
+            // Throwable on purpose: an Error in the work must still clear a caller's busy flag through [fail], never leave it set.
+            val r = try { Result.success(work()) } catch (e: Throwable) { android.util.Log.w("BumpLog", "queued db work failed", e); Result.failure<T>(if (e is Exception) e else RuntimeException(e)) }
+            toMain(Runnable { r.fold({ done(it) }, { e -> fail(e as Exception) }) })
+        }
+    }
+
+    fun <T> run(ctx: android.content.Context, fail: ((Exception) -> Unit)? = null, work: (Db) -> T, done: (T) -> Unit = {}) {
+        val app = ctx.applicationContext
+        submit({ work(Db.get(app)) }, { e -> if (fail != null) fail(e) else toast(app, "That didn't work. Try again.") }, done)
+    }
+
+    /** One tap at a time: ignored while [busy] is set. [busy] stays set until [done] clears it (leaving the screen needs no clear); a failure clears it. */
+    fun <T> runOnce(ctx: android.content.Context, busy: androidx.compose.runtime.MutableState<Boolean>, fail: ((Exception) -> Unit)? = null, work: (Db) -> T, done: (T) -> Unit) {
+        if (busy.value) return
+        busy.value = true
+        run(ctx, fail = { e -> busy.value = false; if (fail != null) fail(e) else toast(ctx.applicationContext, "That didn't work. Try again.") }, work = work, done = done)
+    }
+
+    suspend fun <T> call(ctx: android.content.Context, work: (Db) -> T): T {
+        val app = ctx.applicationContext
+        val d = kotlinx.coroutines.CompletableDeferred<T>()
+        ex.execute { try { d.complete(work(Db.get(app))) } catch (e: Throwable) { d.completeExceptionally(e) } }
+        return d.await()
+    }
+}
+
+/**
+ * The "did the email go out?" pending question: {generation, sentFor, kind, again-snapshot}. It is published and read as one unit under one lock,
+ * and stored with a single Prefs edit, so a reader never sees a half-written question (e.g. kind "again" without its rollback snapshot).
+ * A dialog captures the whole [Question] when it is shown; its answer clears the state only if that same generation is still current ([clearIf]),
+ * so a late answer can never erase, or roll back for, a newer mail hand-off. Every writer goes through [set].
+ */
+sealed class RollbackPlan { object None : RollbackPlan(); class Undo(val r: Rollback) : RollbackPlan(); object CannotUndo : RollbackPlan() }
+
+/** A Report again's rollback snapshot: id|reportNo|reportTs|sentTs|outcome|outcomeTs|newReportTs. newReportTs is what the re-report wrote; the rollback applies only to that. */
+class Rollback(val id: Long, val reportNo: Int, val reportTs: Long, val sentTs: Long, val outcome: String, val outcomeTs: Long, val expectedTs: Long) {
+    fun encode() = listOf(id, reportNo, reportTs, sentTs, outcome, outcomeTs, expectedTs).joinToString("|")
+    companion object {
+        /** Null for anything that is not a complete 7-field snapshot: no rollback is guessed from a partial or old one. */
+        /** What "Not yet" must do for a stored question: nothing to undo, an exact rollback, or an honest "cannot undo" (an unparseable "again" snapshot,
+         *  e.g. one stored by an older build). The last case is never treated as rolled back. */
+        fun plan(kind: String, again: String): RollbackPlan = if (kind != "again") RollbackPlan.None else parse(again)?.let { RollbackPlan.Undo(it) } ?: RollbackPlan.CannotUndo
+        fun parse(s: String): Rollback? {
+            val p = s.split("|"); if (p.size != 7) return null
+            return try { Rollback(p[0].toLong(), p[1].toInt(), p[2].toLong(), p[3].toLong(), p[4], p[5].toLong(), p[6].toLong()) } catch (e: NumberFormatException) { null }
+        }
+    }
+}
+
+object PendingAsk {
+    class Question(val gen: Int, val sentFor: String, val kind: String, val again: String)
+    interface Store { fun read(): Triple<String, String, String>; fun write(sentFor: String, kind: String, again: String); fun sync(): Boolean = true }
+    private val prefsStore = object : Store {
+        override fun read() = Triple(Prefs.askSentFor, Prefs.askSentKind, Prefs.askAgain)
+        override fun write(sentFor: String, kind: String, again: String) = Prefs.setAsk(sentFor, kind, again)
+        override fun sync() = Prefs.syncAsk()
+    }
+    /** Tests replace this (and restore [prefsStore]'s default with resetStore). */
+    internal var store: Store = prefsStore
+    internal fun resetStore() { store = prefsStore }
+    private var gen = 0
+    @Synchronized fun current(): Question { val (f, k, a) = store.read(); return Question(gen, f, k, a) }
+    @Synchronized fun token(): Int = gen
+    /** A new question replaces any older one entirely (an old rollback snapshot never outlives its question). */
+    fun set(sentFor: String, kind: String, again: String = "", durable: Boolean = false): Int {
+        var prev = Triple("", "", "")
+        val g = synchronized(this) { prev = store.read(); gen++; store.write(sentFor, kind, again); gen }
+        // The in-memory update is under the lock; the disk commit is OUTSIDE it, so a main-thread reader or setter never waits for the disk.
+        // durable is for queue-thread callers that must have the question on disk before a DB change. A failed commit removes only this question.
+        if (durable && !store.sync()) {
+            // Put back the older unanswered question (and its snapshot) unless something newer has already replaced ours.
+            synchronized(this) { if (gen == g) { gen++; store.write(prev.first, prev.second, prev.third) } }
+            throw java.io.IOException("pending question not saved")
+        }
+        return g
+    }
+    /** True when a stored question is waiting for the user's answer, judged exactly as the dialog judges it: at least one parseable report id.
+     *  A blank or unparseable slot is NOT a question (the dialog never shows it), so it can never lock sending. */
+    fun hasUnanswered(q: Question = current()): Boolean = q.sentFor.split(",").any { it.toLongOrNull() != null }
+    /** Claim the one question slot BEFORE the mail app opens. The check and the write are one critical section, so two senders cannot both pass.
+     *  Returns the new question's generation, or -1 when an older unanswered question is waiting: nothing is changed then (byte for byte), and the
+     *  caller must not open the mail app. A durable reservation that cannot be saved gives the slot back and throws. A caller whose hand-off is
+     *  refused gives its own reservation back with clearIf(token). */
+    fun reserve(sentFor: String, kind: String, again: String = "", durable: Boolean = false): Int {
+        var prev = Triple("", "", "")
+        val g = synchronized(this) {
+            prev = store.read()
+            if (hasUnanswered(Question(gen, prev.first, prev.second, prev.third))) return -1
+            gen++; store.write(sentFor, kind, again); gen
+        }
+        if (durable && !store.sync()) {
+            synchronized(this) { if (gen == g) { gen++; store.write(prev.first, prev.second, prev.third) } }
+            throw java.io.IOException("pending question not saved")
+        }
+        return g
+    }
+    @Synchronized fun clearIf(token: Int): Boolean { if (gen != token) return false; gen++; store.write("", "", ""); return true }
+    @Synchronized fun clearAll() { gen++; store.write("", "", "") }
+}
+
+/** Damage reports already handed to the mail app whose "sent" mark did not land (or has not yet). Kept on disk so they are retried, never re-sent. */
+object DamageMarks {
+    interface MarkStore { fun read(): String; fun write(v: String); fun sync(): Boolean }
+    private val prefsStore = object : MarkStore {
+        override fun read() = Prefs.damageMarks
+        override fun write(v: String) { Prefs.damageMarks = v }
+        override fun sync() = Prefs.syncDamageMarks()
+    }
+    internal var store: MarkStore = prefsStore
+    internal fun resetStore() { store = prefsStore }
+    // Entries: "12" = the hand-off returned true (HANDED); "12?" = about to hand off (HANDING). A HANDING entry that survives means the app died or errored
+    // inside the hand-off: nobody knows whether a mail exists, so it is never auto-marked; the queue row asks the user.
+    private fun entries() = store.read().split(",").filter { it.isNotBlank() }
+    @Synchronized fun pending(): Set<Long> = entries().filter { !it.endsWith("?") }.mapNotNull { it.toLongOrNull() }.toSet()
+    @Synchronized fun handing(): Set<Long> = entries().filter { it.endsWith("?") }.mapNotNull { it.dropLast(1).toLongOrNull() }.toSet()
+    private fun without(id: Long) = entries().filter { it != "$id" && it != "$id?" }
+    /** HANDING, committed to disk (call on the Db queue thread, before the hand-off): false when it could not be saved, and then nothing is handed off. */
+    fun beginHandOffDurable(id: Long): Boolean {
+        // The in-memory edit is under the lock (cheap); the disk commit is OUTSIDE it, so a main-thread pending()/handing() never waits for the disk.
+        synchronized(this) { store.write((without(id) + "$id?").joinToString(",")) }
+        if (store.sync()) return true
+        synchronized(this) { if (entries().contains("$id?")) store.write(without(id).joinToString(",")) }   // nothing is handed off: take our own mark back
+        return false
+    }
+    @Synchronized fun handedOff(id: Long) { store.write((without(id) + "$id").joinToString(",")) }
+    @Synchronized fun remove(id: Long) { store.write(without(id).joinToString(",")) }
+    @Synchronized fun clearAll() { store.write("") }
+    /** Marks one report sent on the Db queue; keeps it pending when that fails. */
+    fun settle(ctx: android.content.Context, id: Long, quiet: Boolean = false, done: () -> Unit = {}) {
+        DbQ.run(ctx, fail = { if (!quiet) toast(ctx, "The email is in your mail app, but BumpLog could not mark it sent yet. It will try again when the app opens or the damage list opens; do not send it again.") },
+            work = { it.markDamageSent(id); remove(id) }) { done() }
+    }
+    /** Retries every HANDED mark (never a HANDING one). Called when the app comes to the front. */
+    fun retryAll(ctx: android.content.Context) { pending().forEach { settle(ctx, it, quiet = true) } }
+}
+
+object TabSnap {
+    val home = SnapSlot<HomeSnap>(); val review = SnapSlot<ReviewSnap>(); val stats = SnapSlot<StatsSnap>(); val reported = SnapSlot<ReportedSnap>()
+    @Volatile var homeGeo: GeoSnap? = null; @Volatile var statsGeo: GeoSnap? = null
+    fun clear() { home.clear(); review.clear(); stats.clear(); reported.clear(); homeGeo = null; statsGeo = null }
+}

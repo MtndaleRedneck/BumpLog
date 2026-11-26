@@ -2,7 +2,7 @@ name: Build
 
 on:
   push:
-    branches: [main, redesign-modernization-1124, ui-1.19.0]
+    branches: [main, redesign-modernization-1124, ui-1.19.0, ui-1.20.0]
     paths-ignore: ['docs/screenshots/**']
   workflow_dispatch:
     inputs:
@@ -211,6 +211,53 @@ jobs:
           name: bumplog-release-smoke
           path: release-smoke/**
 
+  upgrade-smoke:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: BumpLog-apk
+      - name: Stage APKs
+        run: |
+          V=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          mkdir -p app/build/outputs/apk/release old
+          cp BumpLog-v$V.apk app/build/outputs/apk/release/app-release.apk
+          curl -sfL -o old/BumpLog-v1.19.0.apk https://github.com/MtndaleRedneck/BumpLog/releases/download/v1.19.0/BumpLog-v1.19.0.apk
+          ls -la old app/build/outputs/apk/release
+      - name: Bind artifact and signer
+        run: |
+          V=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          WANT=$(cat BumpLog-v$V.apk.sha256); GOT=$(sha256sum app/build/outputs/apk/release/app-release.apk | awk '{print $1}')
+          if [ "$WANT" != "$GOT" ]; then echo "FAIL: candidate digest $GOT != build digest $WANT"; exit 1; fi
+          echo "candidate versionName $V sha256 $GOT (build-job digest, built commit $(cat built-commit.txt))"
+          AS="$ANDROID_HOME/build-tools/36.0.0/apksigner"
+          OLDS=$("$AS" verify --print-certs old/BumpLog-v1.19.0.apk | grep -m1 "Signer #1 certificate SHA-256 digest:" | awk '{print $NF}')
+          NEWS=$("$AS" verify --print-certs app/build/outputs/apk/release/app-release.apk | grep -m1 "Signer #1 certificate SHA-256 digest:" | awk '{print $NF}')
+          echo "public v1.19.0 signer $OLDS; candidate signer $NEWS; old apk sha256 $(sha256sum old/BumpLog-v1.19.0.apk | awk '{print $1}')"
+          if [ -z "$OLDS" ] || [ "$OLDS" != "$NEWS" ]; then echo "FAIL: signer mismatch"; exit 1; fi
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          profile: pixel_6
+          disable-animations: true
+          script: ./scripts/upgrade-smoke.sh
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bumplog-upgrade-smoke
+          path: upgrade-smoke/**
+
   screenshots:
     needs: build
     runs-on: ubuntu-latest
@@ -254,6 +301,11 @@ jobs:
         with:
           name: bumplog-screenshots-run
           path: docs/screenshots/**
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bumplog-tab-recording
+          path: tabsrec/**
       - name: Commit screenshots
         env:
           # Never interpolate github.ref_name into shell: pass it through the environment and quote it.
@@ -272,7 +324,7 @@ jobs:
   # branch is fast-forwarded first, then the publish dispatch targets that exact commit.
   publish:
     if: github.event_name == 'workflow_dispatch' && inputs.publish && github.ref == 'refs/heads/main'
-    needs: [build, db-upgrade-test, release-smoke, screenshots]
+    needs: [build, db-upgrade-test, release-smoke, upgrade-smoke, screenshots]
     runs-on: ubuntu-latest
     permissions:
       contents: write

@@ -121,4 +121,52 @@ class DbUpgradeDeviceTest {
         Db.closeForTests()
         assertEquals(42, Db.get(ctx).counterNext())
     }
+
+    /** The conditional rollback's SQL on a real database: it applies only while the row still carries the report time that this Report again wrote. */
+    @Test
+    fun conditionalRollbackAppliesOnlyToItsOwnReportAgain() {
+        createV6Database()
+        val db = Db.get(ctx)
+        val before = db.spot(1)!!
+        val snap = Rollback(1, before.reportNo, before.reportTs, before.sentTs, before.reportOutcome, before.outcomeTs, 5000L)
+
+        db.reportAgain(1, 5000L)
+        val again = db.spot(1)!!
+        assertTrue("the re-report drew a new number", again.reportNo != before.reportNo); assertEquals(5000L, again.reportTs)
+
+        assertTrue("its own rollback applies", db.unReportAgainIf(snap))
+        val back = db.spot(1)!!
+        assertEquals(before.reportNo, back.reportNo); assertEquals(before.reportTs, back.reportTs)
+        assertEquals(before.sentTs, back.sentTs); assertEquals(before.reportOutcome, back.reportOutcome); assertEquals(before.outcomeTs, back.outcomeTs)
+
+        assertEquals("a second run is a no-op (row no longer carries the re-report time)", false, db.unReportAgainIf(snap))
+
+        db.reportAgain(1, 5000L); db.reportAgain(1, 6000L)   // a newer re-report of the same spot
+        val newer = db.spot(1)!!
+        assertEquals("the older question's rollback must not undo the newer re-report", false, db.unReportAgainIf(snap))
+        assertEquals(newer.reportNo, db.spot(1)!!.reportNo); assertEquals(6000L, db.spot(1)!!.reportTs)
+    }
+
+    /** A hand-off that was only recorded as QUEUED shows in the damage list; the sent mark moves it out. */
+    @Test
+    fun aQueuedDamageStaysVisibleUntilItIsMarkedSent() {
+        createV6Database()
+        val db = Db.get(ctx)
+        assertEquals(1, db.queuedDamages().size)
+        db.markDamageSent(db.queuedDamages()[0].id)
+        assertEquals(0, db.queuedDamages().size)
+    }
+
+    /** A SENT draft is untouched by a later addDamage for the same draft (category/note/time/status stay), so a refused re-send changes nothing. */
+    @Test
+    fun anAddDamageForASentDraftChangesNothing() {
+        createV6Database()
+        val db = Db.get(ctx)
+        val first = db.addDamage(1, 1, "RIM", "first", 10_000L, "draft-x")
+        db.markDamageSent(first.id)
+        val again = db.addDamage(1, 1, "TIRE", "changed", 20_000L, "draft-x")
+        assertEquals(first.id, again.id); assertEquals("SENT", again.status)
+        val row = db.damages().first { it.id == first.id }
+        assertEquals("RIM", row.category); assertEquals("first", row.note); assertEquals("SENT", row.status); assertEquals(10_000L, row.ts)
+    }
 }

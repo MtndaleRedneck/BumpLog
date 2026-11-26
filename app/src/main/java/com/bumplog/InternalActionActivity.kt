@@ -39,8 +39,11 @@ class InternalActionActivity : Activity() {
                     } else {
                         val list = db.tripSpots(driveId)
                         if (list.isEmpty()) Toast.makeText(this, "No confirmed reports left to send.", Toast.LENGTH_LONG).show()
-                        else if (handOffMail(this, Reports.reportsMail(this, list))) {
-                            Prefs.askSentFor = list.joinToString(",") { it.id.toString() }; Prefs.askSentKind = "trip"
+                        else {
+                            // The question slot is claimed before the mail opens. An older unanswered question blocks this send: MainActivity (started above) shows it.
+                            val mail = Reports.reportsMail(this, list)   // built BEFORE the claim: nothing can throw between the claim and the hand-off
+                            val tok = PendingAsk.reserve(list.joinToString(",") { it.id.toString() }, "trip")
+                            if (tok != -1 && !handOffMail(this, mail)) PendingAsk.clearIf(tok)
                         }
                     }
                 }

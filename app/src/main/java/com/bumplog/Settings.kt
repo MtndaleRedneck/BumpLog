@@ -71,7 +71,6 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
     var autoOff by remember { mutableStateOf(Prefs.autoOffMin) }
     var accent by remember { mutableStateOf(Prefs.accent) }
     var reportIcon by remember { mutableStateOf(Prefs.reportIcon) }
-    var navStyle by remember { mutableStateOf(Prefs.navStyle) }
     var haptics by remember { mutableStateOf(Prefs.haptics) }
     var assistant by remember { mutableStateOf(Prefs.assistant) }
     var address by remember { mutableStateOf(Prefs.rawActiveAddress) }
@@ -105,13 +104,13 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Spacer(Modifier.height(10.dp))
             Txt("Accent", 16, color = p.muted)
             Spacer(Modifier.height(8.dp))
-            val rows = Swatches.chunked(5)
+            val rows = Swatches.chunked(4)   // two rows of four, same as Listen Later
             // Choices are saved as colours, so the order here is free to change. Sage leads the first row.
             rows.forEachIndexed { r, row ->
                 Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
                     row.forEachIndexed { c, col ->
-                        val idx = r * 5 + c
-                        // 48 dp touch target around the same 46 dp circle, so the look is unchanged. Five across is 240 dp, which
+                        val idx = r * 4 + c
+                        // 48 dp touch target around the same 46 dp circle, so the look is unchanged. Four across is 192 dp, which
                         // fits the card's inner width down to a 320 dp-wide screen (320 - 32 pane - 32 card = 256).
                         Box(Modifier.size(48.dp)
                             .pressFeel(role = androidx.compose.ui.semantics.Role.RadioButton, selected = accent == idx, onPress = { accent = idx; Prefs.accent = idx; Live.bump() })
@@ -123,25 +122,24 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                     }
                 }
             }
-            Spacer(Modifier.height(10.dp))
-            Dropdown("Report icon", reportIcon, listOf("mono" to "Monochrome", "color" to "Full color")) { reportIcon = it; Prefs.reportIcon = it; Live.bump() }
-            Spacer(Modifier.height(10.dp))
-            Dropdown("Bottom bar", navStyle, listOf("flat" to "Current", "pill" to "Compact pill")) { navStyle = it; Prefs.navStyle = it; Live.bump() }
-        }
-        SettingsCard {
-            Txt("Feel", 18, FontWeight.Bold, modifier = Modifier.asHeading())
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(6.dp))
             // The whole row toggles (and is one Switch node for TalkBack and the emulator script); the Switch itself is display-only.
             Row(Modifier.fillMaxWidth().heightIn(min = 48.dp)
                 .toggleable(value = haptics, role = androidx.compose.ui.semantics.Role.Switch, onValueChange = { haptics = it; Prefs.haptics = it }),
                 verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Txt("Vibrate on press", 17, FontWeight.Bold); Muted("A light tick when you press a button or tab.", 12) }
+                Txt("Vibrate on press", 15, modifier = Modifier.weight(1f))
                 Switch(haptics, null, colors = SwitchDefaults.colors(checkedTrackColor = p.accent, checkedThumbColor = p.onAccent,
                     uncheckedTrackColor = p.card2, uncheckedThumbColor = p.muted, uncheckedBorderColor = p.muted))
             }
+            Spacer(Modifier.height(10.dp))
+            Txt("Report icon on home screen", 15)
+            Spacer(Modifier.height(8.dp))
+            // Two buttons, the chosen one filled. Same look as the app's other button pairs.
+            PillRow(listOf(
+                Triple("Monochrome", if (reportIcon == "mono") PillKind.Fill else PillKind.Outline) { reportIcon = "mono"; Prefs.reportIcon = "mono"; Live.bump() },
+                Triple("Full color", if (reportIcon == "color") PillKind.Fill else PillKind.Outline) { reportIcon = "color"; Prefs.reportIcon = "color"; Live.bump() },
+            ))
         }
-
-
 
         SettingsCard {
             Row { Txt("Sensitivity", 18, FontWeight.Bold, modifier = Modifier.weight(1f)); Txt("%.2fg".format(cutoff), 18, FontWeight.Bold, p.accent) }
@@ -155,8 +153,8 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             Muted("Hits above this pop an alert. 1.30 default.", 12)
         }
         Stepper("Minimum speed", "$minSpeed mph", { minSpeed = (minSpeed - 5).coerceAtLeast(5); Prefs.minSpeedMph = minSpeed }, { minSpeed = (minSpeed + 5).coerceAtMost(60); Prefs.minSpeedMph = minSpeed })
-        Stepper("Turn off when not driving", "$autoOff min", { autoOff = (autoOff - 5).coerceAtLeast(10); Prefs.autoOffMin = autoOff }, { autoOff = (autoOff + 5).coerceAtMost(120); Prefs.autoOffMin = autoOff })
-        Muted("Power turns itself off after the phone has been stopped this long, and a notification lets you turn it back on.", 12)
+        Stepper("Turn off when not driving", "$autoOff min", { autoOff = (autoOff - 5).coerceAtLeast(10); Prefs.autoOffMin = autoOff }, { autoOff = (autoOff + 5).coerceAtMost(120); Prefs.autoOffMin = autoOff },
+            note = "Power turns itself off after the phone has been stopped this long, and a notification lets you turn it back on.")
 
         SettingsCard {
             Txt("Warnings before a saved spot", 18, FontWeight.Bold)
@@ -184,10 +182,15 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                     Txt("Voice", 18, FontWeight.Bold)
                     Muted(when (voice) { "" -> "Phone default"; Sound.CUSTOM -> "My own recordings"; else -> Sound.naturalVoices.firstOrNull { it.first == voice }?.second?.let { "Natural voice: $it" } ?: voices.firstOrNull { it.first == voice }?.second ?: "Phone default" }, 12)
                 }
-                Icon(Icons.Default.PlayArrow, null, tint = p.muted)
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = p.text, modifier = Modifier.size(28.dp))
             }
         }
-        Dropdown("Major-hit alert dismisses after", hitTimeout, listOf("10" to "10 seconds", "20" to "20 seconds", "30" to "30 seconds", "0" to "Never dismiss")) { hitTimeout = it; Prefs.hitTimeoutSec = it.toInt() }
+        // Same minus/plus control as the other time settings. Steps through the same four values the dropdown offered.
+        val hitSteps = listOf("10", "20", "30", "0")
+        val hitIdx = hitSteps.indexOf(hitTimeout).coerceAtLeast(0)
+        Stepper("Major-hit alert dismisses after", if (hitSteps[hitIdx] == "0") "Never" else "${hitSteps[hitIdx]} sec",
+            { hitTimeout = hitSteps[(hitIdx - 1).coerceAtLeast(0)]; Prefs.hitTimeoutSec = hitTimeout.toInt() },
+            { hitTimeout = hitSteps[(hitIdx + 1).coerceAtMost(hitSteps.lastIndex)]; Prefs.hitTimeoutSec = hitTimeout.toInt() })
         Toggle("Lock buttons while moving", lock, "Alerts show no buttons above the minimum speed") { lock = it; Prefs.lockButtons = it }
         SettingsCard {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -239,7 +242,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
                     Txt("Persistent notification", 18, FontWeight.Bold)
                     Muted("Sits in your notification shade while driving.", 12)
                 }
-                Icon(Icons.Default.PlayArrow, null, tint = p.muted)
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, tint = p.text, modifier = Modifier.size(28.dp))
             }
         }
         // Setup rows only show while something still needs doing; they come back by themselves if a permission or the battery exemption is lost.
@@ -269,7 +272,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             SmallButton("Simulate car connected", Modifier.fillMaxWidth()) { Notifier.carConnected(ctx) }
             Spacer(Modifier.height(6.dp))
             SmallButton("Clear test data", Modifier.fillMaxWidth()) {
-                val n = Db.get(ctx).clearTestData(); Live.bump(); toast(ctx, if (n == 0) "No test data." else "Cleared $n test spot(s).")
+                DbQ.run(ctx, work = { it.clearTestData() }) { n -> Live.bump(); toast(ctx, if (n == 0) "No test data." else "Cleared $n test spot(s).") }
             }
         }
         Card(Modifier.pressFeel(onPress = { confirmWipe = true }), pad = 16.dp) { Txt("Delete all logged data", 16, color = p.muted) }
@@ -328,7 +331,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             }
         }
         if (confirmWipe) AlertDialog(onDismissRequest = { confirmWipe = false },
-            confirmButton = { TextButton({ Db.get(ctx).wipeAll(); DamagePhotos.wipeAll(ctx); Prefs.wipeLocalExtras(ctx); Live.bump(); confirmWipe = false }) { Text("Delete") } },
+            confirmButton = { TextButton({ confirmWipe = false; DbQ.run(ctx, fail = { Live.bump(); toast(ctx, "Delete did not finish. Some data may already be gone. Open Settings and Delete again.") }, work = { db -> db.wipeAll(); DamagePhotos.wipeAll(ctx); PendingAsk.clearAll(); DamageMarks.clearAll(); Prefs.wipeLocalExtras(ctx) }) { Live.bump() } }) { Text("Delete") } },
             dismissButton = {
                 Row {
                     // Back up first is optional and never deletes anything. With an auto-backup folder the new zip is
