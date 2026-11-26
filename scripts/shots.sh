@@ -481,6 +481,9 @@ adb shell am force-stop com.bumplog
 adb shell rm -f /sdcard/tabs.mp4
 adb shell screenrecord --time-limit 170 --bit-rate 8000000 /sdcard/tabs.mp4 &
 REC=$!
+# Whatever happens after this point, the recording and the full logcat are pulled on exit (never lost to a failed step).
+pull_evidence() { trap - EXIT; adb logcat -d -v time > tabsrec/logcat-full.txt 2>&1; sleep 1; adb pull /sdcard/tabs.mp4 tabsrec/tabs.mp4 >/dev/null 2>&1 || true; }
+trap pull_evidence EXIT
 sleep 2
 adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home; sleep 4
 : > tabsrec/gfx.txt
@@ -519,6 +522,7 @@ for k in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
 done
 echo "$(nowt) loop end" | tee -a tabsrec/gfx.txt
 gfx_phase import-under-navigation
+adb logcat -d -v time > tabsrec/logcat-full.txt 2>&1
 { echo "== logcat BumpStress, main-thread skipped frames, ANR"; adb logcat -d -v time | grep -E "BumpStress|Skipped [0-9]+ frames|ANR in|am_anr|Davey|Input dispatching timed out" | head -120; } | tee -a tabsrec/gfx.txt
 { echo "== focus and process"; adb shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp" | head -3; adb shell pidof com.bumplog; adb shell ls /data/anr 2>&1 | head -5; } | tee -a tabsrec/gfx.txt
 adb exec-out screencap -p > tabsrec/after-import-phase.png
