@@ -346,12 +346,12 @@ class MainActivity : ComponentActivity() {
         // question is cleared only after the rollback landed, and only if it is still the displayed one (a newer question survives). A kill or error before the clear
         // re-asks, and running the rollback twice is harmless.
         when (plan) {
-            is Rollback.Plan.None -> finish()
-            is Rollback.Plan.CannotUndo -> {   // an old-build snapshot: nothing is guessed, and the user is told instead of the spot silently staying re-reported
+            is RollbackPlan.None -> finish()
+            is RollbackPlan.CannotUndo -> {   // an old-build snapshot: nothing is guessed, and the user is told instead of the spot silently staying re-reported
                 toast(this, "BumpLog could not undo that Report again automatically (it was started by an older version). The spot still shows as reported again.")
                 finish()
             }
-            is Rollback.Plan.Undo -> DbQ.run(this, fail = { Live.bump() }, work = { db -> db.unReportAgainIf(plan.r) }) { finish() }
+            is RollbackPlan.Undo -> DbQ.run(this, fail = { Live.bump() }, work = { db -> db.unReportAgainIf(plan.r) }) { finish() }
         }
     }
 

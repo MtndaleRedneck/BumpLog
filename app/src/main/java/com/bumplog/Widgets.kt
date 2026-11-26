@@ -542,6 +542,8 @@ object DbQ {
  * A dialog captures the whole [Question] when it is shown; its answer clears the state only if that same generation is still current ([clearIf]),
  * so a late answer can never erase, or roll back for, a newer mail hand-off. Every writer goes through [set].
  */
+sealed class RollbackPlan { object None : RollbackPlan(); class Undo(val r: Rollback) : RollbackPlan(); object CannotUndo : RollbackPlan() }
+
 /** A Report again's rollback snapshot: id|reportNo|reportTs|sentTs|outcome|outcomeTs|newReportTs. newReportTs is what the re-report wrote; the rollback applies only to that. */
 class Rollback(val id: Long, val reportNo: Int, val reportTs: Long, val sentTs: Long, val outcome: String, val outcomeTs: Long, val expectedTs: Long) {
     fun encode() = listOf(id, reportNo, reportTs, sentTs, outcome, outcomeTs, expectedTs).joinToString("|")
@@ -549,8 +551,7 @@ class Rollback(val id: Long, val reportNo: Int, val reportTs: Long, val sentTs: 
         /** Null for anything that is not a complete 7-field snapshot: no rollback is guessed from a partial or old one. */
         /** What "Not yet" must do for a stored question: nothing to undo, an exact rollback, or an honest "cannot undo" (an unparseable "again" snapshot,
          *  e.g. one stored by an older build). The last case is never treated as rolled back. */
-        sealed class Plan { object None : Plan(); class Undo(val r: Rollback) : Plan(); object CannotUndo : Plan() }
-        fun plan(kind: String, again: String): Plan = if (kind != "again") Plan.None else parse(again)?.let { Plan.Undo(it) } ?: Plan.CannotUndo
+        fun plan(kind: String, again: String): RollbackPlan = if (kind != "again") RollbackPlan.None else parse(again)?.let { RollbackPlan.Undo(it) } ?: RollbackPlan.CannotUndo
         fun parse(s: String): Rollback? {
             val p = s.split("|"); if (p.size != 7) return null
             return try { Rollback(p[0].toLong(), p[1].toInt(), p[2].toLong(), p[3].toLong(), p[4], p[5].toLong(), p[6].toLong()) } catch (e: NumberFormatException) { null }
