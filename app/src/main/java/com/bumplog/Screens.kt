@@ -108,10 +108,11 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     val first = remember { firstFrame(TabSnap.home, live.tick, usable = { it.driveKey == homeKey }) { readHome(Db.get(ctx)) } }
     var recent by remember { mutableStateOf(first?.recent ?: emptyList()) }
     var today by remember { mutableStateOf(first?.today ?: 0) }
+    var loaded by remember { mutableStateOf(first != null) }   // false = nothing read yet: the counter shows a dash, never a final-looking 0
     LoadingSpots(live.tick) { db ->
-        TabSnap.home.warm(Stamp.now(live.tick))?.takeIf { it.driveKey == homeKey }?.let { recent = it.recent; today = it.today; return@LoadingSpots }   // already read at this stamp (possibly by a late first-frame read): use it, no second read
+        TabSnap.home.warm(Stamp.now(live.tick))?.takeIf { it.driveKey == homeKey }?.let { recent = it.recent; today = it.today; loaded = true; return@LoadingSpots }   // already read at this stamp (possibly by a late first-frame read): use it, no second read
         val st = Stamp.now(live.tick)   // read before the load: a write during it leaves this snapshot stale
-        val r = withContext(Dispatchers.IO) { readHome(db) }; recent = r.recent; today = r.today; TabSnap.home.put(st, r)
+        val r = withContext(Dispatchers.IO) { readHome(db) }; recent = r.recent; today = r.today; loaded = true; TabSnap.home.put(st, r)
     }
     val status = when {
         !Prefs.detectionEnabled -> "Detection off" to p.muted
@@ -204,7 +205,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
             }
         }
         Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Tile(homeDriveLabel(live.running), "$today", null, Modifier.weight(1f))
+            Tile(homeDriveLabel(live.running), if (loaded) "$today" else "-", null, Modifier.weight(1f))
             Tile(homeHardestHitLabel(live.running), "%.2f".format(live.hardestHitG), "g", Modifier.weight(1f))
         }
         Box(Modifier.padding(top = extraAct)) { ActionButtonPair("Report last hit", { ReportMark(p.onAccent) }, {
@@ -306,11 +307,13 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
     var pendingCount by remember { mutableStateOf(first?.pending ?: 0) }
     var saved by remember { mutableStateOf(first?.saved ?: 0) }
     var allHits by remember { mutableStateOf(first?.hits ?: emptyList()) }
+    var loaded by remember { mutableStateOf(first != null) }   // false = nothing read yet: a blank pane, not "0 to review"
     LoadingSpots(live.tick) { db ->
-        TabSnap.review.warm(Stamp.now(live.tick))?.takeIf { !it.partial }?.let { pendingCount = it.pending; saved = it.saved; allHits = it.hits; return@LoadingSpots }
+        TabSnap.review.warm(Stamp.now(live.tick))?.takeIf { !it.partial }?.let { pendingCount = it.pending; saved = it.saved; allHits = it.hits; loaded = true; return@LoadingSpots }
         val st = Stamp.now(live.tick)
-        val r = withContext(Dispatchers.IO) { readReview(db) }; pendingCount = r.pending; saved = r.saved; allHits = r.hits; TabSnap.review.put(st, r)
+        val r = withContext(Dispatchers.IO) { readReview(db) }; pendingCount = r.pending; saved = r.saved; allHits = r.hits; loaded = true; TabSnap.review.put(st, r)
     }
+    if (!loaded) { Box(Modifier.fillMaxSize().pane("Review")); return }
     val scroll = ScrollMemory.get("Review")
     val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {

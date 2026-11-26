@@ -106,4 +106,12 @@ class TabSnapTest {
         assertTrue("helper threads must stay at 2, were $helpers", helpers <= 2)
         gate.countDown()
     }
+
+    @Test fun aLateOlderReadNeverReplacesANewerSnapshot() {
+        val slot = SnapSlot<ReportedSnap>()
+        val newer = ReportedSnap(emptyList()); val older = ReportedSnap(emptyList())
+        slot.put(Stamp(6, 11L), newer); slot.put(Stamp(5, 10L), older)
+        assertEquals(newer, slot.warm(Stamp(6, 11L)))
+        assertNull(slot.warm(Stamp(5, 10L)))
+    }
 }

@@ -447,7 +447,8 @@ class SnapSlot<T> {
     @Volatile private var e: Entry<T>? = null
     /** The snapshot only if its stamp equals the current one: any later database write moves the stamp and makes it cold. */
     fun warm(stamp: Stamp): T? = e?.takeIf { it.stamp == stamp }?.value
-    fun put(stamp: Stamp, v: T) { e = Entry(stamp, v) }
+    /** A late, older read never replaces a snapshot taken at a newer stamp. */
+    @Synchronized fun put(stamp: Stamp, v: T) { val c = e; if (c != null && (c.stamp.writes > stamp.writes || c.stamp.tick > stamp.tick)) return; e = Entry(stamp, v) }
     fun clear() { e = null }
 }
 
@@ -481,7 +482,7 @@ class GeoSnap(val key: GeoKey, val gap: androidx.compose.ui.unit.Dp, val extra: 
 const val FIRST_FRAME_WAIT_MS = 40L
 /** At most 2 helper threads and 4 waiting reads: during a long import every read blocks on the monitor, so extra tab switches must not pile up threads. */
 private val firstFramePool = java.util.concurrent.ThreadPoolExecutor(2, 2, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue<Runnable>(4),
-    { r -> Thread(r, "bump-first-frame").apply { isDaemon = true } }).apply { allowCoreThreadTimeOut(true) }
+    { r -> Thread(r, "bump-first-frame").apply { isDaemon = true } }).apply { allowCoreThreadTimeOut(true); removeOnCancelPolicy = true }
 fun <T : Any> firstFrame(slot: SnapSlot<T>, tick: Int, usable: (T) -> Boolean = { true }, read: () -> T): T? {
     val st = Stamp.now(tick)
     slot.warm(st)?.takeIf(usable)?.let { return it }

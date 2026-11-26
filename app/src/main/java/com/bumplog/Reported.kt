@@ -34,7 +34,9 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
     val ctx = LocalContext.current
     val first = remember { firstFrame(TabSnap.reported, tick) { ReportedSnap(Db.get(ctx).reportedSpots()) } }
     var reported by remember { mutableStateOf(first?.spots ?: emptyList()) }
-    LaunchedEffect(tick) { TabSnap.reported.warm(Stamp.now(tick))?.let { reported = it.spots; return@LaunchedEffect }; val st = Stamp.now(tick); val l = withContext(Dispatchers.IO) { Db.get(ctx).reportedSpots() }; reported = l; TabSnap.reported.put(st, ReportedSnap(l)) }
+    var loaded by remember { mutableStateOf(first != null) }   // false = nothing read yet: a blank pane, not the "nothing reported" text
+    LaunchedEffect(tick) { TabSnap.reported.warm(Stamp.now(tick))?.let { reported = it.spots; loaded = true; return@LaunchedEffect }; val st = Stamp.now(tick); val l = withContext(Dispatchers.IO) { Db.get(ctx).reportedSpots() }; reported = l; loaded = true; TabSnap.reported.put(st, ReportedSnap(l)) }
+    if (!loaded) { Box(Modifier.fillMaxSize().pane("Reported")); return }
     var markFor by remember { mutableStateOf<Spot?>(null) }
 
     markFor?.let { s ->
