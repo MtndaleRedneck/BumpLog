@@ -32,7 +32,7 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
     val ctx = LocalContext.current
     val first = remember { firstFrame(TabSnap.reported, tick) { ReportedSnap(Db.get(ctx).reportedSpots()) } }
     var reported by remember { mutableStateOf(first?.spots ?: emptyList()) }
-    LaunchedEffect(tick) { if (TabSnap.reported.warm(Stamp.now(tick)) != null) return@LaunchedEffect; val st = Stamp.now(tick); val l = Db.get(ctx).reportedSpots(); reported = l; TabSnap.reported.put(st, ReportedSnap(l)) }
+    LaunchedEffect(tick) { TabSnap.reported.warm(Stamp.now(tick))?.let { reported = it.spots; return@LaunchedEffect }; val st = Stamp.now(tick); val l = Db.get(ctx).reportedSpots(); reported = l; TabSnap.reported.put(st, ReportedSnap(l)) }
     var markFor by remember { mutableStateOf<Spot?>(null) }
 
     markFor?.let { s ->

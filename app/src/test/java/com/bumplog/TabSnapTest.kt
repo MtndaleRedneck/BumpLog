@@ -4,6 +4,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TabSnapTest {
@@ -82,5 +83,17 @@ class TabSnapTest {
         TabSnap.home.put(Stamp.now(5), HomeSnap(emptyList(), 3, 7L))
         val v = firstFrame(TabSnap.home, 5, usable = { it.driveKey == 9L }) { HomeSnap(emptyList(), 0, 9L) }
         assertEquals(9L, v!!.driveKey)
+    }
+
+    @Test fun firstFrameGivesUpOnABusyDatabaseThenStillWarmsTheSlot() {
+        val slot = SnapSlot<ReportedSnap>(); val gate = java.util.concurrent.CountDownLatch(1)
+        val t0 = System.nanoTime()
+        val r = firstFrame(slot, 9) { gate.await(); ReportedSnap(emptyList()) }   // a read stuck behind an import
+        assertNull(r)
+        assertTrue("main thread waited too long", (System.nanoTime() - t0) / 1_000_000 < 1000)
+        gate.countDown()
+        var warm = false
+        for (k in 0 until 40) { if (slot.warm(Stamp.now(9)) != null) { warm = true; break }; Thread.sleep(50) }
+        assertTrue("late read should warm the slot under its own stamp", warm)
     }
 }

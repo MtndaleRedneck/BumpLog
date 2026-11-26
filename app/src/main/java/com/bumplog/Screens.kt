@@ -107,7 +107,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     var recent by remember { mutableStateOf(first?.recent ?: emptyList()) }
     var today by remember { mutableStateOf(first?.today ?: 0) }
     LoadingSpots(live.tick) { db ->
-        if (TabSnap.home.warm(Stamp.now(live.tick))?.driveKey == homeKey) return@LoadingSpots   // already read at this stamp: no second identical read
+        TabSnap.home.warm(Stamp.now(live.tick))?.takeIf { it.driveKey == homeKey }?.let { recent = it.recent; today = it.today; return@LoadingSpots }   // already read at this stamp (possibly by a late first-frame read): use it, no second read
         val st = Stamp.now(live.tick)   // read before the load: a write during it leaves this snapshot stale
         val r = readHome(db); recent = r.recent; today = r.today; TabSnap.home.put(st, r)
     }
@@ -305,7 +305,7 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
     var saved by remember { mutableStateOf(first?.saved ?: 0) }
     var allHits by remember { mutableStateOf(first?.hits ?: emptyList()) }
     LoadingSpots(live.tick) { db ->
-        if (TabSnap.review.warm(Stamp.now(live.tick))?.partial == false) return@LoadingSpots
+        TabSnap.review.warm(Stamp.now(live.tick))?.takeIf { !it.partial }?.let { pendingCount = it.pending; saved = it.saved; allHits = it.hits; return@LoadingSpots }
         val st = Stamp.now(live.tick)
         val r = readReview(db); pendingCount = r.pending; saved = r.saved; allHits = r.hits; TabSnap.review.put(st, r)
     }
@@ -574,7 +574,7 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     var big by remember { mutableStateOf(first?.big) }
     var byType by remember { mutableStateOf(first?.byType ?: emptyList()) }
     LoadingSpots(tick) { db ->
-        if (TabSnap.stats.warm(Stamp.now(tick)) != null) return@LoadingSpots
+        TabSnap.stats.warm(Stamp.now(tick))?.let { sc = it.score; byType = it.byType; big = it.big; return@LoadingSpots }
         val st = Stamp.now(tick)
         val r = readStats(db); sc = r.score; byType = r.byType; big = r.big; TabSnap.stats.put(st, r)
     }

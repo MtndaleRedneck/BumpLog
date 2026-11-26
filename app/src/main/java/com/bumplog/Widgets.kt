@@ -470,14 +470,23 @@ class GeoSnap(val key: GeoKey, val gap: androidx.compose.ui.unit.Dp, val extra: 
  * everything after they finish. A cold process has nothing, so tabs draw a blank pane until their first read.
  */
 /**
- * First-frame data for a tab: the warm snapshot if its stamp is current, otherwise one small synchronous read right now (the data is a
- * handful of rows), stamped before the read. Either way the first frame already shows final content: never stale, never blank.
- * Null only if the read itself failed (logged); the caller then shows its own empty state and the effect retries.
+ * First-frame data for a tab: the warm snapshot if its stamp is current, otherwise one small read right now (the data is a handful of
+ * rows), stamped before the read, so the first frame already shows final content: never stale, never blank. The read runs on a helper
+ * thread and the main thread waits at most [FIRST_FRAME_WAIT_MS] for it: every Db read takes the database monitor, and an import,
+ * restore or wipe holds that monitor for seconds, so an unbounded wait here froze the whole window (measured on the emulator: a 7 s
+ * frame and an input-dispatch ANR during a 5000-row import). On timeout this returns null, the tab shows its own empty state, the effect
+ * loads as before, and the helper still stores its result under the stamp it began with, so a late read can only warm the slot, never
+ * show stale data. Null also if the read itself failed (logged).
  */
+const val FIRST_FRAME_WAIT_MS = 40L
+private val firstFramePool: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "bump-first-frame").apply { isDaemon = true } }
 fun <T : Any> firstFrame(slot: SnapSlot<T>, tick: Int, usable: (T) -> Boolean = { true }, read: () -> T): T? {
     val st = Stamp.now(tick)
     slot.warm(st)?.takeIf(usable)?.let { return it }
-    return try { read().also { slot.put(st, it) } } catch (e: Exception) { android.util.Log.w("BumpLog", "first-frame read failed", e); null }
+    val job = firstFramePool.submit(java.util.concurrent.Callable { read().also { slot.put(st, it) } })
+    return try { job.get(FIRST_FRAME_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) }
+    catch (e: java.util.concurrent.TimeoutException) { null }
+    catch (e: Exception) { android.util.Log.w("BumpLog", "first-frame read failed", e); null }
 }
 
 object TabSnap {
