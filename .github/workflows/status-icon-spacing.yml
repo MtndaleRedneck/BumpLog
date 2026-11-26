@@ -2,6 +2,8 @@ name: status-icon-spacing
 # Measurement only. Installs RELEASED APKs, builds nothing, changes no app code.
 # Run on a public repo (free standard runner), workflow_dispatch only.
 on:
+  push:
+    branches: [diag-status-icon-spacing]   # one-time start: a workflow file off the default branch cannot be dispatched by API
   workflow_dispatch:
     inputs:
       api: { description: 'Android API level', default: '34' }
@@ -32,13 +34,13 @@ jobs:
           ls -l apks
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: ${{ inputs.api }}
+          api-level: ${{ inputs.api || '34' }}
           target: google_apis   # userdebug image: `adb root` works, so the protected BOOT_COMPLETED shell broadcast is allowed
           arch: x86_64
           profile: pixel_6
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: API=${{ inputs.api }} DPI=${{ inputs.dpi }} bash scripts-diag/emu_run.sh
+          script: API=${{ inputs.api || '34' }} DPI=${{ inputs.dpi || '480' }} bash scripts-diag/emu_run.sh
       - name: Identity (sha256, versions, package, targetSdk, ic_stat in released APKs)
         if: always()
         run: python scripts-diag/apk_identity.py apks > out/apk_identity.txt; cat out/apk_identity.txt
@@ -48,7 +50,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: status-icon-spacing-api${{ inputs.api }}-${{ inputs.dpi }}dpi
+          name: status-icon-spacing-api${{ inputs.api || '34' }}-${{ inputs.dpi || '480' }}dpi
           path: |
             out/*.png
             out/*.json
