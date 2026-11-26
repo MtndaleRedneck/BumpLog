@@ -561,7 +561,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
                 if (r == null) sendBusy.value = false
                 else {
                     val (d, sp) = r
-                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) DbQ.run(ctx, fail = { toast(ctx, "The email is in your mail app, but BumpLog could not mark it sent. Do not send it again.") }, work = { it.markDamageSent(d.id) }) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() }
+                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.add(d.id); DamageMarks.settle(ctx, d.id) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() } }
                     else sendBusy.value = false
                 }
             }
@@ -587,6 +587,9 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
     val queueLoad = LoadingSpots(tick + n) { db -> loadedList = withContext(Dispatchers.IO) { db.queuedDamages() } }
     val list = loadedList
     if (list == null) { NotLoadedPane("Damage reports waiting", queueLoad); return }
+    // Reports already handed to the mail app whose sent mark did not land: retried here, and their Send stays off so they cannot be sent twice.
+    val marks = DamageMarks.pending()
+    androidx.compose.runtime.LaunchedEffect(list.size, tick, n) { DamageMarks.pending().forEach { id -> if (list.any { it.id == id }) DamageMarks.settle(ctx, id) { n++ } } }
     Column(Modifier.fillMaxSize().pane("Damage reports waiting").verticalScroll(ScrollMemory.get("DamageQueue")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         BackRow("Damage reports waiting", back)
         if (list.isEmpty()) Muted("Nothing waiting.")
@@ -601,9 +604,10 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 PhotoButtons { DamagePhotos.add(ctx, d.reportId, it); n++ }
                 Spacer(Modifier.height(8.dp))
-                BigButton("Send", Icons.Default.Send) {
+                if (d.id in marks) Muted("Already in your mail app. Saving the sent mark. Do not send it again.", 13)
+                BigButton("Send", Icons.Default.Send, enabled = d.id !in marks) {
                     DbQ.runOnce(ctx, rowBusy, work = { db -> db.hit(d.hitId) to db.spot(d.spotId) }) { (h, sp) ->
-                        if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) DbQ.run(ctx, fail = { toast(ctx, "The email is in your mail app, but BumpLog could not mark it sent. Do not send it again.") }, work = { it.markDamageSent(d.id) }) { n++; Live.bump() }
+                        if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.add(d.id); DamageMarks.settle(ctx, d.id) { n++; Live.bump() } }
                         else rowBusy.value = false
                     }
                 }

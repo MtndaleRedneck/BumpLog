@@ -544,10 +544,11 @@ object DbQ {
  */
 object PendingAsk {
     class Question(val gen: Int, val sentFor: String, val kind: String, val again: String)
-    interface Store { fun read(): Triple<String, String, String>; fun write(sentFor: String, kind: String, again: String) }
+    interface Store { fun read(): Triple<String, String, String>; fun write(sentFor: String, kind: String, again: String); fun sync(): Boolean = true }
     private val prefsStore = object : Store {
         override fun read() = Triple(Prefs.askSentFor, Prefs.askSentKind, Prefs.askAgain)
         override fun write(sentFor: String, kind: String, again: String) = Prefs.setAsk(sentFor, kind, again)
+        override fun sync() = Prefs.syncAsk()
     }
     /** Tests replace this (and restore [prefsStore]'s default with resetStore). */
     internal var store: Store = prefsStore
@@ -556,9 +557,27 @@ object PendingAsk {
     @Synchronized fun current(): Question { val (f, k, a) = store.read(); return Question(gen, f, k, a) }
     @Synchronized fun token(): Int = gen
     /** A new question replaces any older one entirely (an old rollback snapshot never outlives its question). */
-    @Synchronized fun set(sentFor: String, kind: String, again: String = ""): Int { gen++; store.write(sentFor, kind, again); return gen }
+    fun set(sentFor: String, kind: String, again: String = "", durable: Boolean = false): Int {
+        val g = synchronized(this) { gen++; store.write(sentFor, kind, again); gen }
+        // The in-memory update is under the lock; the disk commit is OUTSIDE it, so a main-thread reader or setter never waits for the disk.
+        // durable is for queue-thread callers that must have the question on disk before a DB change. A failed commit removes only this question.
+        if (durable && !store.sync()) { clearIf(g); throw java.io.IOException("pending question not saved") }
+        return g
+    }
     @Synchronized fun clearIf(token: Int): Boolean { if (gen != token) return false; gen++; store.write("", "", ""); return true }
     @Synchronized fun clearAll() { gen++; store.write("", "", "") }
+}
+
+/** Damage reports already handed to the mail app whose "sent" mark did not land (or has not yet). Kept on disk so they are retried, never re-sent. */
+object DamageMarks {
+    @Synchronized fun pending(): Set<Long> = Prefs.damageMarks.split(",").mapNotNull { it.toLongOrNull() }.toSet()
+    @Synchronized fun add(id: Long) { Prefs.damageMarks = (pending() + id).joinToString(",") }
+    @Synchronized fun remove(id: Long) { Prefs.damageMarks = (pending() - id).joinToString(",") }
+    /** Marks one report sent on the Db queue; keeps it pending when that fails. */
+    fun settle(ctx: android.content.Context, id: Long, done: () -> Unit = {}) {
+        DbQ.run(ctx, fail = { toast(ctx, "The email is in your mail app, but BumpLog could not mark it sent yet. It will try again; do not send it again.") },
+            work = { it.markDamageSent(id); remove(id) }) { done() }
+    }
 }
 
 object TabSnap {

@@ -161,6 +161,10 @@ object Prefs {
     var askSentFor: String get() = s("ask_sent_for", ""); set(v) = sp.edit().putString("ask_sent_for", v).apply()
     /** All three pending-question values in ONE edit, so a kill or a reader never sees a half-written question. Only PendingAsk calls this. */
     fun setAsk(sentFor: String, kind: String, again: String) { sp.edit().putString("ask_sent_for", sentFor).putString("ask_sent_kind", kind).putString("ask_again", again).apply() }
+    /** Forces everything written so far (including the pending question) to disk: commit, not apply. Call only off the main thread. */
+    fun syncAsk(): Boolean = sp.edit().putLong("ask_tick", System.nanoTime()).commit()
+    /** Damage reports handed to the mail app whose "sent" mark has not landed: comma-joined ids. Survives a kill. */
+    var damageMarks: String get() = s("damage_marks", ""); set(v) = sp.edit().putString("damage_marks", v).apply()
     /** Which handoff waits on the "did the email go out?" answer: "trip", "single", "again", or "". */
     var askSentKind: String get() = s("ask_sent_kind", ""); set(v) = sp.edit().putString("ask_sent_kind", v).apply()
     /** A re-reported spot's pre-send snapshot: id|reportNo|reportTs|sentTs|outcome|outcomeTs, or "" when none. */

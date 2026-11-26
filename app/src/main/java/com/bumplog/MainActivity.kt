@@ -341,9 +341,10 @@ class MainActivity : ComponentActivity() {
         val snap = if (q.kind == "again") q.again.split("|").takeIf { it.size == 6 } else null
         val finish = { PendingAsk.clearIf(q.gen); Live.bump() }
         // The pending state is cleared only after the rollback is written, so a process death in between still has it (the dialog just asks again).
-        // The rollback runs only if no newer question exists: a newer "Report again" is on this same queue, so the check and the write cannot interleave with it.
+        // The rollback CLAIMS the question first (clearIf is atomic with every setter), and rolls back only if the claim won. A newer question of any kind makes
+        // the claim fail, so no setter can interleave. A kill between the claim and the write leaves the row marked reported with no question (the user said it was not sent).
         if (snap == null) finish()
-        else DbQ.run(this, work = { db -> if (PendingAsk.token() == q.gen) db.unReportAgain(snap[0].toLong(), snap[1].toInt(), snap[2].toLong(), snap[3].toLong(), snap[4], snap[5].toLong()) }) { finish() }
+        else DbQ.run(this, work = { db -> if (PendingAsk.clearIf(q.gen)) db.unReportAgain(snap[0].toLong(), snap[1].toInt(), snap[2].toLong(), snap[3].toLong(), snap[4], snap[5].toLong()) }) { finish() }
     }
 
     @Composable

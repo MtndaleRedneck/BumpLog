@@ -183,7 +183,8 @@ class TabSnapTest {
     }
 
     // PendingAsk: the "did the email go out?" question, with Prefs replaced by a map-backed store that is restored after each test.
-    class MapStore(val slowWrite: Boolean = false) : PendingAsk.Store {
+    class MapStore(val slowWrite: Boolean = false, val syncOk: Boolean = true) : PendingAsk.Store {
+        override fun sync() = syncOk
         @Volatile var f = ""; @Volatile var k = ""; @Volatile var a = ""
         override fun read() = Triple(f, k, a)
         override fun write(sentFor: String, kind: String, again: String) {
@@ -191,6 +192,23 @@ class TabSnapTest {
         }
     }
     @org.junit.After fun restoreGlobals() { PendingAsk.resetStore(); DbQ.resetToMain() }
+
+    @Test fun aDurableQuestionThatCannotBeCommittedIsRemovedAndRefused() {
+        val m = MapStore(syncOk = false); PendingAsk.store = m
+        val older = PendingAsk.set("3", "trip")
+        var threw = false
+        try { PendingAsk.set("9", "again", "snap", durable = true) } catch (e: java.io.IOException) { threw = true }
+        assertTrue(threw); assertEquals("", m.f); assertEquals("", m.a)   // only the failed question is gone
+        assertEquals("the older one was already replaced by the failed set, so it cannot be cleared", false, PendingAsk.clearIf(older))
+    }
+
+    @Test fun aClaimedRollbackCannotBeClaimedTwiceOrAfterANewerQuestion() {
+        val m = MapStore(); PendingAsk.store = m
+        val g = PendingAsk.set("9", "again", "snap", durable = true)
+        assertTrue(PendingAsk.clearIf(g)); assertEquals(false, PendingAsk.clearIf(g))
+        val g2 = PendingAsk.set("1", "again", "s2"); PendingAsk.set("2", "trip")
+        assertEquals(false, PendingAsk.clearIf(g2))
+    }
 
     @Test fun anOlderCompletionNeverErasesANewerPendingQuestion() {
         val m = MapStore(); PendingAsk.store = m

@@ -124,7 +124,7 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
                 var tok = -1   // written on the queue thread, read in done: the generation of this question
                 val old = listOf(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs).joinToString("|")
                 DbQ.run(ctx, fail = { PendingAsk.clearIf(tok); againBusy = false; toast(ctx, "That didn't work. Try again.") }, work = { db ->
-                    tok = PendingAsk.set(s.id.toString(), "again", old)
+                    tok = PendingAsk.set(s.id.toString(), "again", old, durable = true)
                     db.reportAgain(s.id, now)
                     db.spot(s.id)?.reportNo ?: error("spot is gone")
                 }) { no ->
