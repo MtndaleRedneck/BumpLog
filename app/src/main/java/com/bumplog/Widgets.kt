@@ -536,17 +536,28 @@ object DbQ {
 }
 
 /**
- * The "did the email go out?" pending state (Prefs.askSentFor / askSentKind / askAgain). Every write goes through [set], which starts a new
- * generation; a queued completion that was started for an older question clears the state only if no newer question has been set since
- * ([clearIf]), so a late "Not yet" or "Yes, sent" can never erase a newer mail hand-off's question. Compare-and-clear is atomic with [set].
+ * The "did the email go out?" pending question: {generation, sentFor, kind, again-snapshot}. It is published and read as one unit under one lock,
+ * and stored with a single Prefs edit, so a reader never sees a half-written question (e.g. kind "again" without its rollback snapshot).
+ * A dialog captures the whole [Question] when it is shown; its answer clears the state only if that same generation is still current ([clearIf]),
+ * so a late answer can never erase, or roll back for, a newer mail hand-off. Every writer goes through [set].
  */
 object PendingAsk {
+    class Question(val gen: Int, val sentFor: String, val kind: String, val again: String)
+    interface Store { fun read(): Triple<String, String, String>; fun write(sentFor: String, kind: String, again: String) }
+    private val prefsStore = object : Store {
+        override fun read() = Triple(Prefs.askSentFor, Prefs.askSentKind, Prefs.askAgain)
+        override fun write(sentFor: String, kind: String, again: String) = Prefs.setAsk(sentFor, kind, again)
+    }
+    /** Tests replace this (and restore [prefsStore]'s default with resetStore). */
+    internal var store: Store = prefsStore
+    internal fun resetStore() { store = prefsStore }
     private var gen = 0
-    /** Where the three values are stored; tests replace it. */
-    internal var write: (String?, String?, String?) -> Unit = { f, k, a -> if (f != null) Prefs.askSentFor = f; if (k != null) Prefs.askSentKind = k; if (a != null) Prefs.askAgain = a }
-    @Synchronized fun set(sentFor: String, kind: String, again: String? = null): Int { gen++; write(sentFor, kind, again); return gen }
+    @Synchronized fun current(): Question { val (f, k, a) = store.read(); return Question(gen, f, k, a) }
     @Synchronized fun token(): Int = gen
-    @Synchronized fun clearIf(token: Int): Boolean { if (gen != token) return false; gen++; write("", "", ""); return true }
+    /** A new question replaces any older one entirely (an old rollback snapshot never outlives its question). */
+    @Synchronized fun set(sentFor: String, kind: String, again: String = ""): Int { gen++; store.write(sentFor, kind, again); return gen }
+    @Synchronized fun clearIf(token: Int): Boolean { if (gen != token) return false; gen++; store.write("", "", ""); return true }
+    @Synchronized fun clearAll() { gen++; store.write("", "", "") }
 }
 
 object TabSnap {

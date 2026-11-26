@@ -182,35 +182,56 @@ class TabSnapTest {
         assertEquals(42, ok); assertNull(err)
     }
 
-    // PendingAsk: the "did the email go out?" state, with Prefs replaced by a map.
-    private fun fakePending(): MutableMap<String, String> {
-        val m = mutableMapOf("for" to "", "kind" to "", "again" to "")
-        PendingAsk.write = { f, k, a -> if (f != null) m["for"] = f; if (k != null) m["kind"] = k; if (a != null) m["again"] = a }
-        return m
+    // PendingAsk: the "did the email go out?" question, with Prefs replaced by a map-backed store that is restored after each test.
+    class MapStore(val slowWrite: Boolean = false) : PendingAsk.Store {
+        @Volatile var f = ""; @Volatile var k = ""; @Volatile var a = ""
+        override fun read() = Triple(f, k, a)
+        override fun write(sentFor: String, kind: String, again: String) {
+            f = sentFor; if (slowWrite) Thread.sleep(1); k = kind; if (slowWrite) Thread.sleep(1); a = again   // field by field, like three separate edits
+        }
     }
+    @org.junit.After fun restorePendingStore() { PendingAsk.resetStore() }
 
     @Test fun anOlderCompletionNeverErasesANewerPendingQuestion() {
-        val m = fakePending()
+        val m = MapStore(); PendingAsk.store = m
         PendingAsk.set("1,2", "trip")
-        val olderTap = PendingAsk.token()             // the user answers the trip question; its write is queued
-        PendingAsk.set("7", "again", "snap")          // meanwhile a newer mail hand-off sets its own question
-        assertEquals("the late completion must not clear it", false, PendingAsk.clearIf(olderTap))
-        assertEquals("7", m["for"]); assertEquals("again", m["kind"]); assertEquals("snap", m["again"])
+        val shown = PendingAsk.current()               // the dialog is built from this
+        PendingAsk.set("7", "again", "snap")           // a newer hand-off sets its own question while the dialog is up
+        assertEquals("the late answer must not clear it", false, PendingAsk.clearIf(shown.gen))
+        assertEquals("7", m.f); assertEquals("again", m.k); assertEquals("snap", m.a)
     }
 
-    @Test fun aCompletionForTheCurrentQuestionClearsIt() {
-        val m = fakePending()
+    @Test fun aCompletionForTheShownQuestionClearsIt() {
+        val m = MapStore(); PendingAsk.store = m
         PendingAsk.set("1,2", "trip")
-        val tap = PendingAsk.token()
-        assertTrue(PendingAsk.clearIf(tap))
-        assertEquals("", m["for"]); assertEquals("", m["kind"]); assertEquals("", m["again"])
+        assertTrue(PendingAsk.clearIf(PendingAsk.current().gen))
+        assertEquals("", m.f); assertEquals("", m.k); assertEquals("", m.a)
     }
 
     @Test fun theSameQuestionSetTwiceStillCountsAsNewer() {
-        val m = fakePending()
+        val m = MapStore(); PendingAsk.store = m
         PendingAsk.set("5", "trip")
-        val tap = PendingAsk.token()
-        PendingAsk.set("5", "trip")                   // same values, new hand-off: identity is the generation, not the text
-        assertEquals(false, PendingAsk.clearIf(tap)); assertEquals("5", m["for"])
+        val shown = PendingAsk.current()
+        PendingAsk.set("5", "trip")                    // same values, new hand-off: identity is the generation, not the text
+        assertEquals(false, PendingAsk.clearIf(shown.gen)); assertEquals("5", m.f)
+    }
+
+    @Test fun aNewQuestionDropsTheOldRollbackSnapshot() {
+        val m = MapStore(); PendingAsk.store = m
+        PendingAsk.set("9", "again", "old|snapshot")
+        PendingAsk.set("1,2", "trip")
+        assertEquals("", m.a)
+    }
+
+    @Test fun aReaderNeverSeesAHalfPublishedQuestion() {
+        val m = MapStore(slowWrite = true); PendingAsk.store = m
+        PendingAsk.set("0", "trip")
+        val stop = java.util.concurrent.atomic.AtomicBoolean(false)
+        val writer = Thread { var i = 0; while (!stop.get()) { if (i % 2 == 0) PendingAsk.set("A", "again", "snapA") else PendingAsk.set("B", "trip", ""); i++ } }
+        writer.start()
+        var bad = 0
+        repeat(300) { val q = PendingAsk.current(); val ok = (q.sentFor == "A" && q.kind == "again" && q.again == "snapA") || (q.sentFor == "B" && q.kind == "trip" && q.again == "") || (q.sentFor == "0" && q.kind == "trip"); if (!ok) bad++; Thread.sleep(1) }
+        stop.set(true); writer.join()
+        assertEquals("a read must see one whole question", 0, bad)
     }
 }

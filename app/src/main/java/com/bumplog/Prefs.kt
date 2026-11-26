@@ -159,6 +159,8 @@ object Prefs {
     var skippedUpdate: String get() = s("skipped_update", ""); set(v) = sp.edit().putString("skipped_update", v).apply()
     /** Spots handed to the mail app but not confirmed sent: comma-joined ids, or "" when none. Survives the app being killed. */
     var askSentFor: String get() = s("ask_sent_for", ""); set(v) = sp.edit().putString("ask_sent_for", v).apply()
+    /** All three pending-question values in ONE edit, so a kill or a reader never sees a half-written question. Only PendingAsk calls this. */
+    fun setAsk(sentFor: String, kind: String, again: String) { sp.edit().putString("ask_sent_for", sentFor).putString("ask_sent_kind", kind).putString("ask_again", again).apply() }
     /** Which handoff waits on the "did the email go out?" answer: "trip", "single", "again", or "". */
     var askSentKind: String get() = s("ask_sent_kind", ""); set(v) = sp.edit().putString("ask_sent_kind", v).apply()
     /** A re-reported spot's pre-send snapshot: id|reportNo|reportTs|sentTs|outcome|outcomeTs, or "" when none. */

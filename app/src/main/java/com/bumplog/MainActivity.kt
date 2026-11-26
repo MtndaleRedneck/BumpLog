@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
     private var guideOffer by mutableStateOf(false)
     private var confirmFixed by mutableStateOf<Long?>(null)
     private var askSent by mutableStateOf<List<Long>?>(null)
+    private var askQuestion: PendingAsk.Question? = null   // the exact question the dialog was built from (main thread only)
     private var updateUi by mutableStateOf<UpdateUi?>(null)
     private var updateReady: java.io.File? = null
     private var updateJob: kotlinx.coroutines.Job? = null
@@ -128,8 +129,11 @@ class MainActivity : ComponentActivity() {
         // Back from the "Install unknown apps" screen with the file already downloaded and checked: carry on to the installer.
         updateReady?.let { f -> if (packageManager.canRequestPackageInstalls()) { updateReady = null; launchInstaller(f) } }
         // Back from the mail app: ask once whether the handed-off email really went.
-        if (askSent == null && Prefs.askSentFor.isNotBlank())
-            askSent = Prefs.askSentFor.split(",").mapNotNull { it.toLongOrNull() }.takeIf { it.isNotEmpty() }
+        if (askSent == null) {
+            val q = PendingAsk.current()   // one consistent read of the whole question
+            val ids = q.sentFor.split(",").mapNotNull { it.toLongOrNull() }.takeIf { it.isNotEmpty() }
+            if (ids != null) { askQuestion = q; askSent = ids }
+        }
     }
     override fun onDestroy() { updateJob?.cancel(); super.onDestroy() }
 
@@ -332,13 +336,14 @@ class MainActivity : ComponentActivity() {
 
     /** "Not yet" or a dismissed dialog: roll a "Report again" back (the Db write is queued, in order) and clear the pending state at once. */
     private fun closeAskSentWithoutSend() {
-        val snap = if (Prefs.askSentKind == "again") Prefs.askAgain.split("|").takeIf { it.size == 6 } else null
-        askSent = null
-        val tok = PendingAsk.token()
-        val finish = { PendingAsk.clearIf(tok); Live.bump() }
+        val q = askQuestion ?: PendingAsk.current()   // the question the user was shown, not whatever is stored now
+        askQuestion = null; askSent = null
+        val snap = if (q.kind == "again") q.again.split("|").takeIf { it.size == 6 } else null
+        val finish = { PendingAsk.clearIf(q.gen); Live.bump() }
         // The pending state is cleared only after the rollback is written, so a process death in between still has it (the dialog just asks again).
+        // The rollback runs only if no newer question exists: a newer "Report again" is on this same queue, so the check and the write cannot interleave with it.
         if (snap == null) finish()
-        else DbQ.run(this, work = { it.unReportAgain(snap[0].toLong(), snap[1].toInt(), snap[2].toLong(), snap[3].toLong(), snap[4], snap[5].toLong()) }) { finish() }
+        else DbQ.run(this, work = { db -> if (PendingAsk.token() == q.gen) db.unReportAgain(snap[0].toLong(), snap[1].toInt(), snap[2].toLong(), snap[3].toLong(), snap[4], snap[5].toLong()) }) { finish() }
     }
 
     @Composable
@@ -370,8 +375,8 @@ class MainActivity : ComponentActivity() {
                 title = { Text("Did the email go out?") },
                 text = { Text(if (ids.size == 1) "The report went to your mail app. If it wasn't sent, it stays in the queue for the next try." else "The ${ids.size} reports went to your mail app. If they weren't sent, they stay in the queue for the next try.") },
                 confirmButton = { TextButton({
-                    val now = System.currentTimeMillis(); val trip = Prefs.askSentKind == "trip"; val tok = PendingAsk.token()
-                    askSent = null
+                    val now = System.currentTimeMillis(); val q = askQuestion ?: PendingAsk.current(); val trip = q.kind == "trip"; val tok = q.gen
+                    askQuestion = null; askSent = null
                     // The sent marks are written on the Db queue, then the pending state is cleared; the backup that follows a trip runs on IO as before.
                     DbQ.run(this@MainActivity, work = { db -> ids.forEach { db.markSent(it, now) } }) {
                         PendingAsk.clearIf(tok)   // only if no newer mail question was set while this write waited

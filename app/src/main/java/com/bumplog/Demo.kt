@@ -7,7 +7,7 @@ object Demo {
     fun seed(ctx: Context) {
         val db = Db.get(ctx)
         // Screenshots always start clean: no leftover "did the email go out?" ask from an earlier capture.
-        Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""
+        PendingAsk.clearAll()
         if (db.allSpots().isNotEmpty()) return
         val now = System.currentTimeMillis()
         var drive = now - 3_600_000
