@@ -455,7 +455,7 @@ class SnapSlot<T> {
 data class Stamp(val tick: Int, val writes: Long) { companion object { fun now(tick: Int) = Stamp(tick, Db.writes) } }
 
 class HomeSnap(val recent: List<Spot>, val today: Int, val driveKey: Long)
-class ReviewSnap(val pending: Int, val saved: Int, val hits: List<Pair<Hit, Spot>>)
+class ReviewSnap(val pending: Int, val saved: Int, val hits: List<Pair<Hit, Spot>>, val partial: Boolean = false)
 class StatsSnap(val score: Db.Score, val big: Pair<Hit, Spot>?, val byType: List<Pair<DefectType?, Int>>)
 class ReportedSnap(val spots: List<Spot>)
 /** Measured spacing and the exact geometry it was measured for; reused only when the geometry matches. */
