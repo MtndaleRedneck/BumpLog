@@ -477,14 +477,27 @@ shot v24-flat-restore --es screen settings --ei accentidx 0
 # Tab-switch recording: every tab entered from every other, on a real screen recording, so first-frame jitter
 # (empty state, zero counts, blank page, spacing shift) can be measured frame by frame. Never fatal.
 mkdir -p tabsrec
-adb shell am force-stop com.bumplog; adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home; sleep 5
+adb shell am force-stop com.bumplog
 adb shell rm -f /sdcard/tabs.mp4
-adb shell screenrecord --time-limit 120 --bit-rate 8000000 /sdcard/tabs.mp4 &
+adb shell screenrecord --time-limit 170 --bit-rate 8000000 /sdcard/tabs.mp4 &
 REC=$!
 sleep 2
-for round in 1 2; do
-  for t in Review Reported Stats Settings Home Stats Review Settings Reported Home; do tap_now "$t"; sleep 1.2; done
-done
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home; sleep 4
+: > tabsrec/gfx.txt
+gfx_phase() {  # name: print the render stats for the phase just run (janky frames and frame-time percentiles)
+  { echo "== $1"; adb shell dumpsys gfxinfo com.bumplog | grep -E "Total frames rendered|Janky frames|50th percentile|90th percentile|95th percentile|99th percentile|Number Missed Vsync|Number High input latency|Number Slow UI thread|Number Slow bitmap uploads|Number Slow issue draw commands"; } | tee -a tabsrec/gfx.txt
+}
+tab_round() { for t in Review Stats Reported Settings Home Review; do tap_now "$t"; sleep 1; done; }
+# Phase 1, cold: first visit of every tab in a fresh process.
+adb shell dumpsys gfxinfo com.bumplog reset >/dev/null; echo "PHASE cold" ; tab_round; gfx_phase cold
+# Phase 2, warm: the same tabs again, nothing changed.
+adb shell dumpsys gfxinfo com.bumplog reset >/dev/null; echo "PHASE warm"; tab_round; gfx_phase warm
+# Phase 3, post-write: a database write plus tick bump (the demo seed), then every tab again.
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home; sleep 3
+adb shell dumpsys gfxinfo com.bumplog reset >/dev/null; echo "PHASE post-write"; tab_round; gfx_phase post-write
+# Phase 4, second write, then the heavier tabs first.
+adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home; sleep 3
+adb shell dumpsys gfxinfo com.bumplog reset >/dev/null; echo "PHASE post-write 2"; tab_round; gfx_phase post-write-2
 wait $REC 2>/dev/null; sleep 2
 adb pull /sdcard/tabs.mp4 tabsrec/tabs.mp4 || echo "WARN: tab recording not pulled"
 # Launcher proof: the real BumpLog icon as the device launcher draws it, on the home screen or in the app drawer.
