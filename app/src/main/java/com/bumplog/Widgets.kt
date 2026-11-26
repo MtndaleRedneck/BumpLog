@@ -495,23 +495,42 @@ fun <T : Any> firstFrame(slot: SnapSlot<T>, tick: Int, usable: (T) -> Boolean = 
 
 /**
  * Every Db write or read a tap needs runs here, one at a time in the order it was queued, never on the main thread: an import or restore holds
- * the Db monitor for seconds and a tap that read the Db inline would freeze the UI. [run] hands the result to [done] on the main thread;
+ * the Db monitor for seconds and a tap that read the Db inline would freeze the UI. This orders only the work that goes through here: imports,
+ * restores, the detection service and the first-frame reads run on their own threads and meet it at the Db monitor, so a queued tap can wait
+ * behind them (it never blocks the main thread). [run] hands the result to [done] on the main thread;
  * [call] suspends for it. A failure reaches [fail] (default: a toast) and never [done].
  */
 object DbQ {
     private val ex = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "bump-db-queue").apply { isDaemon = true } }
-    private val main = android.os.Handler(android.os.Looper.getMainLooper())
-    fun <T> run(ctx: android.content.Context, fail: ((Exception) -> Unit)? = null, work: (Db) -> T, done: (T) -> Unit = {}) {
-        val app = ctx.applicationContext
+    private val mainHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+    /** Where [done] and [fail] run. The main thread; tests replace it. */
+    internal var toMain: (Runnable) -> Unit = { mainHandler.post(it) }
+
+    /** The queue itself, with no Android types: [work] runs in order on the queue thread, then exactly one of [done] (result) or [fail] (exception) runs via [toMain]. */
+    internal fun <T> submit(work: () -> T, fail: (Exception) -> Unit, done: (T) -> Unit) {
         ex.execute {
-            val r = try { Result.success(work(Db.get(app))) } catch (e: Exception) { android.util.Log.w("BumpLog", "queued db work failed", e); Result.failure<T>(e) }
-            main.post { r.fold({ done(it) }, { e -> if (fail != null) fail(e as Exception) else toast(app, "That didn't work. Try again.") }) }
+            // Throwable on purpose: an Error in the work must still clear a caller's busy flag through [fail], never leave it set.
+            val r = try { Result.success(work()) } catch (e: Throwable) { android.util.Log.w("BumpLog", "queued db work failed", e); Result.failure<T>(if (e is Exception) e else RuntimeException(e)) }
+            toMain(Runnable { r.fold({ done(it) }, { e -> fail(e as Exception) }) })
         }
     }
+
+    fun <T> run(ctx: android.content.Context, fail: ((Exception) -> Unit)? = null, work: (Db) -> T, done: (T) -> Unit = {}) {
+        val app = ctx.applicationContext
+        submit({ work(Db.get(app)) }, { e -> if (fail != null) fail(e) else toast(app, "That didn't work. Try again.") }, done)
+    }
+
+    /** One tap at a time: ignored while [busy] is set. [busy] stays set until [done] clears it (leaving the screen needs no clear); a failure clears it. */
+    fun <T> runOnce(ctx: android.content.Context, busy: androidx.compose.runtime.MutableState<Boolean>, fail: ((Exception) -> Unit)? = null, work: (Db) -> T, done: (T) -> Unit) {
+        if (busy.value) return
+        busy.value = true
+        run(ctx, fail = { e -> busy.value = false; if (fail != null) fail(e) else toast(ctx.applicationContext, "That didn't work. Try again.") }, work = work, done = done)
+    }
+
     suspend fun <T> call(ctx: android.content.Context, work: (Db) -> T): T {
         val app = ctx.applicationContext
         val d = kotlinx.coroutines.CompletableDeferred<T>()
-        ex.execute { try { d.complete(work(Db.get(app))) } catch (e: Exception) { d.completeExceptionally(e) } }
+        ex.execute { try { d.complete(work(Db.get(app))) } catch (e: Throwable) { d.completeExceptionally(e) } }
         return d.await()
     }
 }

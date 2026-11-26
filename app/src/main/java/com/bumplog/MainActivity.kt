@@ -307,8 +307,12 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Hand one trip's confirmed spots to the mail app and mark them Sent. */
+    private var sendingTrip = false   // main thread only: a second tap while the trip is being read does not open the mail app twice
     private fun sendTrip(driveId: Long) {
-        DbQ.run(this, work = { it.tripSpots(driveId) }) { list ->
+        if (sendingTrip) return
+        sendingTrip = true
+        DbQ.run(this, fail = { sendingTrip = false; toast(this, "That didn't work. Try again.") }, work = { it.tripSpots(driveId) }) { list ->
+            sendingTrip = false
             if (list.isEmpty()) toast(this, "No confirmed reports left to send.")
             else if (handOffMail(this, Reports.reportsMail(this, list))) {
                 Prefs.askSentFor = list.joinToString(",") { it.id.toString() }; Prefs.askSentKind = "trip"
@@ -329,9 +333,11 @@ class MainActivity : ComponentActivity() {
     /** "Not yet" or a dismissed dialog: roll a "Report again" back (the Db write is queued, in order) and clear the pending state at once. */
     private fun closeAskSentWithoutSend() {
         val snap = if (Prefs.askSentKind == "again") Prefs.askAgain.split("|").takeIf { it.size == 6 } else null
-        Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; askSent = null
-        if (snap == null) Live.bump()
-        else DbQ.run(this, work = { it.unReportAgain(snap[0].toLong(), snap[1].toInt(), snap[2].toLong(), snap[3].toLong(), snap[4], snap[5].toLong()) }) { Live.bump() }
+        askSent = null
+        val finish = { Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; Live.bump() }
+        // The pending state is cleared only after the rollback is written, so a process death in between still has it (the dialog just asks again).
+        if (snap == null) finish()
+        else DbQ.run(this, work = { it.unReportAgain(snap[0].toLong(), snap[1].toInt(), snap[2].toLong(), snap[3].toLong(), snap[4], snap[5].toLong()) }) { finish() }
     }
 
     @Composable
@@ -340,7 +346,7 @@ class MainActivity : ComponentActivity() {
         val top = stack.lastOrNull()
         BackHandler(top != null) { stack = stack.dropLast(1) }
         confirmFixed?.let { id ->
-            val spR by androidx.compose.runtime.produceState<List<com.bumplog.Spot?>?>(null, id) { value = listOf(DbQ.call(this@MainActivity) { it.spot(id) }) }
+            val spR by androidx.compose.runtime.produceState<List<com.bumplog.Spot?>?>(null, id) { value = listOf(try { DbQ.call(this@MainActivity) { it.spot(id) } } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { null }) }
             val sp = spR?.get(0)
             if (spR == null) Unit   // still reading: show nothing yet, and do not treat "not read" as "no such spot"
             else if (sp == null || sp.review == "FIXED") confirmFixed = null
@@ -364,9 +370,10 @@ class MainActivity : ComponentActivity() {
                 text = { Text(if (ids.size == 1) "The report went to your mail app. If it wasn't sent, it stays in the queue for the next try." else "The ${ids.size} reports went to your mail app. If they weren't sent, they stay in the queue for the next try.") },
                 confirmButton = { TextButton({
                     val now = System.currentTimeMillis(); val trip = Prefs.askSentKind == "trip"
-                    Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""; askSent = null
-                    // The sent marks are written on the Db queue; the backup that follows a trip waits for them, then runs on IO as before.
+                    askSent = null
+                    // The sent marks are written on the Db queue, then the pending state is cleared; the backup that follows a trip runs on IO as before.
                     DbQ.run(this@MainActivity, work = { db -> ids.forEach { db.markSent(it, now) } }) {
+                        Prefs.askSentFor = ""; Prefs.askSentKind = ""; Prefs.askAgain = ""
                         Live.bump()
                         if (trip) ioScope.launch { kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                             when (val r = Backup.autoSaveResult(this@MainActivity)) {

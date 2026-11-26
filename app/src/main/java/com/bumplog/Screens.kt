@@ -87,11 +87,12 @@ internal fun LoadingSpots(tick: Int, load: suspend (Db) -> Unit): LoadState {
 
 /** Shown while a tab has no data read yet: blank at first, "Loading..." if the read takes over half a second, a retry if it failed. */
 @Composable
-internal fun NotLoadedPane(title: String, ls: LoadState) {
+internal fun NotLoadedPane(title: String, ls: LoadState, missing: Boolean = false) {
     var slow by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { kotlinx.coroutines.delay(500); slow = true }
     Box(Modifier.fillMaxSize().pane(title).padding(16.dp)) {
-        if (ls.failed) Muted("Couldn't load. Tap to retry.", 15, Modifier.clickable { ls.retry() }.padding(vertical = 12.dp))
+        if (missing) Muted("This spot is no longer here.", 15)
+        else if (ls.failed) Muted("Couldn't load. Tap to retry.", 15, Modifier.clickable { ls.retry() }.padding(vertical = 12.dp))
         else if (slow) Muted("Loading...", 15)
     }
 }
@@ -130,7 +131,8 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     var recent by remember { mutableStateOf(first?.recent ?: emptyList()) }
     var today by remember { mutableStateOf(first?.today ?: 0) }
     var loaded by remember { mutableStateOf(first != null) }   // false = nothing read yet: the counter shows a dash, never a final-looking 0
-    LoadingSpots(live.tick) { db ->
+    val reportBusy = remember { mutableStateOf(false) }
+    val homeLoad = LoadingSpots(live.tick) { db ->
         TabSnap.home.warm(Stamp.now(live.tick))?.takeIf { it.driveKey == homeKey }?.let { recent = it.recent; today = it.today; loaded = true; return@LoadingSpots }   // already read at this stamp (possibly by a late first-frame read): use it, no second read
         val st = Stamp.now(live.tick)   // read before the load: a write during it leaves this snapshot stale
         val r = withContext(Dispatchers.IO) { readHome(db) }; recent = r.recent; today = r.today; loaded = true; TabSnap.home.put(st, r)
@@ -225,12 +227,13 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
                 Row(verticalAlignment = Alignment.Bottom) { Txt(value, 30, FontWeight.Bold); if (unit != null) { Spacer(Modifier.width(3.dp)); Txt(unit, 14, FontWeight.Normal, p.muted, Modifier.padding(bottom = 4.dp)) } }
             }
         }
+        if (!loaded && homeLoad.failed) Muted("Couldn't load your hits. Tap to retry.", 14, Modifier.clickable { homeLoad.retry() }.padding(vertical = 8.dp))
         Row(Modifier.height(androidx.compose.foundation.layout.IntrinsicSize.Max), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Tile(homeDriveLabel(live.running), if (loaded) "$today" else "-", null, Modifier.weight(1f))
             Tile(homeHardestHitLabel(live.running), "%.2f".format(live.hardestHitG), "g", Modifier.weight(1f))
         }
         Box(Modifier.padding(top = extraAct)) { ActionButtonPair("Report last hit", { ReportMark(p.onAccent) }, {
-            DbQ.run(ctx, work = { it.reportableSpots(1).firstOrNull() }) { s -> if (s == null) toast(ctx, "No hits logged yet.") else openSpot(s.id) }
+            DbQ.runOnce(ctx, reportBusy, work = { it.reportableSpots(1).firstOrNull() }) { s -> reportBusy.value = false; if (s == null) toast(ctx, "No hits logged yet.") else openSpot(s.id) }
         }, "File a damage report", openDamage) }
       }
     }
@@ -246,9 +249,10 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit, onConfirmed: () -> 
     val p = LocalPal.current
     val ctx = LocalContext.current
     var s by remember { mutableStateOf<Spot?>(null) }
-    val spotLoad = LoadingSpots(tick) { db -> s = withContext(Dispatchers.IO) { db.spot(spotId) } }
+    var missing by remember { mutableStateOf(false) }
+    val spotLoad = LoadingSpots(tick) { db -> val r = withContext(Dispatchers.IO) { db.spot(spotId) }; s = r; missing = r == null }
     val spot = s
-    if (spot == null) { NotLoadedPane("Heads-up", spotLoad); return }
+    if (spot == null) { NotLoadedPane("Heads-up", spotLoad, missing); return }
     Column(Modifier.fillMaxSize().pane("Heads-up").verticalScroll(ScrollMemory.get("Heads-up")).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(24.dp))
         val alertColor = if (spot.severe) p.yellow else p.accent
@@ -260,15 +264,16 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit, onConfirmed: () -> 
         Spacer(Modifier.height(14.dp))
         if (Prefs.audioMode != "OFF") Chip("Audio alert played", p.muted)
         Spacer(Modifier.height(20.dp))
+        val busy = remember { mutableStateOf(false) }   // one tap at a time: Yes, No and Warn are mutually exclusive
         Txt("Real road defect?", 20, FontWeight.Bold, p.muted)
         Spacer(Modifier.height(14.dp))
         Dropdown("Defect type", spot.type.name, DefectType.values().map { it.name to it.label }, Modifier.fillMaxWidth()) { v -> DbQ.run(ctx, work = { it.setType(spot.id, DefectType.parse(v)) }) { Live.bump() } }
         Spacer(Modifier.height(14.dp))
-        BigButton("Yes", Icons.Default.Check) { DbQ.run(ctx, work = { d -> d.confirmForTrip(spot.id); d.spot(spot.id)?.ref() ?: "" }) { ref -> ConfirmationNotice.show(ref, true); Live.bump(); onConfirmed() } }
+        BigButton("Yes", Icons.Default.Check) { DbQ.runOnce(ctx, busy, work = { d -> d.confirmForTrip(spot.id); d.spot(spot.id)?.ref() ?: "" }) { ref -> ConfirmationNotice.show(ref, true); Live.bump(); onConfirmed() } }
         Spacer(Modifier.height(12.dp))
-        BigButton("No", Icons.Default.Close, filled = false) { DbQ.run(ctx, work = { d -> d.setReview(spot.id, "DISMISSED"); d.setWarn(spot.id, false) }) { Live.bump(); onDone() } }
+        BigButton("No", Icons.Default.Close, filled = false) { DbQ.runOnce(ctx, busy, work = { d -> d.setReview(spot.id, "DISMISSED"); d.setWarn(spot.id, false) }) { Live.bump(); onDone() } }
         Spacer(Modifier.height(12.dp))
-        BigButton("Warn me here forever", Icons.Default.Place, filled = false) { DbQ.run(ctx, work = { it.setWarn(spot.id, true) }) { Live.bump(); onDone() } }
+        BigButton("Warn me here forever", Icons.Default.Place, filled = false) { DbQ.runOnce(ctx, busy, work = { it.setWarn(spot.id, true) }) { Live.bump(); onDone() } }
         Spacer(Modifier.height(16.dp))
         Muted("Hit saved automatically", 15)
     }
@@ -394,10 +399,13 @@ private fun ReviewHitRow(h: Hit, sp: Spot, snack: SnackbarHostState, openSpot: (
         LaunchedEffect(st.currentValue) {
             if (st.currentValue == SwipeToDismissBoxValue.EndToStart) {
                 val wasWarn = sp.warn
-                DbQ.call(ctx) { db -> db.setReview(sp.id, "DISMISSED"); db.setWarn(sp.id, false) }; Live.bump()
-                st.reset()
-                val r = snack.showSnackbar("Spot dismissed.", actionLabel = "Undo")
-                if (r == SnackbarResult.ActionPerformed) { DbQ.call(ctx) { db -> db.setReview(sp.id, "PENDING"); db.setWarn(sp.id, wasWarn) }; Live.bump() }
+                try {
+                    // NonCancellable: if this row leaves the screen while the write waits, the write still runs, so the bump (and a refreshed list) must still follow it.
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.NonCancellable) { DbQ.call(ctx) { db -> db.setReview(sp.id, "DISMISSED"); db.setWarn(sp.id, false) } }; Live.bump()
+                    st.reset()
+                    val r = snack.showSnackbar("Spot dismissed.", actionLabel = "Undo")
+                    if (r == SnackbarResult.ActionPerformed) { DbQ.call(ctx) { db -> db.setReview(sp.id, "PENDING"); db.setWarn(sp.id, wasWarn) }; Live.bump() }
+                } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { st.reset(); toast(ctx, "That didn't work. Try again.") }
             }
         }
         SwipeToDismissBox(
@@ -420,10 +428,11 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
     val p = LocalPal.current
     val ctx = LocalContext.current
     var s by remember { mutableStateOf<Spot?>(null) }
-    val spotLoad = LoadingSpots(tick) { db -> s = withContext(Dispatchers.IO) { db.spot(spotId) } }
+    var missing by remember { mutableStateOf(false) }
+    val spotLoad = LoadingSpots(tick) { db -> val r = withContext(Dispatchers.IO) { db.spot(spotId) }; s = r; missing = r == null }
     val spot = s
-    if (spot == null) { NotLoadedPane("Spot", spotLoad); return }
-    val db = Db.get(ctx)
+    if (spot == null) { NotLoadedPane("Spot", spotLoad, missing); return }
+    val spotBusy = remember { mutableStateOf(false) }   // confirm, restore and mark-fixed are one tap at a time
     var confirmFixed by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize().pane("Spot").verticalScroll(ScrollMemory.get("Spot:$spotId")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -449,19 +458,19 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
         Dropdown(if (spot.typeUser) "Defect type" else "Defect type (guess - pick to confirm)", spot.type.name, DefectType.values().map { it.name to it.label }) { v -> DbQ.run(ctx, work = { it.setType(spot.id, DefectType.parse(v)) }) { Live.bump() } }
         Toggle("Warn me here", spot.warn, "Heads-up before this spot on future drives") { v -> DbQ.run(ctx, work = { it.setWarn(spot.id, v) }) { Live.bump() } }
         BigButton("Confirm as real defect", Icons.Default.Check, enabled = spot.review != "CONFIRMED") {
-            DbQ.run(ctx, work = { d -> d.confirmForTrip(spot.id); d.spot(spot.id)?.ref() ?: "" }) { ref -> ConfirmationNotice.show(ref, true); Live.bump(); back() }
+            DbQ.runOnce(ctx, spotBusy, work = { d -> d.confirmForTrip(spot.id); d.spot(spot.id)?.ref() ?: "" }) { ref -> ConfirmationNotice.show(ref, true); Live.bump(); back() }
         }
         if (TripReportPolicy.canSendNow(spot, Live.state.value.running, Live.state.value.driveId))
             BigButton("Send this report", Icons.Default.Send, filled = false) {
                 if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(spot)))) { Prefs.askSentFor = spot.id.toString(); Prefs.askSentKind = "single"; Live.bump() }
             }
         if (spot.review == "DISMISSED" || spot.review == "FIXED")
-            BigButton("Restore this spot", Icons.Default.Check, filled = false) { DbQ.run(ctx, work = { d -> d.setReview(spot.id, "PENDING"); d.setWarn(spot.id, spot.severe); d.update(spot.id, "fixed_after_report" to false, "fixed_ts" to 0L) }) { Live.bump() } }
+            BigButton("Restore this spot", Icons.Default.Check, filled = false) { DbQ.runOnce(ctx, spotBusy, work = { d -> d.setReview(spot.id, "PENDING"); d.setWarn(spot.id, spot.severe); d.update(spot.id, "fixed_after_report" to false, "fixed_ts" to 0L) }) { spotBusy.value = false; Live.bump() } }
         if (confirmFixed)
             AlertDialog(onDismissRequest = { confirmFixed = false },
                 title = { Text("Mark as fixed?") },
                 text = { Text("It stops warning you. You can restore it any time from this screen.") },
-                confirmButton = { TextButton({ confirmFixed = false; DbQ.run(ctx, work = { it.markFixed(spot.id, System.currentTimeMillis()) }) { Celebrate.trigger(); Live.bump(); back() } }) { Text("Mark fixed") } },
+                confirmButton = { TextButton({ confirmFixed = false; DbQ.runOnce(ctx, spotBusy, work = { it.markFixed(spot.id, System.currentTimeMillis()) }) { Celebrate.trigger(); Live.bump(); back() } }) { Text("Mark fixed") } },
                 dismissButton = { TextButton({ confirmFixed = false }) { Text("Cancel") } })
         SmallButton("This one got me: damage report", Modifier.fillMaxWidth()) { openDamage(spot.id) }
         if (spot.reportStatus == "SENT") Muted("Sent ${dayTime(spot.sentTs)} - handed to your mail app. Press send there.", 12)
@@ -494,7 +503,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     var hits by remember { mutableStateOf(listOf<Hit>()) }
     var queued by remember { mutableStateOf(0) }
     var hitsLoaded by remember { mutableStateOf(false) }   // false = not read yet: never "No hits logged yet"
-    LoadingSpots(tick) { db -> val (h, q) = withContext(Dispatchers.IO) { db.hits(60) to db.queuedDamages().size }; hits = h; queued = q; hitsLoaded = true }
+    val damageLoad = LoadingSpots(tick) { db -> val (h, q) = withContext(Dispatchers.IO) { db.hits(60) to db.queuedDamages().size }; hits = h; queued = q; hitsLoaded = true }
     // One sheet session = one draft token (kept across process restore): rebuilds retry the
     // same row; filing a second, separate report starts a new sheet with a new token.
     val draftId = androidx.compose.runtime.saveable.rememberSaveable { "draft-" + java.util.UUID.randomUUID().toString() }
@@ -502,6 +511,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     var cat by remember { mutableStateOf("Tire") }
     var note by remember { mutableStateOf("") }
     var photos by remember { mutableStateOf(listOf<android.net.Uri>()) }
+    val sendBusy = remember { mutableStateOf(false) }   // Send and Send-at-end-of-drive: one tap at a time
     LaunchedEffect(hits, preSpot) { if (picked == 0L) picked = hits.firstOrNull { it.spotId == preSpot }?.id ?: 0L }
     val recentCut = System.currentTimeMillis() - 20 * 60_000L
     val recent = hits.filter { it.ts >= recentCut }
@@ -526,6 +536,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     }
     Column(Modifier.fillMaxSize().pane("File damage report").verticalScroll(ScrollMemory.get("Damage:$preSpot")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Muted("Pick the hit that hurt your car. Your assistant works out where the claim should go.", 14, Modifier.asHeading())
+        if (!hitsLoaded && damageLoad.failed) Muted("Couldn't load. Tap to retry.", 15, Modifier.clickable { damageLoad.retry() }.padding(vertical = 12.dp))
         if (hitsLoaded && hits.isEmpty()) Muted("No hits logged yet")
         if (recent.isNotEmpty()) { Txt("Last 20 minutes", 16, FontWeight.Bold); recent.forEach { hitRow(it) } }
         else if (hits.isNotEmpty()) Muted("Nothing in the last 20 minutes. Earlier hits:", 13)
@@ -545,19 +556,22 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
             if (Prefs.activeAddress.isBlank()) { toast(ctx, "Set your assistant address first (Settings > Assistant)."); return@BigButton }
             if (!mailAppAvailable(ctx, photos.isNotEmpty())) { toast(ctx, "No mail app found."); return@BigButton }
             val h = hits.firstOrNull { it.id == picked }; val c = cat; val n = note; val ph = photos.toList()
-            DbQ.run(ctx, fail = { e -> toast(ctx, if (e is java.io.IOException) "A photo could not be saved - the report was not sent. Try again." else "That didn't work. Try again.") },
+            DbQ.runOnce(ctx, sendBusy, fail = { e -> toast(ctx, if (e is java.io.IOException) "A photo could not be saved - the report was not sent. Try again." else "That didn't work. Try again.") },
                 work = { db -> build(db, h, c, n, ph)?.let { d -> d to db.spot(d.spotId) } }) { r ->
-                if (r != null) {
+                if (r == null) sendBusy.value = false
+                else {
                     val (d, sp) = r
-                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) DbQ.run(ctx, work = { it.markDamageSent(d.id) }) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() }
+                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) DbQ.run(ctx, fail = { sendBusy.value = false; toast(ctx, "That didn't work. Try again.") }, work = { it.markDamageSent(d.id) }) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() }
+                    else sendBusy.value = false
                 }
             }
         }
         BigButton("Send at end of drive", Icons.Default.Check, filled = false, enabled = picked != 0L) {
             val h = hits.firstOrNull { it.id == picked }; val c = cat; val n = note; val ph = photos.toList()
-            DbQ.run(ctx, fail = { e -> toast(ctx, if (e is java.io.IOException) "A photo could not be saved - the report was not queued. Try again." else "That didn't work. Try again.") },
+            DbQ.runOnce(ctx, sendBusy, fail = { e -> toast(ctx, if (e is java.io.IOException) "A photo could not be saved - the report was not queued. Try again." else "That didn't work. Try again.") },
                 work = { db -> build(db, h, c, n, ph)?.also { db.setDamageStatus(it.id, "QUEUED") } }) { d ->
-                if (d != null) { Live.bump(); toast(ctx, "Confirmed. ${d.ref(h)}. You'll get a reminder when the drive ends to add photos and send."); back() }
+                if (d == null) sendBusy.value = false
+                else { Live.bump(); toast(ctx, "Confirmed. ${d.ref(h)}. You'll get a reminder when the drive ends to add photos and send."); back() }
             }
         }
         if (queued > 0) SmallButton("Waiting to send ($queued)", Modifier.fillMaxWidth(), onClick = openQueue)
@@ -576,10 +590,11 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
     Column(Modifier.fillMaxSize().pane("Damage reports waiting").verticalScroll(ScrollMemory.get("DamageQueue")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         BackRow("Damage reports waiting", back)
         if (list.isEmpty()) Muted("Nothing waiting.")
-        list.forEach { d ->
+        list.forEach { d -> androidx.compose.runtime.key(d.id) {
+            val rowBusy = remember { mutableStateOf(false) }
             Card {
                 Txt("${d.category} - ${dayTime(d.ts)}", 17, FontWeight.Bold)
-                val dh by androidx.compose.runtime.produceState<List<Hit?>?>(null, d.hitId) { value = listOf(DbQ.call(ctx) { it.hit(d.hitId) }) }
+                val dh by androidx.compose.runtime.produceState<List<Hit?>?>(null, d.hitId) { value = listOf(try { DbQ.call(ctx) { it.hit(d.hitId) } } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { null }) }
                 Muted(dh?.let { d.ref(it[0]) } ?: "", 13)
                 if (d.note.isNotBlank()) Muted(d.note, 13)
                 Muted("${DamagePhotos.files(ctx, d.reportId).size} photo(s) attached", 13)
@@ -587,12 +602,13 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
                 PhotoButtons { DamagePhotos.add(ctx, d.reportId, it); n++ }
                 Spacer(Modifier.height(8.dp))
                 BigButton("Send", Icons.Default.Send) {
-                    DbQ.run(ctx, work = { db -> db.hit(d.hitId) to db.spot(d.spotId) }) { (h, sp) ->
-                        if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) DbQ.run(ctx, work = { it.markDamageSent(d.id) }) { n++; Live.bump() }
+                    DbQ.runOnce(ctx, rowBusy, work = { db -> db.hit(d.hitId) to db.spot(d.spotId) }) { (h, sp) ->
+                        if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) DbQ.run(ctx, fail = { rowBusy.value = false; toast(ctx, "That didn't work. Try again.") }, work = { it.markDamageSent(d.id) }) { n++; Live.bump() }
+                        else rowBusy.value = false
                     }
                 }
             }
-        }
+        } }
         SmallButton("Back", Modifier.fillMaxWidth(), onClick = back)
     }
 }

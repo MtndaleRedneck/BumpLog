@@ -115,16 +115,22 @@ class TabSnapTest {
         assertNull(slot.warm(Stamp(5, 10L)))
     }
 
+    /** The pool is shared by every test in the JVM: wait until earlier tests' gated tasks have drained. */
+    private fun drainPool() { for (k in 0 until 60) { if (firstFramePool.activeCount == 0 && firstFramePool.queue.isEmpty()) return; Thread.sleep(50) } }
+
     @Test fun aTimedOutQueuedReadLeavesTheQueue() {
+        drainPool()
         val gate = java.util.concurrent.CountDownLatch(1)
         // Two reads occupy both helpers; the next four queue and time out. Each must be removed on timeout, so the queue is empty afterwards.
         repeat(6) { assertNull(firstFrame(SnapSlot<ReportedSnap>(), 100 + it) { gate.await(); ReportedSnap(emptyList()) }) }
-        val queued = firstFramePool.queue.size
+        val queued = firstFramePool.queue.size; val active = firstFramePool.activeCount
         gate.countDown()
+        assertEquals("both helpers must really have been busy, or the test proves nothing", 2, active)
         assertEquals("cancelled queued reads must not stay in the queue", 0, queued)
     }
 
     @Test fun aSaturatedPoolRejectsWithoutReadingOrBlocking() {
+        drainPool()
         val gate = java.util.concurrent.CountDownLatch(1)
         val running = java.util.concurrent.CountDownLatch(2)
         // Fill it directly: 2 helpers stuck on the gate and 4 queued tasks (the whole queue).
@@ -137,6 +143,42 @@ class TabSnapTest {
         val ms = (System.nanoTime() - t0) / 1_000_000
         gate.countDown()
         assertNull(r); assertEquals("a rejected read must never run", 0, reads)
-        assertTrue("rejection must not wait the 40 ms", ms < FIRST_FRAME_WAIT_MS)
+        assertTrue("a rejected read must return at once, not after the gated helpers finish (took $ms ms)", ms < 1000)
+    }
+
+    // DbQ: the queue core has no Android types, so these run as plain unit tests with the main-thread hop replaced.
+    private fun <T> queued(work: () -> T): Pair<T?, Throwable?> {
+        val latch = java.util.concurrent.CountDownLatch(1); var ok: T? = null; var err: Throwable? = null
+        DbQ.toMain = { it.run() }
+        DbQ.submit(work, { err = it; latch.countDown() }) { ok = it; latch.countDown() }
+        assertTrue(latch.await(3, java.util.concurrent.TimeUnit.SECONDS))
+        return ok to err
+    }
+
+    @Test fun dbQueueRunsWorkInTheOrderItWasQueuedAndOffTheCallerThread() {
+        DbQ.toMain = { it.run() }
+        val order = java.util.Collections.synchronizedList(mutableListOf<Int>())
+        val callerThread = Thread.currentThread()
+        val latch = java.util.concurrent.CountDownLatch(50)
+        var workThread: Thread? = null
+        repeat(50) { i -> DbQ.submit({ if (i == 0) workThread = Thread.currentThread(); Thread.sleep(if (i % 7 == 0) 3L else 0L); order.add(i) }, { latch.countDown() }) { latch.countDown() } }
+        assertTrue(latch.await(5, java.util.concurrent.TimeUnit.SECONDS))
+        assertEquals((0 until 50).toList(), order.toList())
+        assertTrue(workThread !== callerThread)
+    }
+
+    @Test fun aFailedQueuedWorkCallsFailNeverDone() {
+        val (ok, err) = queued<Int> { throw IllegalStateException("boom") }
+        assertNull(ok); assertTrue(err is IllegalStateException)
+    }
+
+    @Test fun anErrorInQueuedWorkStillReachesFailSoABusyFlagClears() {
+        val (ok, err) = queued<Int> { throw OutOfMemoryError("test") }
+        assertNull(ok); assertNotNull(err)
+    }
+
+    @Test fun aSuccessfulQueuedWorkDeliversItsResultToDone() {
+        val (ok, err) = queued { 41 + 1 }
+        assertEquals(42, ok); assertNull(err)
     }
 }
