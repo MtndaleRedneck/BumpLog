@@ -51,4 +51,35 @@ class TabSnapTest {
         assertEquals(k, GeoKey(700f, 3, 2.75f, 1f))
         assertNotEquals(k, GeoKey(640f, 3, 2.75f, 1f)); assertNotEquals(k, GeoKey(700f, 4, 2.75f, 1f)); assertNotEquals(k, GeoKey(700f, 3, 2.75f, 1.3f))
     }
+
+    @Test fun coldFirstFrameReadsNowSoItIsNeverBlank() {
+        TabSnap.clear()
+        var reads = 0
+        val v = firstFrame(TabSnap.reported, 5) { reads++; ReportedSnap(emptyList()) }
+        assertNotNull(v); assertEquals(1, reads)
+    }
+
+    @Test fun warmFirstFrameDoesNotReadAgain() {
+        TabSnap.clear()
+        var reads = 0
+        firstFrame(TabSnap.reported, 5) { reads++; ReportedSnap(emptyList()) }
+        firstFrame(TabSnap.reported, 5) { reads++; ReportedSnap(emptyList()) }
+        assertEquals(1, reads)
+    }
+
+    @Test fun afterAWriteTheFirstFrameReadsFreshDataNotTheOldSnapshot() {
+        TabSnap.clear()
+        var n = 0
+        val a1 = firstFrame(TabSnap.reported, 5) { ReportedSnap(listOf()) .also { n++ } }
+        Db.noteWrite()
+        firstFrame(TabSnap.reported, 5) { n++; ReportedSnap(listOf()) }
+        assertEquals(2, n); assertNotNull(a1)
+    }
+
+    @Test fun anUnusableWarmSnapshotIsReplacedByAFreshRead() {
+        TabSnap.clear()
+        TabSnap.home.put(Stamp.now(5), HomeSnap(emptyList(), 3, 7L))
+        val v = firstFrame(TabSnap.home, 5, usable = { it.driveKey == 9L }) { HomeSnap(emptyList(), 0, 9L) }
+        assertEquals(9L, v!!.driveKey)
+    }
 }

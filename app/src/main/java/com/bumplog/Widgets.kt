@@ -469,6 +469,17 @@ class GeoSnap(val key: GeoKey, val gap: androidx.compose.ui.unit.Dp, val extra: 
  * load started at, so a load that finishes after a later write is already stale. Wipe, CSV import and restore also clear
  * everything after they finish. A cold process has nothing, so tabs draw a blank pane until their first read.
  */
+/**
+ * First-frame data for a tab: the warm snapshot if its stamp is current, otherwise one small synchronous read right now (the data is a
+ * handful of rows), stamped before the read. Either way the first frame already shows final content: never stale, never blank.
+ * Null only if the read itself failed (logged); the caller then shows its own empty state and the effect retries.
+ */
+fun <T : Any> firstFrame(slot: SnapSlot<T>, tick: Int, usable: (T) -> Boolean = { true }, read: () -> T): T? {
+    val st = Stamp.now(tick)
+    slot.warm(st)?.takeIf(usable)?.let { return it }
+    return try { read().also { slot.put(st, it) } } catch (e: Exception) { android.util.Log.w("BumpLog", "first-frame read failed", e); null }
+}
+
 object TabSnap {
     val home = SnapSlot<HomeSnap>(); val review = SnapSlot<ReviewSnap>(); val stats = SnapSlot<StatsSnap>(); val reported = SnapSlot<ReportedSnap>()
     @Volatile var homeGeo: GeoSnap? = null; @Volatile var statsGeo: GeoSnap? = null

@@ -30,10 +30,9 @@ private fun shortDay(ts: Long): String = SimpleDateFormat("M/d", Locale.US).form
 fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
-    val warmP = TabSnap.reported.warm(Stamp.now(tick))
-    var reported by remember { mutableStateOf(warmP?.spots ?: emptyList()) }
-    var loaded by remember { mutableStateOf(warmP != null) }
-    LaunchedEffect(tick) { try { val st = Stamp.now(tick); val l = Db.get(ctx).reportedSpots(); reported = l; TabSnap.reported.put(st, ReportedSnap(l)) } finally { loaded = true } }
+    val first = remember { firstFrame(TabSnap.reported, tick) { ReportedSnap(Db.get(ctx).reportedSpots()) } }
+    var reported by remember { mutableStateOf(first?.spots ?: emptyList()) }
+    LaunchedEffect(tick) { val st = Stamp.now(tick); val l = Db.get(ctx).reportedSpots(); reported = l; TabSnap.reported.put(st, ReportedSnap(l)) }
     var markFor by remember { mutableStateOf<Spot?>(null) }
 
     markFor?.let { s ->
@@ -84,7 +83,7 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
     Column(Modifier.fillMaxSize().pane("Reported").verticalScroll(ScrollMemory.get("Reported")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Txt("Reported", 24, FontWeight.Bold, modifier = Modifier.asHeading())
         Muted("Only bumps you reported show up here.", 15)
-        if (loaded && reported.isEmpty()) {
+        if (reported.isEmpty()) {
             Spacer(Modifier.height(24.dp))
             Muted("Nothing reported yet. Confirm a bump in Review and send it, and it lands here.", 15, Modifier.fillMaxWidth(), TextAlign.Center)
         }

@@ -101,19 +101,15 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     val ctx = LocalContext.current
     val homeKey = homeDriveId(live.running, live.driveId, Prefs.lastDriveId)
     // Warm only if read at this tick AND for the drive shown now; otherwise a blank pane until the first read.
-    val homeStamp = Stamp.now(live.tick)
-    val warm = TabSnap.home.warm(homeStamp)?.takeIf { it.driveKey == homeKey }
-    var recent by remember { mutableStateOf(warm?.recent ?: emptyList()) }
-    var today by remember { mutableStateOf(warm?.today ?: 0) }
-    var loaded by remember { mutableStateOf(warm != null) }
+    val readHome = { db: Db -> val id = homeDriveId(live.running, live.driveId, Prefs.lastDriveId); HomeSnap(db.allSpots().take(6), if (id > 0) db.hitsInDrive(id) else 0, id) }
+    // Final content on the first frame: the warm snapshot (same stamp and same drive) or one small read now.
+    val first = remember { firstFrame(TabSnap.home, live.tick, usable = { it.driveKey == homeKey }) { readHome(Db.get(ctx)) } }
+    var recent by remember { mutableStateOf(first?.recent ?: emptyList()) }
+    var today by remember { mutableStateOf(first?.today ?: 0) }
     LoadingSpots(live.tick) { db ->
-        try {
-            val st = Stamp.now(live.tick)   // read before the load: a write during it leaves this snapshot stale
-            val r = db.allSpots().take(6); val id = homeDriveId(live.running, live.driveId, Prefs.lastDriveId); val t = if (id > 0) db.hitsInDrive(id) else 0
-            recent = r; today = t; TabSnap.home.put(st, HomeSnap(r, t, id))
-        } finally { loaded = true }   // a failed read still leaves the page (empty), never a pane that stays blank
+        val st = Stamp.now(live.tick)   // read before the load: a write during it leaves this snapshot stale
+        val r = readHome(db); recent = r.recent; today = r.today; TabSnap.home.put(st, r)
     }
-    if (!loaded) { Box(Modifier.fillMaxSize()); return }
     val status = when {
         !Prefs.detectionEnabled -> "Detection off" to p.muted
         !permsOk -> "Needs permission" to p.muted
@@ -287,31 +283,29 @@ fun HitRow(h: Hit, s: Spot, gray: Boolean = false, onClick: () -> Unit) {
     }
 }
 
+private fun readReview(db: Db): ReviewSnap {
+    // Hits are listed one by one (never merged by spot). Hits logged after their spot was reported are kept in the data but not listed.
+    val shown = db.hits(200).mapNotNull { h -> db.spot(h.spotId)?.takeIf { !it.reportId.startsWith("TEST-") && (it.reportStatus == "NONE" || hitReported(h, it)) }?.let { h to it } }
+    // A spot still waiting on you must always be reachable, however old its hits are: add its latest hit if it fell outside the recent window.
+    val missing = (db.pendingSpots() + db.readyToSend()).distinctBy { it.id }
+        .filter { sp -> !sp.reportId.startsWith("TEST-") && shown.none { it.second.id == sp.id } }
+        .mapNotNull { sp -> db.lastHitOf(sp.id)?.takeIf { sp.reportStatus == "NONE" }?.let { it to sp } }
+    return ReviewSnap(db.pendingSpots().size, db.hitsSince(Db.startOfToday()), (shown + missing).sortedByDescending { it.first.ts })
+}
+
 @Composable
 fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
     val snack = remember { SnackbarHostState() }
-    val reviewStamp = Stamp.now(live.tick)
-    val warmR = TabSnap.review.warm(reviewStamp)
-    var pendingCount by remember { mutableStateOf(warmR?.pending ?: 0) }
-    var saved by remember { mutableStateOf(warmR?.saved ?: 0) }
-    var allHits by remember { mutableStateOf(warmR?.hits ?: emptyList()) }
-    var loaded by remember { mutableStateOf(warmR != null) }
-    LoadingSpots(live.tick) { db -> try {
+    val first = remember { firstFrame(TabSnap.review, live.tick) { readReview(Db.get(ctx)) } }
+    var pendingCount by remember { mutableStateOf(first?.pending ?: 0) }
+    var saved by remember { mutableStateOf(first?.saved ?: 0) }
+    var allHits by remember { mutableStateOf(first?.hits ?: emptyList()) }
+    LoadingSpots(live.tick) { db ->
         val st = Stamp.now(live.tick)
-        // Hits are listed one by one (never merged by spot). Hits logged after their spot was reported are kept in the data but not listed.
-        val shown = db.hits(200).mapNotNull { h -> db.spot(h.spotId)?.takeIf { !it.reportId.startsWith("TEST-") && (it.reportStatus == "NONE" || hitReported(h, it)) }?.let { h to it } }
-        // A spot still waiting on you must always be reachable, however old its hits are: add its latest hit if it fell outside the recent window.
-        val missing = (db.pendingSpots() + db.readyToSend()).distinctBy { it.id }
-            .filter { sp -> !sp.reportId.startsWith("TEST-") && shown.none { it.second.id == sp.id } }
-            .mapNotNull { sp -> db.lastHitOf(sp.id)?.takeIf { sp.reportStatus == "NONE" }?.let { it to sp } }
-        allHits = (shown + missing).sortedByDescending { it.first.ts }
-        pendingCount = db.pendingSpots().size
-        saved = db.hitsSince(Db.startOfToday())
-        TabSnap.review.put(st, ReviewSnap(pendingCount, saved, allHits))
-    } finally { loaded = true } }
-    if (!loaded) { Box(Modifier.fillMaxSize()); return }
+        val r = readReview(db); pendingCount = r.pending; saved = r.saved; allHits = r.hits; TabSnap.review.put(st, r)
+    }
     val scroll = ScrollMemory.get("Review")
     val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {
@@ -570,14 +564,15 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
 @Composable
 fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     val p = LocalPal.current
-    val warmS = TabSnap.stats.warm(Stamp.now(tick))
-    var sc by remember { mutableStateOf(warmS?.score) }
-    var big by remember { mutableStateOf(warmS?.big) }
-    var byType by remember { mutableStateOf(warmS?.byType ?: emptyList()) }
+    val ctx = LocalContext.current
+    val readStats = { db: Db -> StatsSnap(db.score(), db.largestImpact(), db.savesByType()) }
+    val first = remember { firstFrame(TabSnap.stats, tick) { readStats(Db.get(ctx)) } }
+    var sc by remember { mutableStateOf(first?.score) }
+    var big by remember { mutableStateOf(first?.big) }
+    var byType by remember { mutableStateOf(first?.byType ?: emptyList()) }
     LoadingSpots(tick) { db ->
         val st = Stamp.now(tick)
-        val ns = db.score(); val nt = db.savesByType(); val nb = db.largestImpact()
-        sc = ns; byType = nt; big = nb; TabSnap.stats.put(st, StatsSnap(ns, nb, nt))
+        val r = readStats(db); sc = r.score; byType = r.byType; big = r.big; TabSnap.stats.put(st, r)
     }
     val s = sc ?: return
     BoxWithConstraints(Modifier.fillMaxSize()) {
