@@ -479,13 +479,16 @@ class GeoSnap(val key: GeoKey, val gap: androidx.compose.ui.unit.Dp, val extra: 
  * show stale data. Null also if the read itself failed (logged).
  */
 const val FIRST_FRAME_WAIT_MS = 40L
-private val firstFramePool: java.util.concurrent.ExecutorService = java.util.concurrent.Executors.newCachedThreadPool { r -> Thread(r, "bump-first-frame").apply { isDaemon = true } }
+/** At most 2 helper threads and 4 waiting reads: during a long import every read blocks on the monitor, so extra tab switches must not pile up threads. */
+private val firstFramePool = java.util.concurrent.ThreadPoolExecutor(2, 2, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue<Runnable>(4),
+    { r -> Thread(r, "bump-first-frame").apply { isDaemon = true } }).apply { allowCoreThreadTimeOut(true) }
 fun <T : Any> firstFrame(slot: SnapSlot<T>, tick: Int, usable: (T) -> Boolean = { true }, read: () -> T): T? {
     val st = Stamp.now(tick)
     slot.warm(st)?.takeIf(usable)?.let { return it }
-    val job = firstFramePool.submit(java.util.concurrent.Callable { read().also { slot.put(st, it) } })
+    val job = try { firstFramePool.submit(java.util.concurrent.Callable { read().also { slot.put(st, it) } }) }
+              catch (e: java.util.concurrent.RejectedExecutionException) { return null }   // pool and queue full: every helper is stuck behind the monitor
     return try { job.get(FIRST_FRAME_WAIT_MS, java.util.concurrent.TimeUnit.MILLISECONDS) }
-    catch (e: java.util.concurrent.TimeoutException) { null }
+    catch (e: java.util.concurrent.TimeoutException) { job.cancel(false); null }   // a queued read never starts; a running one finishes and only warms the slot under its stamp
     catch (e: Exception) { android.util.Log.w("BumpLog", "first-frame read failed", e); null }
 }
 

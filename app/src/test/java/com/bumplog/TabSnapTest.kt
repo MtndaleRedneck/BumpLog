@@ -96,4 +96,14 @@ class TabSnapTest {
         for (k in 0 until 40) { if (slot.warm(Stamp.now(9)) != null) { warm = true; break }; Thread.sleep(50) }
         assertTrue("late read should warm the slot under its own stamp", warm)
     }
+
+    @Test fun firstFrameHelperThreadsStayBoundedWhileTheDatabaseIsBusy() {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val t0 = System.nanoTime()
+        repeat(12) { assertNull(firstFrame(SnapSlot<ReportedSnap>(), 20 + it) { gate.await(); ReportedSnap(emptyList()) }) }   // 12 tab switches during an import
+        assertTrue("12 blocked switches must not stall the caller", (System.nanoTime() - t0) / 1_000_000 < 2000)
+        val helpers = Thread.getAllStackTraces().keys.count { it.name == "bump-first-frame" && it.isAlive }
+        assertTrue("helper threads must stay at 2, were $helpers", helpers <= 2)
+        gate.countDown()
+    }
 }
