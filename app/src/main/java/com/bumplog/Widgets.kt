@@ -581,9 +581,6 @@ object PendingAsk {
         }
         return g
     }
-    /** Moves the generation on WITHOUT touching the stored question: -1 when [token] is no longer current, else the new generation. A rollback claims,
-     *  runs, and only then clearIf(claimed); a failed or killed rollback leaves the question stored, so it is asked again. A newer setter overwrites it. */
-    @Synchronized fun claim(token: Int): Int { if (gen != token) return -1; gen++; return gen }
     @Synchronized fun clearIf(token: Int): Boolean { if (gen != token) return false; gen++; store.write("", "", ""); return true }
     @Synchronized fun clearAll() { gen++; store.write("", "", "") }
 }

@@ -250,12 +250,13 @@ class TabSnapTest {
         assertEquals(false, DamageMarks.beginHandOffDurable(4)); assertEquals("", m.v)
     }
 
-    @Test fun aClaimedRollbackCannotBeClaimedTwiceOrAfterANewerQuestion() {
+    @Test fun clearingAfterTheRollbackKeepsANewerQuestionAndAClearTwiceIsHarmless() {
         val m = MapStore(); PendingAsk.store = m
-        val g = PendingAsk.set("9", "again", "snap", durable = true)
+        val shown = PendingAsk.set("9", "again", "snap")
+        PendingAsk.set("1,2", "trip")                        // a newer question appears while the rollback runs
+        assertEquals(false, PendingAsk.clearIf(shown)); assertEquals("1,2", m.f)
+        val g = PendingAsk.set("9", "again", "snap")
         assertTrue(PendingAsk.clearIf(g)); assertEquals(false, PendingAsk.clearIf(g))
-        val g2 = PendingAsk.set("1", "again", "s2"); PendingAsk.set("2", "trip")
-        assertEquals(false, PendingAsk.clearIf(g2))
     }
 
     @Test fun anOlderCompletionNeverErasesANewerPendingQuestion() {

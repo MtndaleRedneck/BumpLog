@@ -341,16 +341,12 @@ class MainActivity : ComponentActivity() {
         val snap = if (q.kind == "again") Rollback.parse(q.again) else null
         val finish = { PendingAsk.clearIf(q.gen); Live.bump() }
         // The pending state is cleared only after the rollback is written, so a process death in between still has it (the dialog just asks again).
-        // The rollback CLAIMS the generation first (atomic with every setter, the stored question stays), rolls back only if the claim won, and clears the question
-        // only after the rollback landed. A newer question of any kind makes the claim fail. A kill or error before the clear leaves the question to be asked again.
+        // The user's "not sent" answer is always applied: the rollback is ONE conditional statement that only touches a row that still carries the report time this
+        // question's Report again wrote, so a newer re-report (or anything else that changed the row) makes it a no-op and it needs no generation gate. The
+        // question is cleared only after the rollback landed, and only if it is still the displayed one (a newer question survives). A kill or error before the clear
+        // re-asks, and running the rollback twice is harmless.
         if (snap == null) finish()
-        else {
-            var claimed = -1
-            DbQ.run(this, fail = { Live.bump() }, work = { db ->
-                claimed = PendingAsk.claim(q.gen)
-                if (claimed >= 0) db.unReportAgainIf(snap)   // one conditional statement: only while the row still has the report time this question set
-            }) { PendingAsk.clearIf(claimed); Live.bump() }   // cleared only after the rollback landed; a failed rollback keeps the question
-        }
+        else DbQ.run(this, fail = { Live.bump() }, work = { db -> db.unReportAgainIf(snap) }) { finish() }
     }
 
     @Composable
