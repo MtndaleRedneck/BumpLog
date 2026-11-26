@@ -191,31 +191,63 @@ class TabSnapTest {
             f = sentFor; if (slowWrite) Thread.sleep(1); k = kind; if (slowWrite) Thread.sleep(1); a = again   // field by field, like three separate edits
         }
     }
-    @org.junit.After fun restoreGlobals() { PendingAsk.resetStore(); DbQ.resetToMain() }
+    @org.junit.After fun restoreGlobals() { PendingAsk.resetStore(); DbQ.resetToMain(); DamageMarks.resetStore() }
 
-    @Test fun aDurableQuestionThatCannotBeCommittedIsRemovedAndRefused() {
+    @Test fun aDurableQuestionThatCannotBeCommittedIsRefusedAndTheOlderQuestionComesBack() {
         val m = MapStore(syncOk = false); PendingAsk.store = m
-        val older = PendingAsk.set("3", "trip")
+        PendingAsk.set("3", "again", "oldsnap")
         var threw = false
         try { PendingAsk.set("9", "again", "snap", durable = true) } catch (e: java.io.IOException) { threw = true }
-        assertTrue(threw); assertEquals("", m.f); assertEquals("", m.a)   // only the failed question is gone
-        assertEquals("the older one was already replaced by the failed set, so it cannot be cleared", false, PendingAsk.clearIf(older))
+        assertTrue(threw); assertEquals("3", m.f); assertEquals("oldsnap", m.a)   // the unanswered older question and its rollback survive
     }
 
-    @Test fun aRollbackClaimKeepsTheQuestionUntilItIsCleared() {
+    @Test fun aFailedDurableSetDoesNotUndoANewerQuestion() {
         val m = MapStore(); PendingAsk.store = m
-        val g = PendingAsk.set("9", "again", "snap", durable = true)
-        val c = PendingAsk.claim(g)
-        assertTrue(c >= 0); assertEquals("a failed or killed rollback must leave the question", "9", m.f); assertEquals("snap", m.a)
-        assertEquals("second claim of the same question loses", -1, PendingAsk.claim(g))
-        assertTrue(PendingAsk.clearIf(c)); assertEquals("", m.f)
+        val store2 = object : PendingAsk.Store {
+            override fun read() = m.read(); override fun write(sentFor: String, kind: String, again: String) = m.write(sentFor, kind, again)
+            override fun sync(): Boolean { PendingAsk.set("77", "trip"); return false }   // a main-thread setter lands during the commit
+        }
+        PendingAsk.store = store2
+        try { PendingAsk.set("9", "again", "snap", durable = true) } catch (e: java.io.IOException) {}
+        assertEquals("77", m.f); assertEquals("trip", m.k)
     }
 
-    @Test fun aNewerQuestionMakesTheClaimFailAndSurvives() {
-        val m = MapStore(); PendingAsk.store = m
-        val g = PendingAsk.set("9", "again", "snap")
-        PendingAsk.set("1,2", "trip")
-        assertEquals(-1, PendingAsk.claim(g)); assertEquals("1,2", m.f)
+    @Test fun rollbackSnapshotNeedsAllSevenFields() {
+        val r = Rollback(5, 12, 1000L, 1100L, "NONE", 0L, 2000L)
+        val p = Rollback.parse(r.encode())!!
+        assertEquals(5L, p.id); assertEquals(12, p.reportNo); assertEquals(2000L, p.expectedTs); assertEquals("NONE", p.outcome)
+        assertEquals(null, Rollback.parse("5|12|1000|1100|NONE|0"))          // the old 6-field form is not guessed at
+        assertEquals(null, Rollback.parse("5|x|1000|1100|NONE|0|2000"))
+    }
+
+    class MarkMap(var v: String = "", val commitOk: Boolean = true) : DamageMarks.MarkStore {
+        override fun read() = v; override fun write(v: String) { this.v = v }
+        override fun commit(v: String): Boolean { if (commitOk) this.v = v; return commitOk }
+    }
+
+    @Test fun anInterruptedHandOffStaysHandingAndIsNeverAutoSettled() {
+        DamageMarks.store = MarkMap()
+        assertTrue(DamageMarks.beginHandOffDurable(4))
+        assertEquals(setOf(4L), DamageMarks.handing()); assertEquals(emptySet<Long>(), DamageMarks.pending())   // retryAll/settle only walks pending()
+    }
+
+    @Test fun aReturnedHandOffBecomesHandedAndSurvivesReentry() {
+        DamageMarks.store = MarkMap()
+        DamageMarks.beginHandOffDurable(4); DamageMarks.handedOff(4)
+        assertEquals(setOf(4L), DamageMarks.pending()); assertEquals(emptySet<Long>(), DamageMarks.handing())
+    }
+
+    @Test fun aRefusedHandOffOrAnAnswerRemovesTheMarkAndOthersStay() {
+        DamageMarks.store = MarkMap()
+        DamageMarks.beginHandOffDurable(4); DamageMarks.handedOff(4); DamageMarks.beginHandOffDurable(5)
+        DamageMarks.remove(5)
+        assertEquals(setOf(4L), DamageMarks.pending()); assertEquals(emptySet<Long>(), DamageMarks.handing())
+        DamageMarks.clearAll(); assertEquals(emptySet<Long>(), DamageMarks.pending())
+    }
+
+    @Test fun aHandingMarkThatCannotBeCommittedIsRefusedAndWritesNothing() {
+        val m = MarkMap(commitOk = false); DamageMarks.store = m
+        assertEquals(false, DamageMarks.beginHandOffDurable(4)); assertEquals("", m.v)
     }
 
     @Test fun aClaimedRollbackCannotBeClaimedTwiceOrAfterANewerQuestion() {

@@ -542,6 +542,18 @@ object DbQ {
  * A dialog captures the whole [Question] when it is shown; its answer clears the state only if that same generation is still current ([clearIf]),
  * so a late answer can never erase, or roll back for, a newer mail hand-off. Every writer goes through [set].
  */
+/** A Report again's rollback snapshot: id|reportNo|reportTs|sentTs|outcome|outcomeTs|newReportTs. newReportTs is what the re-report wrote; the rollback applies only to that. */
+class Rollback(val id: Long, val reportNo: Int, val reportTs: Long, val sentTs: Long, val outcome: String, val outcomeTs: Long, val expectedTs: Long) {
+    fun encode() = listOf(id, reportNo, reportTs, sentTs, outcome, outcomeTs, expectedTs).joinToString("|")
+    companion object {
+        /** Null for anything that is not a complete 7-field snapshot: no rollback is guessed from a partial or old one. */
+        fun parse(s: String): Rollback? {
+            val p = s.split("|"); if (p.size != 7) return null
+            return try { Rollback(p[0].toLong(), p[1].toInt(), p[2].toLong(), p[3].toLong(), p[4], p[5].toLong(), p[6].toLong()) } catch (e: NumberFormatException) { null }
+        }
+    }
+}
+
 object PendingAsk {
     class Question(val gen: Int, val sentFor: String, val kind: String, val again: String)
     interface Store { fun read(): Triple<String, String, String>; fun write(sentFor: String, kind: String, again: String); fun sync(): Boolean = true }
@@ -558,10 +570,15 @@ object PendingAsk {
     @Synchronized fun token(): Int = gen
     /** A new question replaces any older one entirely (an old rollback snapshot never outlives its question). */
     fun set(sentFor: String, kind: String, again: String = "", durable: Boolean = false): Int {
-        val g = synchronized(this) { gen++; store.write(sentFor, kind, again); gen }
+        var prev = Triple("", "", "")
+        val g = synchronized(this) { prev = store.read(); gen++; store.write(sentFor, kind, again); gen }
         // The in-memory update is under the lock; the disk commit is OUTSIDE it, so a main-thread reader or setter never waits for the disk.
         // durable is for queue-thread callers that must have the question on disk before a DB change. A failed commit removes only this question.
-        if (durable && !store.sync()) { clearIf(g); throw java.io.IOException("pending question not saved") }
+        if (durable && !store.sync()) {
+            // Put back the older unanswered question (and its snapshot) unless something newer has already replaced ours.
+            synchronized(this) { if (gen == g) { gen++; store.write(prev.first, prev.second, prev.third) } }
+            throw java.io.IOException("pending question not saved")
+        }
         return g
     }
     /** Moves the generation on WITHOUT touching the stored question: -1 when [token] is no longer current, else the new generation. A rollback claims,
@@ -573,20 +590,32 @@ object PendingAsk {
 
 /** Damage reports already handed to the mail app whose "sent" mark did not land (or has not yet). Kept on disk so they are retried, never re-sent. */
 object DamageMarks {
+    interface MarkStore { fun read(): String; fun write(v: String); fun commit(v: String): Boolean }
+    private val prefsStore = object : MarkStore {
+        override fun read() = Prefs.damageMarks
+        override fun write(v: String) { Prefs.damageMarks = v }
+        override fun commit(v: String) = Prefs.commitDamageMarks(v)
+    }
+    internal var store: MarkStore = prefsStore
+    internal fun resetStore() { store = prefsStore }
     // Entries: "12" = the hand-off returned true (HANDED); "12?" = about to hand off (HANDING). A HANDING entry that survives means the app died or errored
     // inside the hand-off: nobody knows whether a mail exists, so it is never auto-marked; the queue row asks the user.
-    private fun entries() = Prefs.damageMarks.split(",").filter { it.isNotBlank() }
+    private fun entries() = store.read().split(",").filter { it.isNotBlank() }
     @Synchronized fun pending(): Set<Long> = entries().filter { !it.endsWith("?") }.mapNotNull { it.toLongOrNull() }.toSet()
     @Synchronized fun handing(): Set<Long> = entries().filter { it.endsWith("?") }.mapNotNull { it.dropLast(1).toLongOrNull() }.toSet()
-    @Synchronized private fun put(list: List<String>) { Prefs.damageMarks = list.joinToString(",") }
-    @Synchronized fun beginHandOff(id: Long) = put(entries().filter { it != "$id" && it != "$id?" } + "$id?")
-    @Synchronized fun handedOff(id: Long) = put(entries().filter { it != "$id" && it != "$id?" } + "$id")
-    @Synchronized fun remove(id: Long) = put(entries().filter { it != "$id" && it != "$id?" })
+    private fun without(id: Long) = entries().filter { it != "$id" && it != "$id?" }
+    /** HANDING, committed to disk (call on the Db queue thread, before the hand-off): false when it could not be saved, and then nothing is handed off. */
+    @Synchronized fun beginHandOffDurable(id: Long): Boolean = store.commit((without(id) + "$id?").joinToString(","))
+    @Synchronized fun handedOff(id: Long) { store.write((without(id) + "$id").joinToString(",")) }
+    @Synchronized fun remove(id: Long) { store.write(without(id).joinToString(",")) }
+    @Synchronized fun clearAll() { store.write("") }
     /** Marks one report sent on the Db queue; keeps it pending when that fails. */
-    fun settle(ctx: android.content.Context, id: Long, done: () -> Unit = {}) {
-        DbQ.run(ctx, fail = { toast(ctx, "The email is in your mail app, but BumpLog could not mark it sent yet. It will try again; do not send it again.") },
+    fun settle(ctx: android.content.Context, id: Long, quiet: Boolean = false, done: () -> Unit = {}) {
+        DbQ.run(ctx, fail = { if (!quiet) toast(ctx, "The email is in your mail app, but BumpLog could not mark it sent yet. It will try again when the app opens or the damage list opens; do not send it again.") },
             work = { it.markDamageSent(id); remove(id) }) { done() }
     }
+    /** Retries every HANDED mark (never a HANDING one). Called when the app comes to the front. */
+    fun retryAll(ctx: android.content.Context) { pending().forEach { settle(ctx, it, quiet = true) } }
 }
 
 object TabSnap {

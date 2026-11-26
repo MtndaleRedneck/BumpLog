@@ -123,7 +123,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStop() { Sound.stopRecording(save = false); Sound.onRecordingEnded?.invoke(); super.onStop() }
     override fun onResume() {
-        super.onResume(); refreshPerms(); Live.bump()
+        super.onResume(); refreshPerms(); Live.bump(); if (Prefs.setupDone) DamageMarks.retryAll(this)
         // Power on means logging is running. Bring it back if Android or the user ended it.
         if (permsOk && Prefs.detectionEnabled && !Live.state.value.running) try { DriveService.start(this) } catch (e: Exception) { }
         // Back from the "Install unknown apps" screen with the file already downloaded and checked: carry on to the installer.
@@ -338,7 +338,7 @@ class MainActivity : ComponentActivity() {
     private fun closeAskSentWithoutSend() {
         val q = askQuestion ?: PendingAsk.current()   // the question the user was shown, not whatever is stored now
         askQuestion = null; askSent = null
-        val snap = if (q.kind == "again") q.again.split("|").takeIf { it.size == 6 } else null
+        val snap = if (q.kind == "again") Rollback.parse(q.again) else null
         val finish = { PendingAsk.clearIf(q.gen); Live.bump() }
         // The pending state is cleared only after the rollback is written, so a process death in between still has it (the dialog just asks again).
         // The rollback CLAIMS the generation first (atomic with every setter, the stored question stays), rolls back only if the claim won, and clears the question
@@ -348,7 +348,7 @@ class MainActivity : ComponentActivity() {
             var claimed = -1
             DbQ.run(this, fail = { Live.bump() }, work = { db ->
                 claimed = PendingAsk.claim(q.gen)
-                if (claimed >= 0) db.unReportAgain(snap[0].toLong(), snap[1].toInt(), snap[2].toLong(), snap[3].toLong(), snap[4], snap[5].toLong())
+                if (claimed >= 0) db.unReportAgainIf(snap)   // one conditional statement: only while the row still has the report time this question set
             }) { PendingAsk.clearIf(claimed); Live.bump() }   // cleared only after the rollback landed; a failed rollback keeps the question
         }
     }

@@ -557,11 +557,17 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
             if (!mailAppAvailable(ctx, photos.isNotEmpty())) { toast(ctx, "No mail app found."); return@BigButton }
             val h = hits.firstOrNull { it.id == picked }; val c = cat; val n = note; val ph = photos.toList()
             DbQ.runOnce(ctx, sendBusy, fail = { e -> toast(ctx, if (e is java.io.IOException) "A photo could not be saved - the report was not sent. Try again." else "That didn't work. Try again.") },
-                work = { db -> build(db, h, c, n, ph)?.let { d -> d to db.spot(d.spotId) } }) { r ->
+                work = { db ->
+                    // The report is queued (so it is visible in the damage list whatever happens next) and HANDING is on disk BEFORE the mail is opened.
+                    build(db, h, c, n, ph)?.let { d ->
+                        db.setDamageStatus(d.id, "QUEUED")
+                        if (!DamageMarks.beginHandOffDurable(d.id)) throw IllegalStateException("hand-off mark not saved")
+                        d to db.spot(d.spotId)
+                    }
+                }) { r ->
                 if (r == null) sendBusy.value = false
                 else {
                     val (d, sp) = r
-                    DamageMarks.beginHandOff(d.id)   // HANDING until the hand-off returns; a leftover HANDING is asked about, never auto-marked sent
                     if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.handedOff(d.id); DamageMarks.settle(ctx, d.id) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() } }
                     else { DamageMarks.remove(d.id); sendBusy.value = false }
                 }
@@ -615,9 +621,9 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
                     }
                 }
                 BigButton("Send", Icons.Default.Send, enabled = d.id !in marks && d.id !in handing) {
-                    DbQ.runOnce(ctx, rowBusy, work = { db -> db.hit(d.hitId) to db.spot(d.spotId) }) { (h, sp) ->
-                        DamageMarks.beginHandOff(d.id)   // HANDING until the hand-off returns; a leftover HANDING is asked about, never auto-marked sent
-                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.handedOff(d.id); DamageMarks.settle(ctx, d.id) { n++; Live.bump() } }
+                    DbQ.runOnce(ctx, rowBusy, fail = { toast(ctx, "That didn't work. Try again.") },
+                        work = { db -> if (!DamageMarks.beginHandOffDurable(d.id)) throw IllegalStateException("hand-off mark not saved"); db.hit(d.hitId) to db.spot(d.spotId) }) { (h, sp) ->
+                        if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.handedOff(d.id); DamageMarks.settle(ctx, d.id) { n++; Live.bump() } }
                         else { DamageMarks.remove(d.id); rowBusy.value = false }
                     }
                 }

@@ -122,7 +122,7 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
                 // saved FIRST: a process death after it and before the change leaves a harmless question over an unchanged row (a rollback of it is a no-op); a
                 // death after the change still has the snapshot to roll back. A failed change clears only its own question; a refused handoff rolls back at once.
                 var tok = -1   // written on the queue thread, read in done: the generation of this question
-                val old = listOf(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs).joinToString("|")
+                val old = Rollback(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs, now).encode()
                 DbQ.run(ctx, fail = { PendingAsk.clearIf(tok); againBusy = false; toast(ctx, "That didn't work. Try again.") }, work = { db ->
                     tok = PendingAsk.set(s.id.toString(), "again", old, durable = true)
                     db.reportAgain(s.id, now)
@@ -130,7 +130,7 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
                 }) { no ->
                     if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(s.copy(reportNo = no, reportTs = now))))) { againBusy = false; Live.bump() }
                     else DbQ.run(ctx, fail = { againBusy = false; Live.bump(); toast(ctx, "That didn't work. Try again.") },
-                        work = { it.unReportAgain(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs); PendingAsk.clearIf(tok) }) { againBusy = false; Live.bump() }
+                        work = { it.unReportAgainIf(Rollback(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs, now)); PendingAsk.clearIf(tok) }) { againBusy = false; Live.bump() }
                 }
             }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                 Txt("Report again", 16, FontWeight.Bold, p.onAccent)

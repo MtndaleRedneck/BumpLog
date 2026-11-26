@@ -301,6 +301,14 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     /** Undoes a report-again whose email never went out: the old number, times and outcome come back. */
     fun unReportAgain(id: Long, reportNo: Int, reportTs: Long, sentTs: Long, outcome: String, outcomeTs: Long) =
         update(id, "report_no" to reportNo, "report_ts" to reportTs, "sent_ts" to sentTs, "report_outcome" to outcome, "outcome_ts" to outcomeTs)
+    /** The conditional rollback: ONE statement, applied only while the row still carries the report time that this Report again set. Another re-report
+     *  of the same spot changed report_ts, so it no-ops; running it twice is harmless. Returns whether it changed the row. */
+    @Synchronized fun unReportAgainIf(r: Rollback): Boolean {
+        val v = ContentValues().apply { put("report_no", r.reportNo); put("report_ts", r.reportTs); put("sent_ts", r.sentTs); put("report_outcome", r.outcome); put("outcome_ts", r.outcomeTs) }
+        val n = writableDatabase.update("spots", v, "id=? AND report_ts=?", arrayOf(r.id.toString(), r.expectedTs.toString()))
+        if (n > 0) noteWrite()
+        return n > 0
+    }
     /** Restores spots and hits from a BumpLog CSV export. Old codes (BL-/BD-/PS-, strictly checked) and the running
      * numbers are kept; IDs already here are skipped. Both the old 12-column layout and the current one with
      * report_no, town and county load. The shared counter ends up past every number the file used and past the
