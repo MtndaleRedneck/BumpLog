@@ -158,7 +158,7 @@ fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit
     var gap by remember { mutableStateOf(geo?.gap ?: 10.dp) }
     var extraAct by remember { mutableStateOf(geo?.extra ?: 0.dp) }   // extra space above the action buttons
     var extraTop by remember { mutableStateOf(0.dp) }   // extra space above everything
-    Column(Modifier.fillMaxSize().pane("Home").verticalScroll(ScrollMemory.get("Home")).padding(start = 16.dp, end = 16.dp, top = 24.dp + extraTop, bottom = 6.dp)) {
+    Column(Modifier.fillMaxSize().pane("Home").verticalScroll(ScrollMemory.get("Home")).padding(start = 16.dp, end = 16.dp, top = 16.dp + extraTop, bottom = 14.dp)) {
       Column(Modifier.onSizeChanged {
           val h = with(dens) { it.height.toDp() }
           val fixed = h - gap * nGaps - extraAct
@@ -661,12 +661,12 @@ fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     // Slight fixed padding top and bottom; the gaps between the summary cards flex with the screen height (cards and text never change size).
     val statsKey = GeoKey(viewH.value, 0, dens.density, dens.fontScale)
     var gap by remember { mutableStateOf(TabSnap.statsGeo?.takeIf { it.key == statsKey }?.gap ?: 10.dp) }
-    Column(Modifier.fillMaxSize().pane("Stats").verticalScroll(ScrollMemory.get("Stats")).padding(start = 16.dp, end = 16.dp, top = gap, bottom = gap), verticalArrangement = Arrangement.spacedBy(gap)) {
+    Column(Modifier.fillMaxSize().pane("Stats").verticalScroll(ScrollMemory.get("Stats")).padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = gap), verticalArrangement = Arrangement.spacedBy(gap)) {
       Column(Modifier.onSizeChanged {
           val h = with(dens) { it.height.toDp() }
           val cards = h - gap * 3
-          // One spacing S: above the first card, between cards, and below the last card (above the nav bar).
-          val want = ((viewH - cards) / 5).coerceIn(8.dp, 16.dp)
+          // The top inset is the same 16dp as every other tab; one spacing S sits between the cards and below the last card.
+          val want = ((viewH - cards - 16.dp) / 4).coerceIn(8.dp, 16.dp)
           if (kotlin.math.abs((want - gap).value) > 0.5f) gap = want
           TabSnap.statsGeo = GeoSnap(statsKey, gap, 0.dp)
       }, verticalArrangement = Arrangement.spacedBy(gap)) {
