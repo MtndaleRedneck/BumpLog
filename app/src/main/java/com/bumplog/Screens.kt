@@ -616,7 +616,8 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
                 PhotoButtons { DamagePhotos.add(ctx, d.reportId, it); n++ }
                 Spacer(Modifier.height(8.dp))
                 if (d.id in marks) Muted("Already in your mail app. Saving the sent mark. Do not send it again.", 13)
-                if (d.id in handing) {
+                if (d.id in handing && rowBusy.value) Muted("Opening the email...", 13)   // this row's own hand-off is in progress: no question yet
+                else if (d.id in handing) {
                     Muted("BumpLog was interrupted while opening the email for this report. Did it go out?", 13)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         SmallButton("Yes, it was sent", Modifier.weight(1f)) { DamageMarks.handedOff(d.id); n++ }
