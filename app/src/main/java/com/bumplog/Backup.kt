@@ -383,6 +383,7 @@ object Backup {
      * wrote, otherwise Done - and Done.incomplete tells him to run it again when a copy failed.
      */
     fun restoreZip(ctx: Context, ins: InputStream): RestoreResult {
+        TabSnap.clear()   // restored data replaces what every tab last showed
         val db = Db.get(ctx)
         var json: JSONObject? = null
         var photos = 0

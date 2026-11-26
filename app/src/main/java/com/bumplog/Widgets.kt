@@ -447,10 +447,15 @@ fun sideBySide(widthDp: Float, fontScale: Float) = widthDp >= SIDE_BY_SIDE_MIN_D
  * database answers, and no second layout pass for the spacing. The database read still runs and replaces it silently.
  */
 object TabSnap {
+    // Main thread only: written from the tabs' LaunchedEffects and read in composition; cleared by wipe, CSV import and restore
+    // (which may run off it, so clear() only flips flags). A cold process has nothing loaded, so tabs draw a blank pane, never a false empty state.
+    @Volatile var homeLoaded = false; @Volatile var reviewLoaded = false; @Volatile var statsLoaded = false; @Volatile var reportedLoaded = false
+    var homeDriveKey: Long = -1
+    fun clear() { homeLoaded = false; reviewLoaded = false; statsLoaded = false; reportedLoaded = false; homeDriveKey = -1 }
     var homeRecent: List<Spot> = emptyList(); var homeToday: Int = 0
     var homeGap: androidx.compose.ui.unit.Dp = 10.dp; var homeExtraAct: androidx.compose.ui.unit.Dp = 0.dp
     var reviewPending: Int = 0; var reviewSaved: Int = 0; var reviewHits: List<Pair<Hit, Spot>> = emptyList()
     var statsScore: Db.Score? = null; var statsBig: Pair<Hit, Spot>? = null; var statsByType: List<Pair<DefectType?, Int>> = emptyList()
     var statsGap: androidx.compose.ui.unit.Dp = 10.dp
-    var reported: List<Spot> = emptyList(); var reportedLoaded: Boolean = false
+    var reported: List<Spot> = emptyList()
 }

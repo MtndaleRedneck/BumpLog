@@ -99,9 +99,14 @@ fun SpotRow(s: Spot, tag: String? = null, onClick: () -> Unit) {
 fun HomeScreen(live: LiveState, openSpot: (Long) -> Unit, openDamage: () -> Unit, permsOk: Boolean, askPerms: () -> Unit, togglePassenger: () -> Unit) {
     val p = LocalPal.current
     val ctx = LocalContext.current
-    var recent by remember { mutableStateOf(TabSnap.homeRecent) }
-    var today by remember { mutableStateOf(TabSnap.homeToday) }
-    LoadingSpots(live.tick) { db -> recent = db.allSpots().take(6); val id = homeDriveId(live.running, live.driveId, Prefs.lastDriveId); today = if (id > 0) db.hitsInDrive(id) else 0; TabSnap.homeRecent = recent; TabSnap.homeToday = today }
+    var recent by remember { mutableStateOf(if (TabSnap.homeLoaded) TabSnap.homeRecent else emptyList()) }
+    val homeKey = homeDriveId(live.running, live.driveId, Prefs.lastDriveId)
+    // Warm only if the cached counts are for the drive being shown now; otherwise draw a blank pane until the first read.
+    val warm = TabSnap.homeLoaded && TabSnap.homeDriveKey == homeKey
+    var today by remember { mutableStateOf(if (warm) TabSnap.homeToday else 0) }
+    var loaded by remember { mutableStateOf(warm) }
+    LoadingSpots(live.tick) { db -> recent = db.allSpots().take(6); val id = homeDriveId(live.running, live.driveId, Prefs.lastDriveId); today = if (id > 0) db.hitsInDrive(id) else 0; TabSnap.homeRecent = recent; TabSnap.homeToday = today; TabSnap.homeDriveKey = id; TabSnap.homeLoaded = true; loaded = true }
+    if (!loaded) { Box(Modifier.fillMaxSize()); return }
     val status = when {
         !Prefs.detectionEnabled -> "Detection off" to p.muted
         !permsOk -> "Needs permission" to p.muted
@@ -280,6 +285,7 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
     var pendingCount by remember { mutableStateOf(TabSnap.reviewPending) }
     var saved by remember { mutableStateOf(TabSnap.reviewSaved) }
     var allHits by remember { mutableStateOf(TabSnap.reviewHits) }
+    var loaded by remember { mutableStateOf(TabSnap.reviewLoaded) }
     LoadingSpots(live.tick) { db ->
         // Hits are listed one by one (never merged by spot). Hits logged after their spot was reported are kept in the data but not listed.
         val shown = db.hits(200).mapNotNull { h -> db.spot(h.spotId)?.takeIf { !it.reportId.startsWith("TEST-") && (it.reportStatus == "NONE" || hitReported(h, it)) }?.let { h to it } }
@@ -290,8 +296,9 @@ fun ReviewScreen(live: LiveState, openSpot: (Long) -> Unit, openSetup: () -> Uni
         allHits = (shown + missing).sortedByDescending { it.first.ts }
         pendingCount = db.pendingSpots().size
         saved = db.hitsSince(Db.startOfToday())
-        TabSnap.reviewPending = pendingCount; TabSnap.reviewSaved = saved; TabSnap.reviewHits = allHits
+        TabSnap.reviewPending = pendingCount; TabSnap.reviewSaved = saved; TabSnap.reviewHits = allHits; TabSnap.reviewLoaded = true; loaded = true
     }
+    if (!loaded) { Box(Modifier.fillMaxSize()); return }
     val scroll = ScrollMemory.get("Review")
     val scope = rememberCoroutineScope()
     Box(Modifier.fillMaxSize()) {
@@ -550,10 +557,10 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
 @Composable
 fun StatsScreen(tick: Int, openSpot: (Long) -> Unit) {
     val p = LocalPal.current
-    var sc by remember { mutableStateOf(TabSnap.statsScore) }
+    var sc by remember { mutableStateOf(if (TabSnap.statsLoaded) TabSnap.statsScore else null) }
     var big by remember { mutableStateOf(TabSnap.statsBig) }
     var byType by remember { mutableStateOf(TabSnap.statsByType) }
-    LoadingSpots(tick) { db -> sc = db.score(); byType = db.savesByType(); big = db.largestImpact(); TabSnap.statsScore = sc; TabSnap.statsByType = byType; TabSnap.statsBig = big }
+    LoadingSpots(tick) { db -> sc = db.score(); byType = db.savesByType(); big = db.largestImpact(); TabSnap.statsLoaded = true; TabSnap.statsScore = sc; TabSnap.statsByType = byType; TabSnap.statsBig = big }
     val s = sc ?: return
     BoxWithConstraints(Modifier.fillMaxSize()) {
     val viewH = maxHeight

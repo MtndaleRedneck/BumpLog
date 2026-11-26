@@ -307,6 +307,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
      * reports already on the phone, like a backup restore (a CSV carries no stored counter). */
     class ImportResult(val imported: Int, val skipped: Int, val damages: Int = 0)
     @Synchronized fun importCsv(text: String): ImportResult? {
+        TabSnap.clear()
         val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", Locale.US)
         val have = allSpots().map { it.reportId }.toMutableSet()
         val db = writableDatabase
@@ -585,6 +586,7 @@ class Db private constructor(ctx: Context) : SQLiteOpenHelper(ctx, "spotter.db",
     }
 
     @Synchronized fun wipeAll() {
+        TabSnap.clear()
         writableDatabase.execSQL("DELETE FROM spots"); writableDatabase.execSQL("DELETE FROM hits"); writableDatabase.execSQL("DELETE FROM damage")
         noteWrite()
     }
