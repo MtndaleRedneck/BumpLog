@@ -500,12 +500,28 @@ adb shell am start -n com.bumplog/.MainActivity --ez demo true --es screen home;
 adb shell dumpsys gfxinfo com.bumplog reset >/dev/null; echo "PHASE post-write 2"; tab_round; gfx_phase post-write-2
 # Phase 5, import/wipe under navigation: a real CSV import (3 rounds of 5000 spots) and a wipe run on a background thread
 # while every tab is switched, so first-frame reads contend for the database monitor like a user importing and navigating.
+# Nothing in this phase may stop the script: taps use coordinates captured before the stress starts, and after each tap a
+# non-fatal UI dump says whether the app answered (a blocked main thread gives "null root node"). Every line carries a clock.
+for t in Review Stats Reported Settings Home; do tap_now "$t"; eval "XY_$t=\"$TX $TY\""; sleep 1; done
+nowt() { date +%H:%M:%S.%N | cut -c1-12; }
 adb logcat -c
-adb shell am start -n com.bumplog/.MainActivity --ei stressimport 5000 --es screen home; sleep 1
-adb shell dumpsys gfxinfo com.bumplog reset >/dev/null; echo "PHASE import-under-navigation"
-tab_round; tab_round; tab_round; tab_round
+adb shell dumpsys gfxinfo com.bumplog reset >/dev/null
+{ echo "== import-under-navigation clock log"; echo "$(nowt) start stressimport"; } | tee -a tabsrec/gfx.txt
+adb shell am start -n com.bumplog/.MainActivity --ei stressimport 5000 --es screen home >/dev/null; sleep 1
+for k in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18; do
+  for t in Review Stats Reported Settings Home; do
+    eval "set -- \$XY_$t"
+    a=$(nowt); adb shell input tap $1 $2
+    if dump_ui_soft; then r=answered; else r=NO-ANSWER; fi
+    echo "$a tap $t -> $(nowt) ui $r" | tee -a tabsrec/gfx.txt
+  done
+  adb logcat -d -s BumpStress | grep -q "done" && break
+done
+echo "$(nowt) loop end" | tee -a tabsrec/gfx.txt
 gfx_phase import-under-navigation
-{ echo "== logcat during import-under-navigation (BumpStress timings, main-thread skipped frames, ANR)"; adb logcat -d | grep -E "BumpStress|Skipped [0-9]+ frames|ANR in com.bumplog|Davey" | head -60; } | tee -a tabsrec/gfx.txt
+{ echo "== logcat BumpStress, main-thread skipped frames, ANR"; adb logcat -d -v time | grep -E "BumpStress|Skipped [0-9]+ frames|ANR in|am_anr|Davey|Input dispatching timed out" | head -120; } | tee -a tabsrec/gfx.txt
+{ echo "== focus and process"; adb shell dumpsys window | grep -E "mCurrentFocus|mFocusedApp" | head -3; adb shell pidof com.bumplog; adb shell ls /data/anr 2>&1 | head -5; } | tee -a tabsrec/gfx.txt
+adb exec-out screencap -p > tabsrec/after-import-phase.png
 wait $REC 2>/dev/null; sleep 2
 adb pull /sdcard/tabs.mp4 tabsrec/tabs.mp4 || echo "WARN: tab recording not pulled"
 # Launcher proof: the real BumpLog icon as the device launcher draws it, on the home screen or in the app drawer.
