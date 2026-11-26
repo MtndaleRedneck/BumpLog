@@ -246,8 +246,9 @@ fun AlertScreen(spotId: Long, tick: Int, onDone: () -> Unit, onConfirmed: () -> 
     val p = LocalPal.current
     val ctx = LocalContext.current
     var s by remember { mutableStateOf<Spot?>(null) }
-    LoadingSpots(tick) { db -> s = withContext(Dispatchers.IO) { db.spot(spotId) } }
-    val spot = s ?: return
+    val spotLoad = LoadingSpots(tick) { db -> s = withContext(Dispatchers.IO) { db.spot(spotId) } }
+    val spot = s
+    if (spot == null) { NotLoadedPane("Heads-up", spotLoad); return }
     Column(Modifier.fillMaxSize().pane("Heads-up").verticalScroll(ScrollMemory.get("Heads-up")).padding(20.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.height(24.dp))
         val alertColor = if (spot.severe) p.yellow else p.accent
@@ -419,8 +420,9 @@ fun SpotScreen(spotId: Long, tick: Int, back: () -> Unit, openDamage: (Long) -> 
     val p = LocalPal.current
     val ctx = LocalContext.current
     var s by remember { mutableStateOf<Spot?>(null) }
-    LoadingSpots(tick) { db -> s = withContext(Dispatchers.IO) { db.spot(spotId) } }
-    val spot = s ?: return
+    val spotLoad = LoadingSpots(tick) { db -> s = withContext(Dispatchers.IO) { db.spot(spotId) } }
+    val spot = s
+    if (spot == null) { NotLoadedPane("Spot", spotLoad); return }
     val db = Db.get(ctx)
     var confirmFixed by remember { mutableStateOf(false) }
     var menuOpen by remember { mutableStateOf(false) }
@@ -491,7 +493,8 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     val ctx = LocalContext.current
     var hits by remember { mutableStateOf(listOf<Hit>()) }
     var queued by remember { mutableStateOf(0) }
-    LoadingSpots(tick) { db -> val (h, q) = withContext(Dispatchers.IO) { db.hits(60) to db.queuedDamages().size }; hits = h; queued = q }
+    var hitsLoaded by remember { mutableStateOf(false) }   // false = not read yet: never "No hits logged yet"
+    LoadingSpots(tick) { db -> val (h, q) = withContext(Dispatchers.IO) { db.hits(60) to db.queuedDamages().size }; hits = h; queued = q; hitsLoaded = true }
     // One sheet session = one draft token (kept across process restore): rebuilds retry the
     // same row; filing a second, separate report starts a new sheet with a new token.
     val draftId = androidx.compose.runtime.saveable.rememberSaveable { "draft-" + java.util.UUID.randomUUID().toString() }
@@ -523,7 +526,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
     }
     Column(Modifier.fillMaxSize().pane("File damage report").verticalScroll(ScrollMemory.get("Damage:$preSpot")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Muted("Pick the hit that hurt your car. Your assistant works out where the claim should go.", 14, Modifier.asHeading())
-        if (hits.isEmpty()) Muted("No hits logged yet")
+        if (hitsLoaded && hits.isEmpty()) Muted("No hits logged yet")
         if (recent.isNotEmpty()) { Txt("Last 20 minutes", 16, FontWeight.Bold); recent.forEach { hitRow(it) } }
         else if (hits.isNotEmpty()) Muted("Nothing in the last 20 minutes. Earlier hits:", 13)
         if (earlier.isNotEmpty()) { if (recent.isNotEmpty()) Txt("Earlier", 16, FontWeight.Bold); earlier.forEach { hitRow(it) } }
@@ -565,9 +568,11 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
 @Composable
 fun DamageQueueScreen(tick: Int, back: () -> Unit) {
     val ctx = LocalContext.current
-    var list by remember { mutableStateOf(listOf<Damage>()) }
+    var loadedList by remember { mutableStateOf<List<Damage>?>(null) }   // null = not read yet: never "Nothing waiting."
     var n by remember { mutableStateOf(0) }
-    LoadingSpots(tick + n) { db -> list = withContext(Dispatchers.IO) { db.queuedDamages() } }
+    val queueLoad = LoadingSpots(tick + n) { db -> loadedList = withContext(Dispatchers.IO) { db.queuedDamages() } }
+    val list = loadedList
+    if (list == null) { NotLoadedPane("Damage reports waiting", queueLoad); return }
     Column(Modifier.fillMaxSize().pane("Damage reports waiting").verticalScroll(ScrollMemory.get("DamageQueue")).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         BackRow("Damage reports waiting", back)
         if (list.isEmpty()) Muted("Nothing waiting.")

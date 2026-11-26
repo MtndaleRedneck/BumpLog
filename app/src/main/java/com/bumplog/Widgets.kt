@@ -481,7 +481,7 @@ class GeoSnap(val key: GeoKey, val gap: androidx.compose.ui.unit.Dp, val extra: 
  */
 const val FIRST_FRAME_WAIT_MS = 40L
 /** At most 2 helper threads and 4 waiting reads: during a long import every read blocks on the monitor, so extra tab switches must not pile up threads. */
-private val firstFramePool = java.util.concurrent.ThreadPoolExecutor(2, 2, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue<Runnable>(4),
+internal val firstFramePool = java.util.concurrent.ThreadPoolExecutor(2, 2, 30L, java.util.concurrent.TimeUnit.SECONDS, java.util.concurrent.LinkedBlockingQueue<Runnable>(4),
     { r -> Thread(r, "bump-first-frame").apply { isDaemon = true } }).apply { allowCoreThreadTimeOut(true) }
 fun <T : Any> firstFrame(slot: SnapSlot<T>, tick: Int, usable: (T) -> Boolean = { true }, read: () -> T): T? {
     val st = Stamp.now(tick)

@@ -114,4 +114,29 @@ class TabSnapTest {
         assertEquals(newer, slot.warm(Stamp(6, 11L)))
         assertNull(slot.warm(Stamp(5, 10L)))
     }
+
+    @Test fun aTimedOutQueuedReadLeavesTheQueue() {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        // Two reads occupy both helpers; the next four queue and time out. Each must be removed on timeout, so the queue is empty afterwards.
+        repeat(6) { assertNull(firstFrame(SnapSlot<ReportedSnap>(), 100 + it) { gate.await(); ReportedSnap(emptyList()) }) }
+        val queued = firstFramePool.queue.size
+        gate.countDown()
+        assertEquals("cancelled queued reads must not stay in the queue", 0, queued)
+    }
+
+    @Test fun aSaturatedPoolRejectsWithoutReadingOrBlocking() {
+        val gate = java.util.concurrent.CountDownLatch(1)
+        val running = java.util.concurrent.CountDownLatch(2)
+        // Fill it directly: 2 helpers stuck on the gate and 4 queued tasks (the whole queue).
+        repeat(2) { firstFramePool.execute { running.countDown(); gate.await() } }
+        assertTrue(running.await(2, java.util.concurrent.TimeUnit.SECONDS))
+        repeat(4) { firstFramePool.execute { gate.await() } }
+        var reads = 0
+        val t0 = System.nanoTime()
+        val r = firstFrame(SnapSlot<ReportedSnap>(), 200) { reads++; ReportedSnap(emptyList()) }
+        val ms = (System.nanoTime() - t0) / 1_000_000
+        gate.countDown()
+        assertNull(r); assertEquals("a rejected read must never run", 0, reads)
+        assertTrue("rejection must not wait the 40 ms", ms < FIRST_FRAME_WAIT_MS)
+    }
 }
