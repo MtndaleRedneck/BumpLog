@@ -505,6 +505,7 @@ object DbQ {
     private val mainHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
     /** Where [done] and [fail] run. The main thread; tests replace it. */
     internal var toMain: (Runnable) -> Unit = { mainHandler.post(it) }
+    internal fun resetToMain() { toMain = { mainHandler.post(it) } }
 
     /** The queue itself, with no Android types: [work] runs in order on the queue thread, then exactly one of [done] (result) or [fail] (exception) runs via [toMain]. */
     internal fun <T> submit(work: () -> T, fail: (Exception) -> Unit, done: (T) -> Unit) {

@@ -561,7 +561,7 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
                 if (r == null) sendBusy.value = false
                 else {
                     val (d, sp) = r
-                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) DbQ.run(ctx, fail = { sendBusy.value = false; toast(ctx, "That didn't work. Try again.") }, work = { it.markDamageSent(d.id) }) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() }
+                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) DbQ.run(ctx, fail = { toast(ctx, "The email is in your mail app, but BumpLog could not mark it sent. Do not send it again.") }, work = { it.markDamageSent(d.id) }) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() }
                     else sendBusy.value = false
                 }
             }
@@ -603,7 +603,7 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
                 Spacer(Modifier.height(8.dp))
                 BigButton("Send", Icons.Default.Send) {
                     DbQ.runOnce(ctx, rowBusy, work = { db -> db.hit(d.hitId) to db.spot(d.spotId) }) { (h, sp) ->
-                        if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) DbQ.run(ctx, fail = { rowBusy.value = false; toast(ctx, "That didn't work. Try again.") }, work = { it.markDamageSent(d.id) }) { n++; Live.bump() }
+                        if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) DbQ.run(ctx, fail = { toast(ctx, "The email is in your mail app, but BumpLog could not mark it sent. Do not send it again.") }, work = { it.markDamageSent(d.id) }) { n++; Live.bump() }
                         else rowBusy.value = false
                     }
                 }

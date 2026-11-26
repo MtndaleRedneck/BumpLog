@@ -118,16 +118,15 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
             Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.accent).clickable(enabled = !againBusy) {
                 againBusy = true
                 val now = System.currentTimeMillis()
-                // The number is drawn once, together with the change, and the mail carries that stored number (before, the mail used a peeked number and the
-                // draw came later, so another taker in between could make them differ). The rollback snapshot is saved with the change, so a process death
-                // before the mail opens still ends in the "did it go out?" question and a rollback. A refused handoff rolls the change back at once.
+                // The number is drawn once, together with the change, and the mail carries that stored number. The pending question with its rollback snapshot is
+                // saved FIRST: a process death after it and before the change leaves a harmless question over an unchanged row (a rollback of it is a no-op); a
+                // death after the change still has the snapshot to roll back. A failed change clears only its own question; a refused handoff rolls back at once.
                 var tok = -1   // written on the queue thread, read in done: the generation of this question
                 val old = listOf(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs).joinToString("|")
-                DbQ.run(ctx, fail = { againBusy = false; toast(ctx, "That didn't work. Try again.") }, work = { db ->
-                    db.reportAgain(s.id, now)
-                    val no = db.spot(s.id)?.reportNo ?: error("spot is gone")
+                DbQ.run(ctx, fail = { PendingAsk.clearIf(tok); againBusy = false; toast(ctx, "That didn't work. Try again.") }, work = { db ->
                     tok = PendingAsk.set(s.id.toString(), "again", old)
-                    no
+                    db.reportAgain(s.id, now)
+                    db.spot(s.id)?.reportNo ?: error("spot is gone")
                 }) { no ->
                     if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(s.copy(reportNo = no, reportTs = now))))) { againBusy = false; Live.bump() }
                     else DbQ.run(ctx, fail = { againBusy = false; Live.bump(); toast(ctx, "That didn't work. Try again.") },

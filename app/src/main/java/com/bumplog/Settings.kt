@@ -331,7 +331,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             }
         }
         if (confirmWipe) AlertDialog(onDismissRequest = { confirmWipe = false },
-            confirmButton = { TextButton({ confirmWipe = false; DbQ.run(ctx, fail = { Live.bump(); toast(ctx, "That didn't work. Try again.") }, work = { db -> db.wipeAll(); DamagePhotos.wipeAll(ctx); Prefs.wipeLocalExtras(ctx) }) { Live.bump() } }) { Text("Delete") } },
+            confirmButton = { TextButton({ confirmWipe = false; DbQ.run(ctx, fail = { Live.bump(); toast(ctx, "Delete did not finish. Some data may already be gone. Open Settings and Delete again.") }, work = { db -> db.wipeAll(); DamagePhotos.wipeAll(ctx); Prefs.wipeLocalExtras(ctx) }) { Live.bump() } }) { Text("Delete") } },
             dismissButton = {
                 Row {
                     // Back up first is optional and never deletes anything. With an auto-backup folder the new zip is

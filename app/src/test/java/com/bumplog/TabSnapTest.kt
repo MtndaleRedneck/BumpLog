@@ -190,7 +190,7 @@ class TabSnapTest {
             f = sentFor; if (slowWrite) Thread.sleep(1); k = kind; if (slowWrite) Thread.sleep(1); a = again   // field by field, like three separate edits
         }
     }
-    @org.junit.After fun restorePendingStore() { PendingAsk.resetStore() }
+    @org.junit.After fun restoreGlobals() { PendingAsk.resetStore(); DbQ.resetToMain() }
 
     @Test fun anOlderCompletionNeverErasesANewerPendingQuestion() {
         val m = MapStore(); PendingAsk.store = m
