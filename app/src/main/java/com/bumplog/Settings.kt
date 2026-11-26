@@ -272,7 +272,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             SmallButton("Simulate car connected", Modifier.fillMaxWidth()) { Notifier.carConnected(ctx) }
             Spacer(Modifier.height(6.dp))
             SmallButton("Clear test data", Modifier.fillMaxWidth()) {
-                val n = Db.get(ctx).clearTestData(); Live.bump(); toast(ctx, if (n == 0) "No test data." else "Cleared $n test spot(s).")
+                DbQ.run(ctx, work = { it.clearTestData() }) { n -> Live.bump(); toast(ctx, if (n == 0) "No test data." else "Cleared $n test spot(s).") }
             }
         }
         Card(Modifier.pressFeel(onPress = { confirmWipe = true }), pad = 16.dp) { Txt("Delete all logged data", 16, color = p.muted) }
@@ -331,7 +331,7 @@ fun SettingsScreen(tick: Int, scroll: androidx.compose.foundation.ScrollState, a
             }
         }
         if (confirmWipe) AlertDialog(onDismissRequest = { confirmWipe = false },
-            confirmButton = { TextButton({ Db.get(ctx).wipeAll(); DamagePhotos.wipeAll(ctx); Prefs.wipeLocalExtras(ctx); Live.bump(); confirmWipe = false }) { Text("Delete") } },
+            confirmButton = { TextButton({ confirmWipe = false; DbQ.run(ctx, work = { db -> db.wipeAll(); DamagePhotos.wipeAll(ctx); Prefs.wipeLocalExtras(ctx) }) { Live.bump() } }) { Text("Delete") } },
             dismissButton = {
                 Row {
                     // Back up first is optional and never deletes anything. With an auto-backup folder the new zip is

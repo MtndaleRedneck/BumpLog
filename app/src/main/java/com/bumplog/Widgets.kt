@@ -493,6 +493,29 @@ fun <T : Any> firstFrame(slot: SnapSlot<T>, tick: Int, usable: (T) -> Boolean = 
     catch (e: Exception) { android.util.Log.w("BumpLog", "first-frame read failed", e); null }
 }
 
+/**
+ * Every Db write or read a tap needs runs here, one at a time in the order it was queued, never on the main thread: an import or restore holds
+ * the Db monitor for seconds and a tap that read the Db inline would freeze the UI. [run] hands the result to [done] on the main thread;
+ * [call] suspends for it. A failure reaches [fail] (default: a toast) and never [done].
+ */
+object DbQ {
+    private val ex = java.util.concurrent.Executors.newSingleThreadExecutor { r -> Thread(r, "bump-db-queue").apply { isDaemon = true } }
+    private val main = android.os.Handler(android.os.Looper.getMainLooper())
+    fun <T> run(ctx: android.content.Context, fail: ((Exception) -> Unit)? = null, work: (Db) -> T, done: (T) -> Unit = {}) {
+        val app = ctx.applicationContext
+        ex.execute {
+            val r = try { Result.success(work(Db.get(app))) } catch (e: Exception) { android.util.Log.w("BumpLog", "queued db work failed", e); Result.failure<T>(e) }
+            main.post { r.fold({ done(it) }, { e -> if (fail != null) fail(e as Exception) else toast(app, "That didn't work. Try again.") }) }
+        }
+    }
+    suspend fun <T> call(ctx: android.content.Context, work: (Db) -> T): T {
+        val app = ctx.applicationContext
+        val d = kotlinx.coroutines.CompletableDeferred<T>()
+        ex.execute { try { d.complete(work(Db.get(app))) } catch (e: Exception) { d.completeExceptionally(e) } }
+        return d.await()
+    }
+}
+
 object TabSnap {
     val home = SnapSlot<HomeSnap>(); val review = SnapSlot<ReviewSnap>(); val stats = SnapSlot<StatsSnap>(); val reported = SnapSlot<ReportedSnap>()
     @Volatile var homeGeo: GeoSnap? = null; @Volatile var statsGeo: GeoSnap? = null

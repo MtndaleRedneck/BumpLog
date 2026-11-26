@@ -35,8 +35,8 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
     val first = remember { firstFrame(TabSnap.reported, tick) { ReportedSnap(Db.get(ctx).reportedSpots()) } }
     var reported by remember { mutableStateOf(first?.spots ?: emptyList()) }
     var loaded by remember { mutableStateOf(first != null) }   // false = nothing read yet: a blank pane, not the "nothing reported" text
-    LaunchedEffect(tick) { TabSnap.reported.warm(Stamp.now(tick))?.let { reported = it.spots; loaded = true; return@LaunchedEffect }; val st = Stamp.now(tick); val l = withContext(Dispatchers.IO) { Db.get(ctx).reportedSpots() }; reported = l; loaded = true; TabSnap.reported.put(st, ReportedSnap(l)) }
-    if (!loaded) { Box(Modifier.fillMaxSize().pane("Reported")); return }
+    val reportedLoad = LoadingSpots(tick) { db -> TabSnap.reported.warm(Stamp.now(tick))?.let { reported = it.spots; loaded = true; return@LoadingSpots }; val st = Stamp.now(tick); val l = withContext(Dispatchers.IO) { db.reportedSpots() }; reported = l; loaded = true; TabSnap.reported.put(st, ReportedSnap(l)) }
+    if (!loaded) { NotLoadedPane("Reported", reportedLoad); return }
     var markFor by remember { mutableStateOf<Spot?>(null) }
 
     markFor?.let { s ->
@@ -53,12 +53,12 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
                             // Back to waiting: clears an earlier Fixed / Unclear response / Won't fix mark.
-                            onClick = { Db.get(ctx).markOutcome(s.id, "NONE", 0); Live.bump(); markFor = null },
+                            onClick = { markFor = null; DbQ.run(ctx, work = { it.markOutcome(s.id, "NONE", 0) }) { Live.bump() } },
                             modifier = Modifier.weight(1f),
                             border = BorderStroke(1.dp, p.text),
                         ) { M3Text("Waiting on the city", color = p.text) }
                         OutlinedButton(
-                            onClick = { Db.get(ctx).markOutcome(s.id, "FIXED", System.currentTimeMillis()); Live.bump(); markFor = null },
+                            onClick = { markFor = null; DbQ.run(ctx, work = { it.markOutcome(s.id, "FIXED", System.currentTimeMillis()) }) { Live.bump() } },
                             modifier = Modifier.weight(1f),
                             border = BorderStroke(1.dp, fixedGreen),
                         ) { M3Text("Fixed", color = fixedGreen) }
@@ -66,12 +66,12 @@ fun ReportedScreen(tick: Int, openSpot: (Long) -> Unit) {
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(
-                            onClick = { Db.get(ctx).markOutcome(s.id, "UNCLEAR", System.currentTimeMillis()); Live.bump(); markFor = null },
+                            onClick = { markFor = null; DbQ.run(ctx, work = { it.markOutcome(s.id, "UNCLEAR", System.currentTimeMillis()) }) { Live.bump() } },
                             modifier = Modifier.weight(1f),
                             border = BorderStroke(1.dp, p.yellow),
                         ) { M3Text("Unclear response", color = p.yellow) }
                         OutlinedButton(
-                            onClick = { Db.get(ctx).markOutcome(s.id, "WONTFIX", System.currentTimeMillis()); Live.bump(); markFor = null },
+                            onClick = { markFor = null; DbQ.run(ctx, work = { it.markOutcome(s.id, "WONTFIX", System.currentTimeMillis()) }) { Live.bump() } },
                             modifier = Modifier.weight(1f),
                             border = BorderStroke(1.dp, p.danger),
                         ) { M3Text("Won't fix", color = p.danger) }
@@ -114,15 +114,18 @@ private fun ReportedRow(s: Spot, onMark: () -> Unit, onOpen: () -> Unit) {
         if (s.reportOutcome == "WONTFIX" || (s.reportOutcome != "NONE" && hitAgain)) {
             Spacer(Modifier.height(10.dp))
             // A fresh report with a fresh number; the count is what shows the city this keeps happening.
-            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.accent).clickable {
+            var againBusy by remember { mutableStateOf(false) }   // a second tap while the number is being drawn must not burn another report number
+            Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(p.accent).clickable(enabled = !againBusy) {
+                againBusy = true
                 val now = System.currentTimeMillis()
-                val db = Db.get(ctx)
-                val next = db.counterNext()
-                val draft = s.copy(reportNo = next, reportTs = now)
-                if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(draft)))) {
-                    Prefs.askAgain = listOf(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs).joinToString("|")
-                    Prefs.askSentFor = s.id.toString(); Prefs.askSentKind = "again"
-                    db.reportAgain(s.id, now); Live.bump()
+                DbQ.run(ctx, fail = { againBusy = false; toast(ctx, "That didn't work. Try again.") }, work = { it.counterNext() }) { next ->
+                    againBusy = false
+                    val draft = s.copy(reportNo = next, reportTs = now)
+                    if (handOffMail(ctx, Reports.reportsMail(ctx, listOf(draft)))) {
+                        Prefs.askAgain = listOf(s.id, s.reportNo, s.reportTs, s.sentTs, s.reportOutcome, s.outcomeTs).joinToString("|")
+                        Prefs.askSentFor = s.id.toString(); Prefs.askSentKind = "again"
+                        DbQ.run(ctx, work = { it.reportAgain(s.id, now) }) { Live.bump() }
+                    }
                 }
             }.padding(vertical = 12.dp), contentAlignment = Alignment.Center) {
                 Txt("Report again", 16, FontWeight.Bold, p.onAccent)
