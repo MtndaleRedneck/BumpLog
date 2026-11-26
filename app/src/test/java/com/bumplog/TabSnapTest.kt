@@ -202,6 +202,22 @@ class TabSnapTest {
         assertEquals("the older one was already replaced by the failed set, so it cannot be cleared", false, PendingAsk.clearIf(older))
     }
 
+    @Test fun aRollbackClaimKeepsTheQuestionUntilItIsCleared() {
+        val m = MapStore(); PendingAsk.store = m
+        val g = PendingAsk.set("9", "again", "snap", durable = true)
+        val c = PendingAsk.claim(g)
+        assertTrue(c >= 0); assertEquals("a failed or killed rollback must leave the question", "9", m.f); assertEquals("snap", m.a)
+        assertEquals("second claim of the same question loses", -1, PendingAsk.claim(g))
+        assertTrue(PendingAsk.clearIf(c)); assertEquals("", m.f)
+    }
+
+    @Test fun aNewerQuestionMakesTheClaimFailAndSurvives() {
+        val m = MapStore(); PendingAsk.store = m
+        val g = PendingAsk.set("9", "again", "snap")
+        PendingAsk.set("1,2", "trip")
+        assertEquals(-1, PendingAsk.claim(g)); assertEquals("1,2", m.f)
+    }
+
     @Test fun aClaimedRollbackCannotBeClaimedTwiceOrAfterANewerQuestion() {
         val m = MapStore(); PendingAsk.store = m
         val g = PendingAsk.set("9", "again", "snap", durable = true)

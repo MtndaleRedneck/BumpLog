@@ -561,9 +561,9 @@ fun DamageScreen(preSpot: Long, tick: Int, back: () -> Unit, openQueue: () -> Un
                 if (r == null) sendBusy.value = false
                 else {
                     val (d, sp) = r
-                    DamageMarks.add(d.id)   // recorded BEFORE the hand-off; removed only if the hand-off is refused, never on a later failure
-                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.settle(ctx, d.id) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() } }
-                    else { DamageMarks.remove(d.id); sendBusy.value = false }
+                    // recorded only once the hand-off call has returned true: a kill or error before that never marks an unsent report as handed off
+                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.add(d.id); DamageMarks.settle(ctx, d.id) { toast(ctx, "Confirmed. ${d.ref(h)}. Handed to your mail app - press send there."); back() } }
+                    else sendBusy.value = false
                 }
             }
         }
@@ -608,9 +608,9 @@ fun DamageQueueScreen(tick: Int, back: () -> Unit) {
                 if (d.id in marks) Muted("Already in your mail app. Saving the sent mark. Do not send it again.", 13)
                 BigButton("Send", Icons.Default.Send, enabled = d.id !in marks) {
                     DbQ.runOnce(ctx, rowBusy, work = { db -> db.hit(d.hitId) to db.spot(d.spotId) }) { (h, sp) ->
-                        DamageMarks.add(d.id)   // recorded BEFORE the hand-off; removed only if the hand-off is refused, never on a later failure
-                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.settle(ctx, d.id) { n++; Live.bump() } }
-                        else { DamageMarks.remove(d.id); rowBusy.value = false }
+                        // recorded only once the hand-off call has returned true: a kill or error before that never marks an unsent report as handed off
+                    if (handOffMail(ctx, Reports.damageMail(ctx, d, h, sp))) { DamageMarks.add(d.id); DamageMarks.settle(ctx, d.id) { n++; Live.bump() } }
+                        else rowBusy.value = false
                     }
                 }
             }
