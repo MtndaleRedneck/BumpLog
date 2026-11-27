@@ -28,7 +28,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 
@@ -53,11 +53,11 @@ jobs:
             git push origin HEAD:main
           fi
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       - name: Install Android 37 platform and build-tools
         run: |
           # sdkmanager install is idempotent: run it unconditionally so a present platform can
@@ -66,7 +66,7 @@ jobs:
 
       # Robolectric downloads its android-all runtime to ~/.m2 outside Gradle's cache; keep
       # it across runs, and retry the test task once - Maven Central 429s are a known flake.
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/.m2/repository/org/robolectric
           key: robolectric-${{ hashFiles('**/build.gradle.kts') }}
@@ -117,7 +117,7 @@ jobs:
           if [ "$ACTUAL" != "$EXPECTED" ]; then echo "FAIL: signer $ACTUAL != expected $EXPECTED"; exit 1; fi
           echo "signer verified: $ACTUAL"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: BumpLog-apk
           path: |
@@ -131,14 +131,14 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       - name: Install Android 37 platform and build-tools
         run: |
           # sdkmanager install is idempotent: run it unconditionally so a present platform can
@@ -156,7 +156,7 @@ jobs:
           target: google_apis
           profile: pixel_6
           script: ./gradlew --no-daemon connectedDebugAndroidTest
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bumplog-androidTest-results
@@ -168,20 +168,20 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       - name: Install Android 37 platform and build-tools
         run: |
           # sdkmanager install is idempotent: run it unconditionally so a present platform can
           # never mask a missing build-tools package.
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37.0" "build-tools;36.0.0" >/dev/null
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: BumpLog-apk
       - name: Bind the exact build-job APK by digest
@@ -205,7 +205,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: ./scripts/release-smoke.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bumplog-release-smoke
@@ -215,10 +215,10 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: BumpLog-apk
       - name: Stage APKs
@@ -252,7 +252,7 @@ jobs:
           profile: pixel_6
           disable-animations: true
           script: ./scripts/upgrade-smoke.sh
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bumplog-upgrade-smoke
@@ -265,15 +265,15 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0  # the commit step rebases onto the branch tip; shallow would fail
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 17
-      - uses: gradle/actions/setup-gradle@d9c87d481d55275bb5441eef3fe0e46805f9ef70 # v3.5.0
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
       - name: Install Android 37 platform and build-tools
         run: |
           # sdkmanager install is idempotent: run it unconditionally so a present platform can
@@ -296,12 +296,12 @@ jobs:
           script: ./scripts/shots.sh
       # Pixel evidence survives a failed run: the captures upload even when an assertion fails,
       # so a red job still shows exactly what was on screen.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bumplog-screenshots-run
           path: docs/screenshots/**
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: bumplog-tab-recording
@@ -332,11 +332,11 @@ jobs:
       group: publish-release
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: BumpLog-apk
 
